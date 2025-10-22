@@ -1,7 +1,0 @@
-#!/Users/berik/Desktop/Telegram_bot_on_new_stack/docker/Telegram_bot_nano_banana/tg-nanobanana/.venv/bin/python3.12
-import sys
-from watchfiles.cli import cli
-if __name__ == '__main__':
-    if sys.argv[0].endswith('.exe'):
-        sys.argv[0] = sys.argv[0][:-4]
-    sys.exit(cli())
