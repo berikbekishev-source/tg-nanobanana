@@ -24,14 +24,25 @@
 
 ## Шаг 3: Создайте сервис Web
 
-1. Нажмите "+ New" → "GitHub Repo" (или "Empty Service" если хотите деплоить вручную)
-2. Подключите ваш GitHub репозиторий или загрузите код
-3. В настройках сервиса:
-   - **Name**: `web`
-   - **Dockerfile Path**: `Dockerfile.web`
-   - **Root Directory**: оставьте пустым (корень проекта)
+1. Нажмите "+ New" → "GitHub Repo"
+2. Подключите ваш GitHub репозиторий `berikbekishev-source/tg-nanobanana`
+3. Переименуйте сервис в `web` (нажмите на имя сервиса вверху)
+4. Перейдите в **Settings** сервиса
 
-4. Добавьте переменные окружения (Settings → Variables):
+### 4.1 Настройте Build (Settings → Build)
+
+В разделе **Build** → **Builder**:
+- **Dockerfile**: кликните на поле и введите `Dockerfile.web`
+
+В разделе **Deploy**:
+- **Custom Start Command**: введите команду для миграций и запуска:
+  ```
+  sh -c 'python manage.py migrate && gunicorn -k uvicorn.workers.UvicornWorker config.asgi:application --bind 0.0.0.0:${PORT:-8000} --workers 2 --timeout 120'
+  ```
+
+### 4.2 Добавьте переменные окружения (Settings → Variables)
+
+Нажмите **RAW Editor** (переключатель справа) и вставьте:
 
 ```env
 DJANGO_DEBUG=false
@@ -48,35 +59,58 @@ GEMINI_IMAGE_MODEL_FALLBACK=gemini-2.5-flash-image-preview
 SUPABASE_URL=https://ваш-проект.supabase.co
 SUPABASE_SERVICE_ROLE_KEY=ваш-service-role-key
 SUPABASE_BUCKET=bot-images
-PORT=${{Railway.PORT}}
 ```
+
+### 4.3 Настройка домена (Settings → Networking)
+
+1. Нажмите **Generate Domain** (оставьте поле порта пустым - Railway автоматически определит)
+2. Скопируйте сгенерированный домен (например: `web-production-xxxx.up.railway.app`)
+3. Вернитесь в **Variables** и обновите `PUBLIC_BASE_URL`:
+   ```
+   PUBLIC_BASE_URL=https://web-production-xxxx.up.railway.app
+   ```
 
 **Важно**:
 - `REDIS_URL=${{Redis.REDIS_URL}}` - автоматически подставит URL Redis из первого шага
-- `PUBLIC_BASE_URL` должен содержать домен вашего Railway приложения (например: `https://web-production-xxxx.up.railway.app`)
-- После первого деплоя скопируйте домен из раздела "Settings → Domains" и обновите `PUBLIC_BASE_URL`
+- Переменная `PORT` не нужна - Railway предоставляет её автоматически
 
 ## Шаг 4: Создайте сервис Worker
 
-1. Нажмите "+ New" → "GitHub Repo" (тот же репозиторий)
-2. В настройках сервиса:
-   - **Name**: `worker`
-   - **Dockerfile Path**: `Dockerfile.worker`
-   - **Root Directory**: оставьте пустым
+1. Нажмите "+ New" → "GitHub Repo" (выберите тот же репозиторий)
+2. Переименуйте сервис в `worker`
+3. Перейдите в **Settings** → **Build**
 
-3. Добавьте ВСЕ те же переменные окружения, что и для Web (можно скопировать)
+### 4.1 Настройте Build
 
-**Важно**: Worker использует Dockerfile.worker, который уже содержит правильную команду для запуска Celery worker.
+В разделе **Build** → **Builder**:
+- **Dockerfile**: введите `Dockerfile.worker`
+
+### 4.2 Добавьте переменные окружения
+
+Скопируйте **ВСЕ** переменные из сервиса Web (Settings → Variables → RAW Editor)
+
+**Важно**: Dockerfile.worker уже содержит команду запуска Celery worker, Custom Start Command не нужен.
 
 ## Шаг 5: Создайте сервис Beat
 
-1. Нажмите "+ New" → "GitHub Repo" (тот же репозиторий)
-2. В настройках сервиса:
-   - **Name**: `beat`
-   - **Dockerfile Path**: `Dockerfile.worker`
-   - **Custom Start Command**: `celery -A config.celery:app beat -l INFO`
+1. Нажмите "+ New" → "GitHub Repo" (выберите тот же репозиторий)
+2. Переименуйте сервис в `beat`
+3. Перейдите в **Settings** → **Build**
 
-3. Добавьте ВСЕ те же переменные окружения
+### 5.1 Настройте Build и Deploy
+
+В разделе **Build** → **Builder**:
+- **Dockerfile**: введите `Dockerfile.worker`
+
+В разделе **Deploy**:
+- **Custom Start Command**: введите:
+  ```
+  celery -A config.celery:app beat -l INFO
+  ```
+
+### 5.2 Добавьте переменные окружения
+
+Скопируйте **ВСЕ** переменные из сервиса Web
 
 ## Шаг 6: Настройте Telegram Webhook
 
@@ -84,13 +118,9 @@ PORT=${{Railway.PORT}}
 
 1. Получите публичный URL вашего сервиса web (например: `https://web-production-xxxx.up.railway.app`)
 2. Обновите переменную `PUBLIC_BASE_URL` в настройках сервиса web
-3. Зайдите в логи сервиса web и выполните миграции (если ещё не выполнены):
+3. Миграции выполнятся автоматически при старте web сервиса (через Custom Start Command)
 
-```bash
-# Railway автоматически выполнит миграции при старте, если вы используете railway.toml
-```
-
-4. Установите webhook для Telegram бота (можно через curl или через Railway CLI):
+4. Установите webhook для Telegram бота (можно через curl):
 
 ```bash
 curl -X POST "https://api.telegram.org/bot<YOUR_BOT_TOKEN>/setWebhook" \
@@ -171,3 +201,9 @@ curl -X POST "https://api.telegram.org/bot<YOUR_BOT_TOKEN>/deleteWebhook"
 Опциональные:
 - `SENTRY_DSN` - для мониторинга ошибок
 - `GEMINI_IMAGE_MODEL_FALLBACK` - резервная модель
+
+## Почему не используется railway.toml?
+
+В этом проекте используется несколько сервисов (web, worker, beat) из одного репозитория, но с разными Dockerfile и командами запуска. Файл `railway.toml` применяется ко всем сервисам глобально и блокирует индивидуальные настройки через UI.
+
+**Решение**: Настройка каждого сервиса индивидуально через Settings UI в Railway. Это даёт полный контроль над конфигурацией каждого сервиса.
