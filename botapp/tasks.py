@@ -1,10 +1,27 @@
 from celery import shared_task
-from asgiref.sync import async_to_sync
-from aiogram.types import BufferedInputFile
+import httpx
 from django.conf import settings
 from .models import GenRequest
-from .telegram import bot
 from .services import gemini_generate_images, supabase_upload_png
+
+def send_telegram_photo(chat_id: int, photo_bytes: bytes, caption: str):
+    """Отправка фото в Telegram через Bot API напрямую (без aiogram)"""
+    url = f"https://api.telegram.org/bot{settings.TELEGRAM_BOT_TOKEN}/sendPhoto"
+    files = {"photo": ("image.png", photo_bytes, "image/png")}
+    data = {"chat_id": chat_id, "caption": caption}
+    with httpx.Client(timeout=30) as client:
+        resp = client.post(url, files=files, data=data)
+        resp.raise_for_status()
+        return resp.json()
+
+def send_telegram_message(chat_id: int, text: str):
+    """Отправка текстового сообщения в Telegram через Bot API"""
+    url = f"https://api.telegram.org/bot{settings.TELEGRAM_BOT_TOKEN}/sendMessage"
+    data = {"chat_id": chat_id, "text": text}
+    with httpx.Client(timeout=10) as client:
+        resp = client.post(url, json=data)
+        resp.raise_for_status()
+        return resp.json()
 
 @shared_task(bind=True, autoretry_for=(Exception,), retry_backoff=True, max_retries=3)
 def generate_image_task(self, request_id: int):
@@ -17,10 +34,10 @@ def generate_image_task(self, request_id: int):
             url_obj = supabase_upload_png(img)
             url = url_obj.get("public_url") if isinstance(url_obj, dict) else url_obj
             urls.append(url)
-            # шлём в Telegram (aiogram async из sync-задачи)
-            async_to_sync(bot.send_photo)(
+            # шлём в Telegram через прямой HTTP запрос
+            send_telegram_photo(
                 chat_id=req.chat_id,
-                photo=BufferedInputFile(img, filename=f"gen_{idx}.png"),
+                photo_bytes=img,
                 caption=f"Сгенерировано Gemini ({idx}/{req.quantity})"
             )
         req.status = "done"
@@ -30,6 +47,6 @@ def generate_image_task(self, request_id: int):
         req.status = "error"
         req.save(update_fields=["status"])
         # оповещение пользователя
-        async_to_sync(bot.send_message)(req.chat_id, "❌ Ошибка генерации изображения.")
+        send_telegram_message(req.chat_id, "❌ Ошибка генерации изображения.")
         raise
 
