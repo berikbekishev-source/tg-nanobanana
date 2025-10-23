@@ -1,9 +1,49 @@
-import base64, httpx, uuid
+import base64, httpx, uuid, json, io
 from typing import List, Tuple
 from django.conf import settings
 from supabase import create_client
 
 GEMINI_URL_TMPL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+
+def vertex_generate_images(prompt: str, quantity: int) -> List[bytes]:
+    """Генерация изображений через Vertex AI Imagen."""
+    from google.cloud import aiplatform
+    from google.oauth2 import service_account
+    from vertexai.preview.vision_models import ImageGenerationModel
+
+    # Parse credentials from environment
+    creds_json = settings.GOOGLE_APPLICATION_CREDENTIALS_JSON
+    if not creds_json:
+        raise ValueError("GOOGLE_APPLICATION_CREDENTIALS_JSON not set")
+
+    creds_dict = json.loads(creds_json)
+    credentials = service_account.Credentials.from_service_account_info(creds_dict)
+
+    # Initialize Vertex AI
+    project_id = getattr(settings, 'GCP_PROJECT_ID', creds_dict.get('project_id'))
+    location = getattr(settings, 'GCP_LOCATION', 'us-central1')
+    aiplatform.init(project=project_id, location=location, credentials=credentials)
+
+    # Load Imagen model
+    model = ImageGenerationModel.from_pretrained("imagen-3.0-generate-001")
+
+    images_bytes = []
+    for _ in range(quantity):
+        response = model.generate_images(
+            prompt=prompt,
+            number_of_images=1,
+            aspect_ratio="1:1",
+            safety_filter_level="block_some",
+            person_generation="allow_adult",
+        )
+
+        if response.images:
+            img = response.images[0]
+            buffer = io.BytesIO()
+            img._pil_image.save(buffer, format="PNG")
+            images_bytes.append(buffer.getvalue())
+
+    return images_bytes
 
 def gemini_generate_images(prompt: str, quantity: int) -> List[bytes]:
     """Возвращает список байтов изображений (разбираем inlineData или fileUri)."""
@@ -33,6 +73,18 @@ def gemini_generate_images(prompt: str, quantity: int) -> List[bytes]:
                 continue
             # иначе пустой ответ — пропускаем
     return imgs
+
+def generate_images(prompt: str, quantity: int) -> List[bytes]:
+    """
+    Unified image generation function.
+    Chooses between Vertex AI or Gemini API based on settings.
+    """
+    use_vertex = getattr(settings, 'USE_VERTEX_AI', False)
+
+    if use_vertex:
+        return vertex_generate_images(prompt, quantity)
+    else:
+        return gemini_generate_images(prompt, quantity)
 
 def supabase_upload_png(content: bytes) -> str:
     """Загружает PNG в Supabase Storage и возвращает ПУБЛИЧНЫЙ URL."""

@@ -141,6 +141,12 @@ SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
 SUPABASE_BUCKET = os.getenv("SUPABASE_BUCKET", "bot-images")
 
+# --- Google Vertex AI ---
+USE_VERTEX_AI = os.getenv("USE_VERTEX_AI", "false").lower() in ("true", "1", "yes")
+GOOGLE_APPLICATION_CREDENTIALS_JSON = os.getenv("GOOGLE_APPLICATION_CREDENTIALS_JSON")
+GCP_PROJECT_ID = os.getenv("GCP_PROJECT_ID")
+GCP_LOCATION = os.getenv("GCP_LOCATION", "us-central1")
+
 # --- Sentry (опционально) ---
 SENTRY_DSN = os.getenv("SENTRY_DSN")
 if SENTRY_DSN:

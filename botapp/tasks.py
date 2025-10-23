@@ -2,7 +2,7 @@ from celery import shared_task
 import httpx
 from django.conf import settings
 from .models import GenRequest
-from .services import gemini_generate_images, supabase_upload_png
+from .services import generate_images, supabase_upload_png
 
 def send_telegram_photo(chat_id: int, photo_bytes: bytes, caption: str):
     """Отправка фото в Telegram через Bot API напрямую (без aiogram)"""
@@ -27,7 +27,7 @@ def send_telegram_message(chat_id: int, text: str):
 def generate_image_task(self, request_id: int):
     req = GenRequest.objects.get(id=request_id)
     try:
-        imgs = gemini_generate_images(req.prompt, req.quantity)
+        imgs = generate_images(req.prompt, req.quantity)
         urls = []
         for idx, img in enumerate(imgs, start=1):
             # грузим в Storage
@@ -35,10 +35,11 @@ def generate_image_task(self, request_id: int):
             url = url_obj.get("public_url") if isinstance(url_obj, dict) else url_obj
             urls.append(url)
             # шлём в Telegram через прямой HTTP запрос
+            ai_service = "Vertex AI Imagen" if getattr(settings, 'USE_VERTEX_AI', False) else "Gemini"
             send_telegram_photo(
                 chat_id=req.chat_id,
                 photo_bytes=img,
-                caption=f"Сгенерировано Gemini ({idx}/{req.quantity})"
+                caption=f"Сгенерировано {ai_service} ({idx}/{req.quantity})"
             )
         req.status = "done"
         req.result_urls = urls

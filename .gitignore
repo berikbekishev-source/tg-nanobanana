@@ -27,4 +27,4 @@ build/
 .vscode/
 
 # Ignore nested git repos
-tg-nanobanana/
+tg-nanobanana/railway.worker.json
