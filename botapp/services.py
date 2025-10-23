@@ -1,5 +1,5 @@
 import base64, httpx, uuid, json, io
-from typing import List, Tuple
+from typing import List
 from django.conf import settings
 from supabase import create_client
 
