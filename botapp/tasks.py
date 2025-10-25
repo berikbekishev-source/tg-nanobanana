@@ -344,7 +344,6 @@ def combine_videos_with_crossfade(
 
 
 def download_telegram_file(file_id: str) -> Tuple[bytes, str]:
-def download_telegram_file(file_id: str) -> Tuple[bytes, str]:
     """Скачать файл из Telegram и вернуть (bytes, mime_type)."""
     api_base = f"https://api.telegram.org/bot{settings.TELEGRAM_BOT_TOKEN}"
     with httpx.Client(timeout=httpx.Timeout(60.0, connect=10.0)) as client:
