@@ -229,8 +229,30 @@ def lava_webhook(request):
 
             logger.info(f"Payment {transaction_id} completed. Credited {credits_amount} tokens to user {trans.user.chat_id}")
 
-            # TODO: Отправить уведомление пользователю в Telegram
-            # Можно использовать Celery задачу
+            # Отправляем уведомление пользователю в Telegram
+            try:
+                import asyncio
+                from botapp.telegram import bot
+
+                message_text = (
+                    f"✅ **Платеж успешно выполнен!**\n\n"
+                    f"💰 Зачислено: {int(credits_amount)} токенов\n"
+                    f"💵 Сумма: ${trans.amount}\n\n"
+                    f"Ваш новый баланс: {int(user_balance.balance)} токенов\n\n"
+                    f"Спасибо за покупку! 🎉\n"
+                    f"Теперь вы можете создавать изображения и видео."
+                )
+
+                # Отправляем сообщение асинхронно
+                asyncio.run(bot.send_message(
+                    chat_id=trans.user.chat_id,
+                    text=message_text,
+                    parse_mode="Markdown"
+                ))
+                logger.info(f"Payment notification sent to user {trans.user.chat_id}")
+            except Exception as e:
+                logger.error(f"Failed to send payment notification: {e}")
+                # Не падаем, если не удалось отправить уведомление
 
             return JsonResponse({"ok": True, "status": "completed"})
 
