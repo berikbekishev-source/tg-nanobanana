@@ -243,13 +243,18 @@
             try {
                 // Пробуем использовать Telegram метод
                 if (tg && tg.showAlert && typeof tg.showAlert === 'function') {
-                    tg.showAlert(message);
-                } else {
-                    // Используем обычный alert как запасной вариант
-                    alert(message);
+                    try {
+                        tg.showAlert(message);
+                        return; // Если успешно, выходим
+                    } catch (telegramError) {
+                        // Если Telegram метод не поддерживается, используем fallback
+                        console.log('Telegram showAlert not supported, using fallback');
+                    }
                 }
+                // Используем обычный alert как запасной вариант
+                alert(message);
             } catch (e) {
-                // Если произошла ошибка, используем обычный alert
+                // Если произошла любая ошибка, используем обычный alert
                 console.error('Error showing notification:', e);
                 alert(message);
             }
@@ -361,10 +366,18 @@
                         credits: selectedCredits,
                         amount: selectedPrice,
                         currency: 'USD',
-                        payment_method: 'card',
-                        user_id: userId || null,
-                        init_data: tg?.initData || ''
+                        payment_method: 'card'
                     };
+
+                    // Добавляем user_id только если он есть
+                    if (userId) {
+                        requestData.user_id = userId;
+                    }
+
+                    // Добавляем init_data только если есть
+                    if (tg?.initData) {
+                        requestData.init_data = tg.initData;
+                    }
 
                     console.log('Sending request:', requestData);
 
