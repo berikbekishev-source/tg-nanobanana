@@ -362,6 +362,7 @@ def combine_videos_with_crossfade(
                 "-filter_complex", ";".join(filter_parts),
                 *map_args,
                 "-c:v", "libx264",
+                "-threads", "2",
                 "-preset", "medium",
                 "-crf", "18",
                 "-pix_fmt", "yuv420p",
