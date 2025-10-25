@@ -70,7 +70,7 @@ def verify_signature(payload: str, signature: str) -> bool:
 
 def parse_webhook_data(payload: Dict) -> Dict:
     """
-    Parse webhook data from Lava.top
+    Parse webhook data from Lava.top according to official specification
 
     Args:
         payload: Raw webhook data
@@ -79,16 +79,44 @@ def parse_webhook_data(payload: Dict) -> Dict:
         Parsed payment data
     """
 
-    return {
-        'order_id': payload.get('order_id') or payload.get('custom_id'),
-        'amount': Decimal(str(payload.get('amount', 0))),
-        'status': payload.get('status'),
-        'payment_id': payload.get('id') or payload.get('payment_id'),
-        'currency': payload.get('currency', 'USD'),
-        'email': payload.get('email'),
-        'custom_fields': payload.get('custom_fields', {}),
-        'raw_data': payload
-    }
+    # Handle both old format (for backward compatibility) and new official format
+
+    # Official Lava.top format
+    if 'eventType' in payload:
+        return {
+            'event_type': payload.get('eventType'),
+            'order_id': payload.get('contractId'),  # contractId is the transaction ID
+            'amount': Decimal(str(payload.get('amount', 0))),
+            'status': payload.get('status'),
+            'payment_id': payload.get('contractId'),
+            'currency': payload.get('currency', 'RUB'),
+            'email': payload.get('buyer', {}).get('email') if payload.get('buyer') else None,
+            'product_id': payload.get('product', {}).get('id') if payload.get('product') else None,
+            'product_title': payload.get('product', {}).get('title') if payload.get('product') else None,
+            'error_message': payload.get('errorMessage', ''),
+            'timestamp': payload.get('timestamp'),
+            'parent_contract_id': payload.get('parentContractId'),  # For recurring subscriptions
+            'raw_data': payload
+        }
+
+    # Legacy format (our test format)
+    else:
+        return {
+            'event_type': 'payment.success' if payload.get('status') == 'success' else 'payment.failed',
+            'order_id': payload.get('order_id') or payload.get('custom_id'),
+            'amount': Decimal(str(payload.get('amount', 0))),
+            'status': payload.get('status'),
+            'payment_id': payload.get('id') or payload.get('payment_id'),
+            'currency': payload.get('currency', 'USD'),
+            'email': payload.get('email'),
+            'product_id': None,
+            'product_title': None,
+            'error_message': '',
+            'timestamp': payload.get('created_at'),
+            'parent_contract_id': None,
+            'custom_fields': payload.get('custom_fields', {}),
+            'raw_data': payload
+        }
 
 
 def process_webhook(payload: Dict, signature: str = None) -> Dict:

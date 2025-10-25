@@ -9,12 +9,12 @@ def miniapp_payment(request):
     """
     Главная страница Telegram Mini App для оплаты
     """
-    # Путь к статическим файлам
-    static_dir = os.path.join(os.path.dirname(__file__), 'static')
-    index_path = os.path.join(static_dir, 'index.html')
+    # Путь к файлу оплаты
+    webapp_dir = os.path.join(os.path.dirname(__file__), 'webapp')
+    payment_path = os.path.join(webapp_dir, 'payment.html')
 
     # Читаем HTML файл
-    with open(index_path, 'r', encoding='utf-8') as f:
+    with open(payment_path, 'r', encoding='utf-8') as f:
         html_content = f.read()
 
     return HttpResponse(html_content, content_type='text/html')

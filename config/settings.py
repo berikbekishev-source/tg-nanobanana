@@ -42,7 +42,7 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'ninja',         # Django Ninja
     'botapp.apps.BotappConfig',        # наше приложение бота
-    'miniapp',       # Telegram Mini App
+    'lavatop',       # Payment System (Lava.top)
 ]
 
 MIDDLEWARE = [

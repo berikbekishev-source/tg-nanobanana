@@ -90,8 +90,8 @@ def create_payment(request, data: CreatePaymentRequest):
     try:
         logger.info(f"Payment request received: credits={data.credits}, amount={data.amount}, user_id={data.user_id}")
 
-        # Импортируем из нового модуля lavatop
-        from lavatop import get_payment_url
+        # Импортируем из текущего модуля
+        from . import get_payment_url
 
         # Валидация Telegram данных (временно отключена для тестирования)
         if data.init_data:
@@ -216,7 +216,7 @@ def lava_webhook(request):
     """
     Webhook для обработки платежей от Lava.top
     """
-    from lavatop.webhook import parse_webhook_data
+    from .webhook import parse_webhook_data
     from django.db import transaction as db_transaction
     import json
 
@@ -228,6 +228,14 @@ def lava_webhook(request):
             payload = dict(request.POST.items())
 
         logger.info(f"Lava webhook received: {payload}")
+
+        # Логируем важные поля для отладки
+        if isinstance(payload, dict):
+            logger.info(f"Event Type: {payload.get('eventType', 'N/A')}")
+            logger.info(f"Contract ID: {payload.get('contractId', 'N/A')}")
+            logger.info(f"Status: {payload.get('status', 'N/A')}")
+            if payload.get('product'):
+                logger.info(f"Product: {payload.get('product', {}).get('title', 'N/A')}")
 
         # Проверка API ключа из заголовка
         api_key = request.headers.get('Authorization') or request.headers.get('X-API-Key')
@@ -241,21 +249,69 @@ def lava_webhook(request):
         webhook_data = parse_webhook_data(payload)
 
         # Ищем транзакцию
-        transaction_id = webhook_data.get('order_id')
-        if not transaction_id:
+        order_id = webhook_data.get('order_id')
+        if not order_id:
             logger.error("No order_id in Lava webhook")
             return JsonResponse({"ok": False, "error": "Missing order_id"}, status=400)
 
+        # Пытаемся найти транзакцию
+        trans = None
+
+        # Если order_id - это число, ищем по ID
         try:
+            transaction_id = int(order_id)
             trans = Transaction.objects.get(id=transaction_id)
-        except Transaction.DoesNotExist:
-            logger.error(f"Transaction {transaction_id} not found")
+            logger.info(f"Found transaction by ID: {transaction_id}")
+        except (ValueError, Transaction.DoesNotExist):
+            # Если не число или не найдено по ID, пробуем найти по payment_id
+            try:
+                trans = Transaction.objects.filter(payment_id=order_id).first()
+                if trans:
+                    logger.info(f"Found transaction by payment_id: {order_id}")
+            except:
+                pass
+
+        # Если транзакция не найдена и это новый платеж, создаем новую
+        if not trans and webhook_data.get('event_type') == 'payment.success':
+            # Для новых платежей от Lava.top создаем транзакцию
+            logger.info(f"Creating new transaction for Lava.top payment: {order_id}")
+
+            # Пытаемся найти пользователя по email
+            email = webhook_data.get('email')
+            if email:
+                # В реальной системе нужно связать email с пользователем
+                # Пока используем тестового пользователя
+                try:
+                    test_user = TgUser.objects.get(chat_id=123456789)
+                    user_balance, _ = UserBalance.objects.get_or_create(user=test_user)
+
+                    trans = Transaction.objects.create(
+                        user=test_user,
+                        type='deposit',
+                        amount=webhook_data.get('amount', Decimal('0')),
+                        balance_after=user_balance.balance,
+                        description=f"Payment from Lava.top: {webhook_data.get('product_title', 'Unknown')}",
+                        payment_method='lava.top',
+                        payment_id=order_id,
+                        is_pending=False,
+                        is_completed=False
+                    )
+                    logger.info(f"Created new transaction {trans.id} for Lava.top payment")
+                except Exception as e:
+                    logger.error(f"Failed to create transaction: {e}")
+                    return JsonResponse({"ok": False, "error": "Failed to create transaction"}, status=500)
+
+        if not trans:
+            logger.error(f"Transaction {order_id} not found")
             return JsonResponse({"ok": False, "error": "Transaction not found"}, status=404)
 
-        # Проверяем статус платежа
+        # Проверяем тип события и статус платежа
+        event_type = webhook_data.get('event_type', '')
         payment_status = webhook_data.get('status', '').lower()
 
-        if payment_status in ['success', 'paid', 'completed']:
+        # Обработка успешных платежей
+        if (event_type == 'payment.success' or
+            payment_status in ['success', 'paid', 'completed', 'subscription-active']):
             # Платеж успешен - начисляем токены
             with db_transaction.atomic():
                 # Блокируем баланс для обновления
@@ -277,7 +333,7 @@ def lava_webhook(request):
                 trans.balance_after = user_balance.balance
                 trans.save()
 
-            logger.info(f"Payment {transaction_id} completed. Credited {credits_amount} tokens to user {trans.user.chat_id}")
+            logger.info(f"Payment {trans.id} completed. Credited {credits_amount} tokens to user {trans.user.chat_id}")
 
             # Отправляем уведомление пользователю в Telegram
             try:
@@ -306,14 +362,15 @@ def lava_webhook(request):
 
             return JsonResponse({"ok": True, "status": "completed"})
 
-        elif payment_status in ['failed', 'cancelled', 'canceled']:
+        elif (event_type == 'payment.failed' or
+              payment_status in ['failed', 'cancelled', 'canceled', 'subscription-failed']):
             # Платеж не прошел
             trans.is_pending = False
             trans.is_completed = False
             trans.payment_data = webhook_data.get('raw_data', {})
             trans.save()
 
-            logger.info(f"Payment {transaction_id} failed/cancelled")
+            logger.info(f"Payment {trans.id} failed/cancelled")
             return JsonResponse({"ok": True, "status": "failed"})
 
         else:

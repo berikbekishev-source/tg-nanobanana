@@ -20,16 +20,16 @@ from django.urls import path
 from django.conf import settings
 from django.conf.urls.static import static
 from botapp.api import api  # Ninja API
-from miniapp.api import miniapp_api  # Mini App API
-from miniapp.views import miniapp_payment
+from lavatop.api import miniapp_api  # Payment API
+from lavatop.views import miniapp_payment
 
 urlpatterns = [
     path("admin/", admin.site.urls),
     path("api/", api.urls),  # /api/telegram/webhook и /api/health
-    path("api/miniapp/", miniapp_api.urls),  # Mini App API endpoints
-    path("miniapp/", miniapp_payment, name='miniapp_payment'),  # Mini App главная страница
+    path("api/miniapp/", miniapp_api.urls),  # Payment API endpoints
+    path("miniapp/", miniapp_payment, name='miniapp_payment'),  # Payment page
 ]
 
-# Статические файлы для Mini App
+# Статические файлы для Payment App
 if settings.DEBUG:
-    urlpatterns += static('/miniapp/static/', document_root='miniapp/static')
+    urlpatterns += static('/lavatop/webapp/', document_root='lavatop/webapp')
