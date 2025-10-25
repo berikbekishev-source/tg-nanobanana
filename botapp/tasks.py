@@ -313,7 +313,8 @@ def combine_videos_with_crossfade(
             candidate_fades.append(actual_d1 / 2)
         if actual_d2:
             candidate_fades.append(actual_d2 / 2)
-        fade = max(0.5, min(candidate_fades))
+        raw_fade = min(value for value in candidate_fades if value)
+        fade = max(0.1, min(0.5, raw_fade))
 
         pre_cut = max(actual_d1 - fade, 0.0)
 
