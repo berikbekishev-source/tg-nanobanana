@@ -33,7 +33,7 @@ def revert_veo_api_model(apps, schema_editor):
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("botapp", "0011_merge_0007_0010"),
+        ("botapp", "0007_update_video_defaults"),
     ]
 
     operations = [
