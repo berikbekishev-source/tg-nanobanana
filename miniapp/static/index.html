@@ -103,8 +103,22 @@
             color: #000000;
         }
 
-        .credit-btn:hover:not(.active) {
+        .credit-btn:hover:not(.active):not(:disabled) {
             background-color: #3a3a3a;
+        }
+
+        .credit-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            position: relative;
+        }
+
+        .credit-btn:disabled::after {
+            content: "(скоро)";
+            font-size: 12px;
+            opacity: 0.8;
+            display: block;
+            margin-top: 2px;
         }
 
         /* Метод оплаты */
@@ -206,9 +220,9 @@
             <label class="label">Количество кредитов</label>
             <div class="credits-grid">
                 <button class="credit-btn active" data-credits="100" data-price="5">100 кредитов</button>
-                <button class="credit-btn" data-credits="200" data-price="10">200 кредитов</button>
-                <button class="credit-btn" data-credits="500" data-price="25">500 кредитов</button>
-                <button class="credit-btn" data-credits="1000" data-price="50">1000 кредитов</button>
+                <button class="credit-btn" data-credits="200" data-price="10" disabled title="Скоро будет доступно">200 кредитов</button>
+                <button class="credit-btn" data-credits="500" data-price="25" disabled title="Скоро будет доступно">500 кредитов</button>
+                <button class="credit-btn" data-credits="1000" data-price="50" disabled title="Скоро будет доступно">1000 кредитов</button>
             </div>
         </div>
 
@@ -317,6 +331,12 @@
             // Обработка выбора кредитов
             creditButtons.forEach(btn => {
                 btn.addEventListener('click', () => {
+                    // Игнорировать клики на отключенные кнопки
+                    if (btn.disabled) {
+                        showNotification('Этот пакет токенов скоро будет доступен');
+                        return;
+                    }
+
                     // Убрать активный класс со всех кнопок
                     creditButtons.forEach(b => b.classList.remove('active'));
 
