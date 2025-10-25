@@ -9,6 +9,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import json
 import os
 import tempfile
+import subprocess
 
 from .models import GenRequest, TgUser, AIModel
 from .services import generate_images, supabase_upload_png, supabase_upload_video
@@ -106,46 +107,141 @@ def fetch_remote_file(url: str) -> bytes:
         return resp.content
 
 
-def extract_last_frame(video_bytes: bytes) -> Tuple[bytes, float, float, Tuple[int, int]]:
-    """
-    Сохранить последний кадр ролика и вернуть его байты, длительность, FPS и размер.
-    """
-    import moviepy.editor as mpe  # noqa: WPS433
+def _run_command(command: List[str]) -> str:
+    result = subprocess.run(
+        command,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(
+            f"Command failed ({' '.join(command)}): {result.stderr.strip()}"
+        )
+    return result.stdout.strip()
 
-    temp_paths: List[str] = []
-    clip = None
-    frame_path = ""
+
+def _probe_frames(path: str) -> int:
     try:
-        fd_video, video_path = tempfile.mkstemp(suffix=".mp4")
-        os.close(fd_video)
-        with open(video_path, "wb") as fh_video:
-            fh_video.write(video_bytes)
-        temp_paths.append(video_path)
+        output = _run_command([
+            "ffprobe",
+            "-v", "error",
+            "-select_streams", "v:0",
+            "-count_frames",
+            "-show_entries", "stream=nb_read_frames",
+            "-of", "default=nokey=1:noprint_wrappers=1",
+            path,
+        ])
+        return int(float(output))
+    except Exception:
+        return 0
 
-        clip = mpe.VideoFileClip(video_path)
-        fps = clip.fps or 24.0
-        duration = float(clip.duration or 0.0)
-        frame_time = max(duration - (1.0 / fps), 0.0)
+
+def _probe_duration(path: str) -> Optional[float]:
+    try:
+        out = _run_command([
+            "ffprobe",
+            "-v", "error",
+            "-show_entries", "format=duration",
+            "-of", "default=nokey=1:noprint_wrappers=1",
+            path,
+        ])
+        return float(out)
+    except Exception:
+        return None
+
+
+def _probe_resolution(path: str) -> Tuple[Optional[int], Optional[int]]:
+    try:
+        out = _run_command([
+            "ffprobe",
+            "-v", "error",
+            "-select_streams", "v:0",
+            "-show_entries", "stream=width,height",
+            "-of", "csv=p=0",
+            path,
+        ])
+        width, height = out.split(",")
+        return int(width), int(height)
+    except Exception:
+        return None, None
+
+
+def _probe_has_audio(path: str) -> bool:
+    try:
+        out = _run_command([
+            "ffprobe",
+            "-v", "error",
+            "-select_streams", "a:0",
+            "-show_entries", "stream=codec_type",
+            "-of", "csv=p=0",
+            path,
+        ])
+        return out.strip() == "audio"
+    except Exception:
+        return False
+
+
+def extract_last_frame(video_bytes: bytes) -> bytes:
+    """
+    Извлекает последний кадр видео (PNG) с помощью ffmpeg.
+    """
+    temp_paths: List[str] = []
+    frame_bytes: Optional[bytes] = None
+    try:
+        fd_input, input_path = tempfile.mkstemp(suffix=".mp4")
+        os.close(fd_input)
+        with open(input_path, "wb") as fh:
+            fh.write(video_bytes)
+        temp_paths.append(input_path)
 
         fd_frame, frame_path = tempfile.mkstemp(suffix=".png")
         os.close(fd_frame)
-        clip.save_frame(frame_path, t=frame_time)
+        temp_paths.append(frame_path)
+
+        total_frames = _probe_frames(input_path)
+        if total_frames > 0:
+            last_idx = max(total_frames - 1, 0)
+            select_expr = f"select='eq(n,{last_idx})'"
+            command = [
+                "ffmpeg",
+                "-y",
+                "-i", input_path,
+                "-vf", select_expr,
+                "-vframes", "1",
+                frame_path,
+            ]
+        else:
+            command = [
+                "ffmpeg",
+                "-y",
+                "-sseof", "-0.04",
+                "-i", input_path,
+                "-vframes", "1",
+                frame_path,
+            ]
+
+        try:
+            _run_command(command)
+        except RuntimeError:
+            fallback_command = [
+                "ffmpeg",
+                "-y",
+                "-i", input_path,
+                "-vframes", "1",
+                frame_path,
+            ]
+            _run_command(fallback_command)
+
         with open(frame_path, "rb") as fh_frame:
             frame_bytes = fh_frame.read()
 
-        width, height = clip.size
-        return frame_bytes, duration, fps, (width, height)
+        if not frame_bytes:
+            raise RuntimeError("Не удалось извлечь кадр видео.")
+
+        return frame_bytes
     finally:
-        if clip:
-            try:
-                clip.close()
-            except Exception:
-                pass
-        if frame_path and os.path.exists(frame_path):
-            try:
-                os.unlink(frame_path)
-            except OSError:
-                pass
         for path in temp_paths:
             try:
                 if os.path.exists(path):
@@ -160,21 +256,15 @@ def combine_videos_with_crossfade(
     fade_duration: float = 1.0,
 ) -> Tuple[bytes, float, Tuple[int, int]]:
     """
-    Склеить два видео с плавным переходом (видео и аудио) и вернуть итоговый ролик.
-
-    Returns:
-        (video_bytes, duration_seconds, (width, height))
+    Склеивает два видео с плавным переходом (видео и, при наличии, аудио) через ffmpeg.
     """
-    import moviepy.editor as mpe  # noqa: WPS433 — тяжелая зависимость, импортируем локально
-
     temp_paths: List[str] = []
-    clip1 = clip2 = final_clip = None
-    output_path = temp_audio_path = ""
+    output_path = ""
     try:
         fd1, path1 = tempfile.mkstemp(suffix=".mp4")
         os.close(fd1)
-        with open(path1, "wb") as fh1:
-            fh1.write(part1_bytes)
+        with open(path1, "wb") as fh:
+            fh.write(part1_bytes)
         temp_paths.append(path1)
 
         fd2, path2 = tempfile.mkstemp(suffix=".mp4")
@@ -183,62 +273,62 @@ def combine_videos_with_crossfade(
             fh2.write(part2_bytes)
         temp_paths.append(path2)
 
-        clip1 = mpe.VideoFileClip(path1)
-        clip2 = mpe.VideoFileClip(path2)
-
-        computed_fade = min(fade_duration, clip1.duration / 2, clip2.duration / 2)
-        fade = max(computed_fade, 0.5)
-
-        video_clip1 = clip1.fx(mpe.vfx.fadeout, fade)
-        video_clip2 = clip2.fx(mpe.vfx.fadein, fade)
-
-        if clip1.audio:
-            video_clip1 = video_clip1.audio_fadeout(fade)
-        if clip2.audio:
-            video_clip2 = video_clip2.audio_fadein(fade)
-
-        final_clip = mpe.concatenate_videoclips(
-            [video_clip1, video_clip2],
-            method="compose",
-            padding=-fade,
-        )
-
-        fps = clip2.fps or clip1.fps or 24
-
         fd_out, output_path = tempfile.mkstemp(suffix=".mp4")
         os.close(fd_out)
         temp_paths.append(output_path)
 
-        temp_audio_path = f"{output_path}.m4a"
-        final_clip.write_videofile(
+        duration1 = _probe_duration(path1) or 0.0
+        duration2 = _probe_duration(path2) or 0.0
+
+        fade = max(min(fade_duration, duration1 / 2 if duration1 else fade_duration, duration2 / 2 if duration2 else fade_duration), 0.5)
+        offset = max(duration1 - fade, 0.0)
+
+        has_audio1 = _probe_has_audio(path1)
+        has_audio2 = _probe_has_audio(path2)
+
+        filter_parts = [
+            f"[0:v][1:v]xfade=transition=fade:duration={fade:.3f}:offset={offset:.3f}[v]"
+        ]
+        map_args: List[str] = ["-map", "[v]"]
+        audio_codec_args: List[str] = ["-an"]
+
+        if has_audio1 and has_audio2:
+            filter_parts.append(f"[0:a][1:a]acrossfade=d={fade:.3f}[a]")
+            map_args.extend(["-map", "[a]"])
+            audio_codec_args = ["-c:a", "aac", "-b:a", "192k"]
+        elif has_audio2:
+            map_args.extend(["-map", "1:a"])
+            audio_codec_args = ["-c:a", "aac", "-b:a", "192k"]
+        elif has_audio1:
+            map_args.extend(["-map", "0:a"])
+            audio_codec_args = ["-c:a", "aac", "-b:a", "192k"]
+
+        command = [
+            "ffmpeg",
+            "-y",
+            "-i", path1,
+            "-i", path2,
+            "-filter_complex", ";".join(filter_parts),
+            *map_args,
+            "-c:v", "libx264",
+            "-preset", "medium",
+            "-crf", "18",
+            "-pix_fmt", "yuv420p",
+            *audio_codec_args,
+            "-movflags", "+faststart",
             output_path,
-            codec="libx264",
-            audio_codec="aac",
-            temp_audiofile=temp_audio_path,
-            remove_temp=True,
-            fps=fps,
-            logger=None,
-        )
+        ]
 
-        with open(output_path, "rb") as f_out:
-            combined_bytes = f_out.read()
+        _run_command(command)
 
-        duration = float(final_clip.duration or (clip1.duration + clip2.duration - fade))
-        width, height = final_clip.size
+        with open(output_path, "rb") as fh_out:
+            combined_bytes = fh_out.read()
 
-        return combined_bytes, duration, (width, height)
+        final_duration = duration1 + duration2 - fade if duration1 and duration2 else duration1 + duration2
+        width, height = _probe_resolution(output_path)
+
+        return combined_bytes, final_duration, (width or 0, height or 0)
     finally:
-        for clip in (clip1, clip2, final_clip):
-            try:
-                if clip:
-                    clip.close()
-            except Exception:
-                pass
-        if temp_audio_path and os.path.exists(temp_audio_path):
-            try:
-                os.unlink(temp_audio_path)
-            except OSError:
-                pass
         for path in temp_paths:
             try:
                 if os.path.exists(path):
@@ -483,7 +573,7 @@ def extend_video_task(self, request_id: int):
             raise VideoGenerationError("Не найдена ссылка на исходное видео.")
 
         part1_bytes = fetch_remote_file(part1_url)
-        frame_bytes, _, _, _ = extract_last_frame(part1_bytes)
+        frame_bytes = extract_last_frame(part1_bytes)
 
         result = provider.generate(
             prompt=prompt,
@@ -495,7 +585,7 @@ def extend_video_task(self, request_id: int):
         )
         part2_bytes = result.content
 
-        combined_bytes, combined_duration, (_width, height) = combine_videos_with_crossfade(part1_bytes, part2_bytes)
+        combined_bytes, combined_duration, (width, height) = combine_videos_with_crossfade(part1_bytes, part2_bytes)
 
         upload_result = supabase_upload_video(combined_bytes, mime_type="video/mp4")
         public_url = upload_result.get("public_url") if isinstance(upload_result, dict) else upload_result
