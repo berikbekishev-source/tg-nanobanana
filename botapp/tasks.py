@@ -328,15 +328,10 @@ def combine_videos_with_crossfade(
         def build_command(include_audio_filter: bool) -> List[str]:
             filter_parts: List[str] = [
                 f"[0:v]trim=0:{pre_cut:.3f},setpts=PTS-STARTPTS[v0_tmp]",
-                f"[0:v]trim={pre_cut:.3f}:{actual_d1:.3f},setpts=PTS-STARTPTS[v1_tmp]",
-                f"[1:v]trim=0:{fade:.3f},setpts=PTS-STARTPTS[v2_tmp]",
-                f"[1:v]trim={fade:.3f}:{actual_d2:.3f},setpts=PTS-STARTPTS[v3_tmp]",
+                f"[1:v]trim=0:{actual_d2:.3f},setpts=PTS-STARTPTS[v1_tmp]",
                 f"[v0_tmp]fps=fps={target_fps:.6f}[v0]",
                 f"[v1_tmp]fps=fps={target_fps:.6f}[v1]",
-                f"[v2_tmp]fps=fps={target_fps:.6f}[v2]",
-                f"[v3_tmp]fps=fps={target_fps:.6f}[v3]",
-                f"[v1][v2]xfade=transition=fade:duration={fade:.3f}:offset=0[vf]",
-                "[v0][vf][v3]concat=n=3:v=1:a=0[vout]",
+                "[v0][v1]concat=n=2:v=1:a=0[vout]",
             ]
 
             map_args: List[str] = ["-map", "[vout]"]
