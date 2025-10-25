@@ -131,22 +131,20 @@ def _run_command(command: List[str]) -> str:
 
 
 def _probe_duration(path: str) -> Optional[float]:
+    """Возвращает длительность ролика (в секундах), используя ffmpeg."""
     try:
-        output = _run_command([
+        info = _run_command([
             _ffmpeg_bin(),
-            "-i", path,
             "-hide_banner",
+            "-i", path,
             "-f", "null",
             "-"
         ])
     except RuntimeError as exc:
-        # ffmpeg prints duration to stderr; ignore errors from -f null
-        text = str(exc)
-    else:
-        text = output
+        info = str(exc)
 
-    for line in text.splitlines():
-        if "Duration" in line:
+    for line in info.splitlines():
+        if "Duration:" in line:
             try:
                 duration_str = line.split("Duration:", 1)[1].split(",", 1)[0].strip()
                 h, m, s = duration_str.split(":")
@@ -167,7 +165,7 @@ def _detect_audio(path: str) -> bool:
     return "Audio:" in proc.stderr
 
 
-def extract_last_frame(video_bytes: bytes) -> bytes:
+def extract_last_frame(video_bytes: bytes, duration_hint: Optional[float] = None) -> bytes:
     """Извлекает последний кадр видео (PNG) с помощью ffmpeg."""
     temp_paths: List[str] = []
     try:
@@ -181,31 +179,57 @@ def extract_last_frame(video_bytes: bytes) -> bytes:
         os.close(fd_frame)
         temp_paths.append(frame_path)
 
-        command = [
-            _ffmpeg_bin(),
-            "-y",
-            "-sseof", "-0.04",
-            "-i", input_path,
-            "-vframes", "1",
-            frame_path,
-        ]
-        try:
-            _run_command(command)
-        except RuntimeError:
-            fallback_command = [
-                _ffmpeg_bin(),
-                "-y",
+        attempts: List[List[str]] = []
+        if duration_hint and duration_hint > 0.2:
+            seek_time = max(duration_hint - 0.1, 0.0)
+            attempts.append([
+                _ffmpeg_bin(), "-y",
+                "-ss", f"{seek_time:.3f}",
                 "-i", input_path,
-                "-vframes", "1",
+                "-frames:v", "1",
                 frame_path,
-            ]
-            _run_command(fallback_command)
+            ])
+        attempts.extend([
+            [
+                _ffmpeg_bin(), "-y",
+                "-sseof", "-0.1",
+                "-i", input_path,
+                "-frames:v", "1",
+                frame_path,
+            ],
+            [
+                _ffmpeg_bin(), "-y",
+                "-i", input_path,
+                "-vf", "select='gte(n,n_forced-1)'",
+                "-frames:v", "1",
+                frame_path,
+            ],
+            [
+                _ffmpeg_bin(), "-y",
+                "-i", input_path,
+                "-frames:v", "1",
+                frame_path,
+            ],
+        ])
 
-        with open(frame_path, "rb") as fh_frame:
-            frame_bytes = fh_frame.read()
+        frame_bytes: Optional[bytes] = None
+        errors: List[str] = []
+        for command in attempts:
+            try:
+                _run_command(command)
+            except RuntimeError as exc:
+                errors.append(str(exc))
+                continue
+            if os.path.exists(frame_path) and os.path.getsize(frame_path) > 0:
+                with open(frame_path, "rb") as fh_frame:
+                    data = fh_frame.read()
+                if data:
+                    frame_bytes = data
+                    break
 
         if not frame_bytes:
-            raise RuntimeError("Не удалось извлечь кадр видео.")
+            extra = f" Детали: {' | '.join(errors)}" if errors else ""
+            raise RuntimeError("Не удалось извлечь кадр видео." + extra)
 
         return frame_bytes
     finally:
@@ -228,6 +252,7 @@ def combine_videos_with_crossfade(
     Склеивает два видео с плавным переходом (видео и, при наличии, аудио) через ffmpeg.
     """
     temp_paths: List[str] = []
+    output_path = ""
     try:
         fd1, path1 = tempfile.mkstemp(suffix=".mp4")
         os.close(fd1)
@@ -245,17 +270,17 @@ def combine_videos_with_crossfade(
         os.close(fd_out)
         temp_paths.append(output_path)
 
-        actual_duration1 = duration1 or _probe_duration(path1) or fade_duration
-        actual_duration2 = duration2 or _probe_duration(path2) or fade_duration
+        actual_d1 = duration1 or _probe_duration(path1) or fade_duration
+        actual_d2 = duration2 or _probe_duration(path2) or fade_duration
 
         candidate_fades = [fade_duration]
-        if actual_duration1:
-            candidate_fades.append(actual_duration1 / 2)
-        if actual_duration2:
-            candidate_fades.append(actual_duration2 / 2)
+        if actual_d1:
+            candidate_fades.append(actual_d1 / 2)
+        if actual_d2:
+            candidate_fades.append(actual_d2 / 2)
         fade = max(0.5, min(candidate_fades))
 
-        pre_cut = max(actual_duration1 - fade, 0.0)
+        pre_cut = max(actual_d1 - fade, 0.0)
 
         has_audio1 = _detect_audio(path1)
         has_audio2 = _detect_audio(path2)
@@ -263,10 +288,10 @@ def combine_videos_with_crossfade(
 
         filter_parts: List[str] = [
             f"[0:v]trim=0:{pre_cut:.3f},setpts=PTS-STARTPTS[v0]",
-            f"[0:v]trim={pre_cut:.3f}:{actual_duration1:.3f},setpts=PTS-STARTPTS[v1]",
+            f"[0:v]trim={pre_cut:.3f}:{actual_d1:.3f},setpts=PTS-STARTPTS[v1]",
             f"[1:v]trim=0:{fade:.3f},setpts=PTS-STARTPTS[v2]",
-            f"[1:v]trim={fade:.3f}:{actual_duration2:.3f},setpts=PTS-STARTPTS[v3]",
-            f"[v1][v2]xfade=transition=fade:duration={fade:.3f}:offset=0,format=yuv420p[vf]",
+            f"[1:v]trim={fade:.3f}:{actual_d2:.3f},setpts=PTS-STARTPTS[v3]",
+            f"[v1][v2]xfade=transition=fade:duration={fade:.3f}:offset=0[vf]",
             "[v0][vf][v3]concat=n=3:v=1:a=0[vout]",
         ]
 
@@ -276,9 +301,9 @@ def combine_videos_with_crossfade(
         if include_audio:
             filter_parts.extend([
                 f"[0:a]atrim=0:{pre_cut:.3f},asetpts=PTS-STARTPTS[a0]",
-                f"[0:a]atrim={pre_cut:.3f}:{actual_duration1:.3f},asetpts=PTS-STARTPTS[a1]",
+                f"[0:a]atrim={pre_cut:.3f}:{actual_d1:.3f},asetpts=PTS-STARTPTS[a1]",
                 f"[1:a]atrim=0:{fade:.3f},asetpts=PTS-STARTPTS[a2]",
-                f"[1:a]atrim={fade:.3f}:{actual_duration2:.3f},asetpts=PTS-STARTPTS[a3]",
+                f"[1:a]atrim={fade:.3f}:{actual_d2:.3f},asetpts=PTS-STARTPTS[a3]",
                 f"[a1][a2]acrossfade=d={fade:.3f}[af]",
                 "[a0][af][a3]concat=n=3:v=0:a=1[aout]",
             ])
@@ -306,7 +331,7 @@ def combine_videos_with_crossfade(
         with open(output_path, "rb") as fh_out:
             combined_bytes = fh_out.read()
 
-        final_duration = actual_duration1 + actual_duration2 - fade
+        final_duration = actual_d1 + actual_d2 - fade
 
         return combined_bytes, final_duration
     finally:
@@ -556,7 +581,7 @@ def extend_video_task(self, request_id: int):
             raise VideoGenerationError("Не найдена ссылка на исходное видео.")
 
         part1_bytes = fetch_remote_file(part1_url)
-        frame_bytes = extract_last_frame(part1_bytes)
+        frame_bytes = extract_last_frame(part1_bytes, parent.duration)
 
         result = provider.generate(
             prompt=prompt,
