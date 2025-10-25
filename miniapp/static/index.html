@@ -4,8 +4,177 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Покупка кредитов</title>
-    <link rel="stylesheet" href="styles.css">
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            background-color: #1a1a1a;
+            color: #ffffff;
+            padding: 20px;
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+        }
+
+        /* Заголовок */
+        .header {
+            margin-bottom: 30px;
+        }
+
+        .header h1 {
+            font-size: 18px;
+            font-weight: 500;
+            background-color: #2d2d2d;
+            padding: 20px;
+            border-radius: 12px;
+            text-align: center;
+        }
+
+        /* Секции */
+        .section {
+            margin-bottom: 30px;
+        }
+
+        .label {
+            display: block;
+            font-size: 18px;
+            font-weight: 500;
+            margin-bottom: 12px;
+        }
+
+        /* Input поле */
+        .input {
+            width: 100%;
+            padding: 18px 20px;
+            background-color: #2d2d2d;
+            border: none;
+            border-radius: 12px;
+            color: #888;
+            font-size: 16px;
+            outline: none;
+        }
+
+        .input:focus {
+            color: #ffffff;
+        }
+
+        /* Сетка кредитов */
+        .credits-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 12px;
+        }
+
+        .credit-btn {
+            padding: 18px;
+            background-color: #2d2d2d;
+            border: none;
+            border-radius: 12px;
+            color: #ffffff;
+            font-size: 16px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .credit-btn.active {
+            background-color: #ffffff;
+            color: #1a1a1a;
+        }
+
+        .credit-btn:hover {
+            opacity: 0.8;
+        }
+
+        /* Метод оплаты */
+        .payment-method {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .payment-btn {
+            padding: 18px 20px;
+            background-color: #ffffff;
+            border: none;
+            border-radius: 12px;
+            color: #1a1a1a;
+            font-size: 16px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-align: left;
+        }
+
+        .payment-btn:hover {
+            opacity: 0.9;
+        }
+
+        /* Сумма */
+        .total-price {
+            font-size: 48px;
+            font-weight: 600;
+            color: #ffffff;
+            padding: 10px 0;
+        }
+
+        /* Кнопка оплаты */
+        .pay-btn {
+            width: 100%;
+            padding: 20px;
+            background-color: #3d3d3d;
+            border: none;
+            border-radius: 12px;
+            color: #ffffff;
+            font-size: 18px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            margin-top: 20px;
+        }
+
+        .pay-btn:hover {
+            background-color: #4d4d4d;
+        }
+
+        .pay-btn:active {
+            transform: scale(0.98);
+        }
+
+        .pay-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        /* Адаптивность */
+        @media (max-width: 480px) {
+            body {
+                padding: 15px;
+            }
+
+            .header h1 {
+                font-size: 16px;
+                padding: 16px;
+            }
+
+            .label {
+                font-size: 16px;
+            }
+
+            .total-price {
+                font-size: 36px;
+            }
+        }
+    </style>
 </head>
 <body>
     <div class="container">
@@ -53,6 +222,137 @@
         <button class="pay-btn" id="payBtn">Оплатить</button>
     </div>
 
-    <script src="payment.js"></script>
+    <script>
+        // Telegram Web App
+        const tg = window.Telegram.WebApp;
+
+        // Инициализация
+        document.addEventListener('DOMContentLoaded', () => {
+            // Настройка Telegram Web App
+            tg.ready();
+            tg.expand();
+
+            // Применить тему Telegram
+            document.body.style.backgroundColor = tg.themeParams.bg_color || '#1a1a1a';
+
+            // Получить данные пользователя
+            const user = tg.initDataUnsafe.user;
+            if (user) {
+                console.log('User:', user);
+            }
+
+            // Инициализация элементов
+            initPaymentForm();
+        });
+
+        function initPaymentForm() {
+            const creditButtons = document.querySelectorAll('.credit-btn');
+            const emailInput = document.getElementById('email');
+            const payBtn = document.getElementById('payBtn');
+            const totalAmount = document.getElementById('totalAmount');
+
+            let selectedCredits = 100;
+            let selectedPrice = 5;
+
+            // Обработка выбора кредитов
+            creditButtons.forEach(btn => {
+                btn.addEventListener('click', () => {
+                    // Убрать активный класс со всех кнопок
+                    creditButtons.forEach(b => b.classList.remove('active'));
+
+                    // Добавить активный класс на выбранную кнопку
+                    btn.classList.add('active');
+
+                    // Получить данные
+                    selectedCredits = parseInt(btn.dataset.credits);
+                    selectedPrice = parseFloat(btn.dataset.price);
+
+                    // Обновить сумму
+                    totalAmount.textContent = selectedPrice;
+                });
+            });
+
+            // Валидация email
+            emailInput.addEventListener('input', () => {
+                validateForm();
+            });
+
+            // Обработка нажатия на кнопку оплаты
+            payBtn.addEventListener('click', async () => {
+                const email = emailInput.value.trim();
+
+                if (!validateEmail(email)) {
+                    tg.showAlert('Пожалуйста, введите корректный E-mail');
+                    return;
+                }
+
+                // Отключить кнопку
+                payBtn.disabled = true;
+                payBtn.textContent = 'Обработка...';
+
+                try {
+                    // Отправить данные на сервер
+                    const response = await fetch('/api/miniapp/create-payment', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({
+                            email: email,
+                            credits: selectedCredits,
+                            amount: selectedPrice,
+                            currency: 'USD',
+                            payment_method: 'card',
+                            user_id: tg.initDataUnsafe.user?.id,
+                            init_data: tg.initData
+                        })
+                    });
+
+                    const data = await response.json();
+
+                    if (data.success && data.payment_url) {
+                        // Открыть ссылку на оплату
+                        tg.openLink(data.payment_url);
+                    } else {
+                        tg.showAlert(data.error || 'Ошибка создания платежа');
+                        payBtn.disabled = false;
+                        payBtn.textContent = 'Оплатить';
+                    }
+                } catch (error) {
+                    console.error('Error:', error);
+                    tg.showAlert('Произошла ошибка. Попробуйте еще раз.');
+                    payBtn.disabled = false;
+                    payBtn.textContent = 'Оплатить';
+                }
+            });
+
+            // Начальная валидация
+            validateForm();
+        }
+
+        function validateEmail(email) {
+            const re = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+            return re.test(email);
+        }
+
+        function validateForm() {
+            const emailInput = document.getElementById('email');
+            const payBtn = document.getElementById('payBtn');
+            const email = emailInput.value.trim();
+
+            if (validateEmail(email)) {
+                payBtn.disabled = false;
+            } else {
+                payBtn.disabled = true;
+            }
+        }
+
+        // Обработка закрытия Web App
+        tg.onEvent('viewportChanged', () => {
+            if (!tg.isExpanded) {
+                tg.expand();
+            }
+        });
+    </script>
 </body>
 </html>
