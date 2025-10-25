@@ -12,7 +12,7 @@ import tempfile
 import io
 
 import imageio.v2 as imageio
-from moviepy import editor as mpy
+from moviepy.editor import VideoFileClip, concatenate_videoclips
 from moviepy.video.fx import all as vfx
 from moviepy.audio.fx import all as afx
 
@@ -127,7 +127,7 @@ def extract_last_frame(video_bytes: bytes, duration_hint: Optional[float] = None
             fh.write(video_bytes)
         temp_files.append(input_path)
 
-        with mpy.VideoFileClip(input_path, audio=False) as clip:
+        with VideoFileClip(input_path, audio=False) as clip:
             fps = clip.fps or 24
             duration = clip.duration or 0
             target = max((duration_hint or duration) - (1.0 / fps), 0.0)
@@ -171,7 +171,7 @@ def combine_videos_with_crossfade(
         os.close(fd_out)
         temp_files.append(output_path)
 
-        with mpy.VideoFileClip(path1) as clip1, mpy.VideoFileClip(path2) as clip2:
+        with VideoFileClip(path1) as clip1, VideoFileClip(path2) as clip2:
             actual_d1 = duration1 or clip1.duration or 0
             actual_d2 = duration2 or clip2.duration or 0
             base_fade = fade_duration or 1.0
@@ -186,7 +186,7 @@ def combine_videos_with_crossfade(
                 v1 = v1.set_audio(clip1.audio.fx(afx.audio_fadeout, fade) if clip1.audio else None)
                 v2 = v2.set_audio(clip2.audio.fx(afx.audio_fadein, fade) if clip2.audio else None)
 
-            final_clip = mpy.concatenate_videoclips([v1, v2], method="compose", padding=-fade)
+            final_clip = concatenate_videoclips([v1, v2], method="compose", padding=-fade)
             final_duration = final_clip.duration
             temp_audiofile = None
             if audio_present:
