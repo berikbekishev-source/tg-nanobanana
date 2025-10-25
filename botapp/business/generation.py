@@ -29,6 +29,7 @@ class GenerationService:
         aspect_ratio: Optional[str] = None,
         input_image_file_id: Optional[str] = None,
         source_media: Optional[Dict[str, Any]] = None,
+        parent_request: Optional[GenRequest] = None,
     ) -> GenRequest:
         """
         Создать запрос на генерацию с проверкой баланса и списанием средств
@@ -118,6 +119,7 @@ class GenerationService:
             cost=total_cost,
             status='queued',
             transaction=transaction,
+            parent_request=parent_request,
             duration=duration,
             video_resolution=video_resolution or "",
             aspect_ratio=aspect_ratio or "",

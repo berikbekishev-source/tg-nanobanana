@@ -17,9 +17,19 @@ Including another URLconf
 
 from django.contrib import admin
 from django.urls import path
+from django.conf import settings
+from django.conf.urls.static import static
 from botapp.api import api  # Ninja API
+from miniapp.api import miniapp_api  # Mini App API
+from miniapp.views import miniapp_payment
 
 urlpatterns = [
     path("admin/", admin.site.urls),
     path("api/", api.urls),  # /api/telegram/webhook и /api/health
+    path("api/miniapp/", miniapp_api.urls),  # Mini App API endpoints
+    path("miniapp/", miniapp_payment, name='miniapp_payment'),  # Mini App главная страница
 ]
+
+# Статические файлы для Mini App
+if settings.DEBUG:
+    urlpatterns += static('/miniapp/static/', document_root='miniapp/static')

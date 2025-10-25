@@ -7,6 +7,8 @@ from django.conf import settings
 from decimal import Decimal
 from typing import Any, Dict, List, Optional, Tuple
 import json
+import os
+import tempfile
 
 from .models import GenRequest, TgUser, AIModel
 from .services import generate_images, supabase_upload_png, supabase_upload_video
@@ -80,6 +82,121 @@ def get_inline_menu_markup():
         ]]
     }
 
+
+def get_video_result_markup(request_id: int, include_extension: bool = True) -> Dict[str, Any]:
+    """Inline клавиатура для результатов видео."""
+    keyboard: List[List[Dict[str, str]]] = []
+    if include_extension:
+        keyboard.append([{
+            "text": "🔁 Продлить FAST",
+            "callback_data": f"extend_video:{request_id}",
+        }])
+    keyboard.append([{
+        "text": "🏠 Главное меню",
+        "callback_data": "main_menu",
+    }])
+    return {"inline_keyboard": keyboard}
+
+
+def fetch_remote_file(url: str) -> bytes:
+    """Скачать файл по URL и вернуть байтовое содержимое."""
+    with httpx.Client(timeout=httpx.Timeout(120.0, connect=10.0)) as client:
+        resp = client.get(url)
+        resp.raise_for_status()
+        return resp.content
+
+
+def combine_videos_with_crossfade(
+    part1_bytes: bytes,
+    part2_bytes: bytes,
+    fade_duration: float = 1.0,
+) -> Tuple[bytes, float, Tuple[int, int]]:
+    """
+    Склеить два видео с плавным переходом (видео и аудио) и вернуть итоговый ролик.
+
+    Returns:
+        (video_bytes, duration_seconds, (width, height))
+    """
+    import moviepy.editor as mpe  # noqa: WPS433 — тяжелая зависимость, импортируем локально
+
+    temp_paths: List[str] = []
+    clip1 = clip2 = final_clip = None
+    output_path = temp_audio_path = ""
+    try:
+        fd1, path1 = tempfile.mkstemp(suffix=".mp4")
+        os.close(fd1)
+        with open(path1, "wb") as fh1:
+            fh1.write(part1_bytes)
+        temp_paths.append(path1)
+
+        fd2, path2 = tempfile.mkstemp(suffix=".mp4")
+        os.close(fd2)
+        with open(path2, "wb") as fh2:
+            fh2.write(part2_bytes)
+        temp_paths.append(path2)
+
+        clip1 = mpe.VideoFileClip(path1)
+        clip2 = mpe.VideoFileClip(path2)
+
+        computed_fade = min(fade_duration, clip1.duration / 2, clip2.duration / 2)
+        fade = max(computed_fade, 0.5)
+
+        video_clip1 = clip1.fx(mpe.vfx.fadeout, fade)
+        video_clip2 = clip2.fx(mpe.vfx.fadein, fade)
+
+        if clip1.audio:
+            video_clip1 = video_clip1.audio_fadeout(fade)
+        if clip2.audio:
+            video_clip2 = video_clip2.audio_fadein(fade)
+
+        final_clip = mpe.concatenate_videoclips(
+            [video_clip1, video_clip2],
+            method="compose",
+            padding=-fade,
+        )
+
+        fps = clip2.fps or clip1.fps or 24
+
+        fd_out, output_path = tempfile.mkstemp(suffix=".mp4")
+        os.close(fd_out)
+        temp_paths.append(output_path)
+
+        temp_audio_path = f"{output_path}.m4a"
+        final_clip.write_videofile(
+            output_path,
+            codec="libx264",
+            audio_codec="aac",
+            temp_audiofile=temp_audio_path,
+            remove_temp=True,
+            fps=fps,
+            logger=None,
+        )
+
+        with open(output_path, "rb") as f_out:
+            combined_bytes = f_out.read()
+
+        duration = float(final_clip.duration or (clip1.duration + clip2.duration - fade))
+        width, height = final_clip.size
+
+        return combined_bytes, duration, (width, height)
+    finally:
+        for clip in (clip1, clip2, final_clip):
+            try:
+                if clip:
+                    clip.close()
+            except Exception:
+                pass
+        if temp_audio_path and os.path.exists(temp_audio_path):
+            try:
+                os.unlink(temp_audio_path)
+            except OSError:
+                pass
+        for path in temp_paths:
+            try:
+                if os.path.exists(path):
+                    os.unlink(path)
+            except OSError:
+                pass
 
 def download_telegram_file(file_id: str) -> Tuple[bytes, str]:
     """Скачать файл из Telegram и вернуть (bytes, mime_type)."""
@@ -242,7 +359,7 @@ def generate_video_task(self, request_id: int):
             chat_id=req.chat_id,
             video_bytes=result.content,
             caption=message,
-            reply_markup=get_inline_menu_markup(),
+            reply_markup=get_video_result_markup(req.id),
         )
 
     except VideoGenerationError as e:

@@ -23,6 +23,7 @@ class BotStates(StatesGroup):
     video_wait_prompt = State()         # Ожидание промта или изображения
     video_confirm_generation = State()  # Подтверждение генерации
     video_processing = State()          # Процесс генерации видео
+    video_extend_prompt = State()       # Ожидание промта для продления видео
 
     # Баланс и платежи
     balance_view = State()              # Просмотр баланса

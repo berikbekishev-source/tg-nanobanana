@@ -160,6 +160,13 @@ class GenRequest(models.Model):
     error_message = models.TextField(blank=True)
 
     # Для видео
+    parent_request = models.ForeignKey(
+        "self",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="child_requests",
+    )
     duration = models.IntegerField(null=True, blank=True)  # Длительность видео в секундах
     video_resolution = models.CharField(max_length=20, blank=True)  # Разрешение видео
     aspect_ratio = models.CharField(max_length=10, blank=True)

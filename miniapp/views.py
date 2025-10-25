@@ -1,0 +1,20 @@
+from django.shortcuts import render
+from django.views.decorators.csrf import csrf_exempt
+from django.http import HttpResponse
+import os
+
+
+@csrf_exempt
+def miniapp_payment(request):
+    """
+    Главная страница Telegram Mini App для оплаты
+    """
+    # Путь к статическим файлам
+    static_dir = os.path.join(os.path.dirname(__file__), 'static')
+    index_path = os.path.join(static_dir, 'index.html')
+
+    # Читаем HTML файл
+    with open(index_path, 'r', encoding='utf-8') as f:
+        html_content = f.read()
+
+    return HttpResponse(html_content, content_type='text/html')

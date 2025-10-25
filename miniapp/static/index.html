@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Покупка кредитов</title>
+    <link rel="stylesheet" href="styles.css">
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+</head>
+<body>
+    <div class="container">
+        <!-- Заголовок -->
+        <div class="header">
+            <h1>Покупка кредитов для генерации видео</h1>
+        </div>
+
+        <!-- E-mail -->
+        <div class="section">
+            <label class="label">Ваш E-mail</label>
+            <input type="email" id="email" class="input" placeholder="example@gmail.com">
+        </div>
+
+        <!-- Количество кредитов -->
+        <div class="section">
+            <label class="label">Количество кредитов</label>
+            <div class="credits-grid">
+                <button class="credit-btn active" data-credits="100" data-price="5">100 кредитов</button>
+                <button class="credit-btn" data-credits="200" data-price="10">200 кредитов</button>
+                <button class="credit-btn" data-credits="500" data-price="25">500 кредитов</button>
+                <button class="credit-btn" data-credits="1000" data-price="50">1000 кредитов</button>
+            </div>
+        </div>
+
+        <!-- Метод оплаты -->
+        <div class="section">
+            <label class="label">Метод оплаты</label>
+            <div class="payment-method">
+                <button class="payment-btn active">
+                    Карта VISA/MasterCard (KZ/CHF)
+                </button>
+            </div>
+        </div>
+
+        <!-- Сумма -->
+        <div class="section">
+            <label class="label">Сумма</label>
+            <div class="total-price">
+                <span id="totalAmount">5</span> $
+            </div>
+        </div>
+
+        <!-- Кнопка оплаты -->
+        <button class="pay-btn" id="payBtn">Оплатить</button>
+    </div>
+
+    <script src="payment.js"></script>
+</body>
+</html>
