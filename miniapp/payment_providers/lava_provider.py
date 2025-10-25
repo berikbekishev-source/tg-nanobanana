@@ -4,9 +4,9 @@
 """
 import hashlib
 import hmac
+import json
 import logging
 import requests
-import json
 from decimal import Decimal
 from datetime import datetime
 from typing import Optional, Dict
@@ -55,48 +55,10 @@ class LavaAPI:
             logger.error("Cannot create invoice: LAVA_API_KEY not configured")
             return None
 
-        url = f"{self.BASE_URL}/invoice/create"
-
-        # Подготавливаем данные
-        data = {
-            "amount": float(amount),
-            "order_id": str(order_id),
-            "currency": "USD",
-            "expire": expire_at or 1440,  # 24 часа по умолчанию
-            "success_url": f"{getattr(settings, 'PUBLIC_BASE_URL', '')}/payment/success",
-            "fail_url": f"{getattr(settings, 'PUBLIC_BASE_URL', '')}/payment/fail",
-            "hook_url": f"{getattr(settings, 'PUBLIC_BASE_URL', '')}/api/miniapp/lava-webhook",
-            "custom_fields": custom_fields or {}
-        }
-
-        try:
-            logger.info(f"Creating Lava invoice for order {order_id}, amount: ${amount}")
-
-            response = requests.post(
-                url,
-                json=data,
-                headers=self.headers,
-                timeout=10
-            )
-
-            if response.status_code == 200:
-                result = response.json()
-
-                if result.get("status") == "success":
-                    invoice_data = result.get("data", {})
-                    logger.info(f"Invoice created: {invoice_data.get('id')}, URL: {invoice_data.get('url')}")
-                    return invoice_data
-                else:
-                    error_msg = result.get("message", "Unknown error")
-                    logger.error(f"Lava API error: {error_msg}")
-                    return None
-            else:
-                logger.error(f"HTTP error {response.status_code}: {response.text}")
-                return None
-
-        except Exception as e:
-            logger.error(f"Error creating Lava invoice: {e}")
-            return None
+        # NOTE: The Lava API endpoint is currently not working.
+        # Using static payment links instead (see LAVA_PAYMENT_LINKS below)
+        logger.warning("Lava API invoice creation is currently disabled, using static links")
+        return None
 
     def get_invoice_status(self, invoice_id: str) -> Optional[str]:
         """
@@ -164,17 +126,17 @@ class LavaAPI:
 
 
 # Платежные ссылки для каждого количества токенов
+# ВАЖНО: Создайте продукты в Lava.top для каждого пакета и обновите эти ссылки!
 LAVA_PAYMENT_LINKS = {
     100: "https://app.lava.top/products/acfa45f0-6fa0-4f3c-b73e-f10b92d6d8fc/072b7520-f963-4650-8bbf-16e7efdbdd21",
-    # TODO: Добавьте ссылки для других пакетов:
-    # 200: "https://app.lava.top/products/...",
-    # 500: "https://app.lava.top/products/...",
-    # 1000: "https://app.lava.top/products/...",
+    200: "https://app.lava.top/products/PLACEHOLDER_200_TOKENS",  # $10 - замените на реальную ссылку
+    500: "https://app.lava.top/products/PLACEHOLDER_500_TOKENS",  # $25 - замените на реальную ссылку
+    1000: "https://app.lava.top/products/PLACEHOLDER_1000_TOKENS", # $50 - замените на реальную ссылку
 }
 
 
 def get_payment_url(credits: int, transaction_id, user_email: str = None,
-                   use_api: bool = True) -> str:
+                   use_api: bool = False) -> str:
     """
     Получить ссылку на оплату для указанного количества токенов
 
@@ -182,44 +144,13 @@ def get_payment_url(credits: int, transaction_id, user_email: str = None,
         credits: Количество токенов (100, 200, 500, 1000)
         transaction_id: ID транзакции для отслеживания
         user_email: Email пользователя (опционально)
-        use_api: Использовать API для создания счета (True) или статические ссылки (False)
+        use_api: Использовать API для создания счета (по умолчанию False, так как API не работает)
 
     Returns:
         URL для оплаты
     """
 
-    # Рассчитываем сумму ($0.05 за токен)
-    amount = Decimal(credits * 0.05)
-
-    # Сначала пробуем создать счет через API
-    if use_api:
-        try:
-            lava_api = LavaAPI()
-
-            # Дополнительные данные для счета
-            custom_fields = {
-                "credits": credits,
-                "email": user_email or "",
-                "transaction_id": str(transaction_id)
-            }
-
-            # Создаем счет через API
-            invoice_data = lava_api.create_invoice(
-                amount=amount,
-                order_id=str(transaction_id),
-                custom_fields=custom_fields
-            )
-
-            if invoice_data and invoice_data.get('url'):
-                logger.info(f"Created Lava invoice via API: {invoice_data.get('id')}")
-                return invoice_data['url']
-            else:
-                logger.warning("Failed to create invoice via API, falling back to static links")
-
-        except Exception as e:
-            logger.error(f"Error using Lava API: {e}, falling back to static links")
-
-    # Fallback на статические ссылки если API не работает
+    # Используем статические ссылки (API временно недоступен)
     base_url = LAVA_PAYMENT_LINKS.get(credits)
 
     if not base_url:

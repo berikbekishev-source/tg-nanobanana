@@ -53,6 +53,10 @@ def test_lava_api():
     print(f"Amount: ${test_amount}")
 
     try:
+        # Debug: показываем URL и headers
+        print(f"   API URL: {lava_api.BASE_URL}/invoice/create")
+        print(f"   Headers: X-Api-Key: {lava_api.api_key[:10]}...{lava_api.api_key[-4:] if lava_api.api_key else 'None'}")
+
         invoice = lava_api.create_invoice(
             amount=test_amount,
             order_id=test_order_id,
