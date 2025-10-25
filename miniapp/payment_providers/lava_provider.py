@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 # Платежные ссылки для каждого количества токенов
 LAVA_PAYMENT_LINKS = {
-    100: "https://app.lava.top/products/acfa45f0-6fa0-4f3c-b73e-f10b92d6d8fc",
+    100: "https://app.lava.top/products/acfa45f0-6fa0-4f3c-b73e-f10b92d6d8fc/072b7520-f963-4650-8bbf-16e7efdbdd21",
     # TODO: Добавьте ссылки для других пакетов:
     # 200: "https://app.lava.top/products/...",
     # 500: "https://app.lava.top/products/...",
