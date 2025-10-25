@@ -158,22 +158,12 @@ def extract_last_frame(video_bytes: bytes) -> bytes:
         command = [
             _ffmpeg_bin(),
             "-y",
-            "-sseof", "-0.04",
             "-i", input_path,
+            "-vf", "select=eq(n\, -1)",
             "-vframes", "1",
             frame_path,
         ]
-        try:
-            _run_command(command)
-        except RuntimeError:
-            fallback_command = [
-                _ffmpeg_bin(),
-                "-y",
-                "-i", input_path,
-                "-vframes", "1",
-                frame_path,
-            ]
-            _run_command(fallback_command)
+        _run_command(command)
 
         with open(frame_path, "rb") as fh_frame:
             frame_bytes = fh_frame.read()
