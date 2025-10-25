@@ -130,18 +130,21 @@ def _run_command(command: List[str]) -> str:
     return result.stdout.strip()
 
 
+def _probe_media_info(path: str) -> str:
+    """Возвращает текстовую информацию о медиафайле из ffmpeg."""
+    proc = subprocess.run(
+        [_ffmpeg_bin(), "-hide_banner", "-i", path],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        check=False,
+    )
+    return proc.stderr
+
+
 def _probe_duration(path: str) -> Optional[float]:
     """Возвращает длительность ролика (в секундах), используя ffmpeg."""
-    try:
-        info = _run_command([
-            _ffmpeg_bin(),
-            "-hide_banner",
-            "-i", path,
-            "-f", "null",
-            "-"
-        ])
-    except RuntimeError as exc:
-        info = str(exc)
+    info = _probe_media_info(path)
 
     for line in info.splitlines():
         if "Duration:" in line:
@@ -151,6 +154,38 @@ def _probe_duration(path: str) -> Optional[float]:
                 return int(h) * 3600 + int(m) * 60 + float(s)
             except Exception:
                 continue
+    return None
+
+
+def _probe_fps(path: str) -> Optional[float]:
+    """Пытается определить FPS ролика из вывода ffmpeg."""
+    info = _probe_media_info(path)
+
+    def _parse_rate(token: str) -> Optional[float]:
+        token = token.strip()
+        if "/" in token:
+            num, denom = token.split("/", 1)
+            try:
+                return float(num) / float(denom)
+            except (ValueError, ZeroDivisionError):
+                return None
+        try:
+            return float(token)
+        except ValueError:
+            return None
+
+    for line in info.splitlines():
+        if "Stream #0:0" in line and "Video:" in line:
+            parts = [part.strip() for part in line.split(",")]
+            for part in parts:
+                if part.endswith(" fps"):
+                    rate = _parse_rate(part[:-4])
+                    if rate:
+                        return rate
+                if part.endswith(" tbr"):
+                    rate = _parse_rate(part[:-4])
+                    if rate:
+                        return rate
     return None
 
 
@@ -286,12 +321,20 @@ def combine_videos_with_crossfade(
         has_audio2 = _detect_audio(path2)
         include_audio = has_audio1 and has_audio2
 
+        fps1 = _probe_fps(path1)
+        fps2 = _probe_fps(path2)
+        target_fps = fps1 or fps2 or 24.0
+
         def build_command(include_audio_filter: bool) -> List[str]:
             filter_parts: List[str] = [
-                f"[0:v]trim=0:{pre_cut:.3f},setpts=PTS-STARTPTS[v0]",
-                f"[0:v]trim={pre_cut:.3f}:{actual_d1:.3f},setpts=PTS-STARTPTS[v1]",
-                f"[1:v]trim=0:{fade:.3f},setpts=PTS-STARTPTS[v2]",
-                f"[1:v]trim={fade:.3f}:{actual_d2:.3f},setpts=PTS-STARTPTS[v3]",
+                f"[0:v]trim=0:{pre_cut:.3f},setpts=PTS-STARTPTS[v0_tmp]",
+                f"[0:v]trim={pre_cut:.3f}:{actual_d1:.3f},setpts=PTS-STARTPTS[v1_tmp]",
+                f"[1:v]trim=0:{fade:.3f},setpts=PTS-STARTPTS[v2_tmp]",
+                f"[1:v]trim={fade:.3f}:{actual_d2:.3f},setpts=PTS-STARTPTS[v3_tmp]",
+                f"[v0_tmp]fps=fps={target_fps:.6f}[v0]",
+                f"[v1_tmp]fps=fps={target_fps:.6f}[v1]",
+                f"[v2_tmp]fps=fps={target_fps:.6f}[v2]",
+                f"[v3_tmp]fps=fps={target_fps:.6f}[v3]",
                 f"[v1][v2]xfade=transition=fade:duration={fade:.3f}:offset=0[vf]",
                 "[v0][vf][v3]concat=n=3:v=1:a=0[vout]",
             ]
