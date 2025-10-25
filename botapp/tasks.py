@@ -12,7 +12,7 @@ import os
 import tempfile
 import subprocess
 
-from imageio_ffmpeg import get_ffmpeg_exe, get_ffprobe_exe
+from imageio_ffmpeg import get_ffmpeg_exe
 
 from .models import GenRequest, TgUser, AIModel
 from .services import generate_images, supabase_upload_png, supabase_upload_video
@@ -115,14 +115,6 @@ def _ffmpeg_bin() -> str:
     return get_ffmpeg_exe()
 
 
-@lru_cache()
-def _ffprobe_bin() -> str:
-    try:
-        return get_ffprobe_exe()
-    except Exception:
-        return get_ffmpeg_exe()
-
-
 def _run_command(command: List[str]) -> str:
     result = subprocess.run(
         command,
@@ -138,73 +130,20 @@ def _run_command(command: List[str]) -> str:
     return result.stdout.strip()
 
 
-def _probe_frames(path: str) -> int:
-    try:
-        output = _run_command([
-            _ffprobe_bin(),
-            "-v", "error",
-            "-select_streams", "v:0",
-            "-count_frames",
-            "-show_entries", "stream=nb_read_frames",
-            "-of", "default=nokey=1:noprint_wrappers=1",
-            path,
-        ])
-        return int(float(output))
-    except Exception:
-        return 0
-
-
-def _probe_duration(path: str) -> Optional[float]:
-    try:
-        out = _run_command([
-            _ffprobe_bin(),
-            "-v", "error",
-            "-show_entries", "format=duration",
-            "-of", "default=nokey=1:noprint_wrappers=1",
-            path,
-        ])
-        return float(out)
-    except Exception:
-        return None
-
-
-def _probe_resolution(path: str) -> Tuple[Optional[int], Optional[int]]:
-    try:
-        out = _run_command([
-            _ffprobe_bin(),
-            "-v", "error",
-            "-select_streams", "v:0",
-            "-show_entries", "stream=width,height",
-            "-of", "csv=p=0",
-            path,
-        ])
-        width, height = out.split(",")
-        return int(width), int(height)
-    except Exception:
-        return None, None
-
-
-def _probe_has_audio(path: str) -> bool:
-    try:
-        out = _run_command([
-            _ffprobe_bin(),
-            "-v", "error",
-            "-select_streams", "a:0",
-            "-show_entries", "stream=codec_type",
-            "-of", "csv=p=0",
-            path,
-        ])
-        return out.strip() == "audio"
-    except Exception:
-        return False
+def _detect_audio(path: str) -> bool:
+    proc = subprocess.run(
+        [_ffmpeg_bin(), "-hide_banner", "-i", path],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        check=False,
+    )
+    return "Audio:" in proc.stderr
 
 
 def extract_last_frame(video_bytes: bytes) -> bytes:
-    """
-    Извлекает последний кадр видео (PNG) с помощью ffmpeg.
-    """
+    """Извлекает последний кадр видео (PNG) с помощью ffmpeg."""
     temp_paths: List[str] = []
-    frame_bytes: Optional[bytes] = None
     try:
         fd_input, input_path = tempfile.mkstemp(suffix=".mp4")
         os.close(fd_input)
@@ -216,28 +155,14 @@ def extract_last_frame(video_bytes: bytes) -> bytes:
         os.close(fd_frame)
         temp_paths.append(frame_path)
 
-        total_frames = _probe_frames(input_path)
-        if total_frames > 0:
-            last_idx = max(total_frames - 1, 0)
-            select_expr = f"select='eq(n,{last_idx})'"
-            command = [
-                _ffmpeg_bin(),
-                "-y",
-                "-i", input_path,
-                "-vf", select_expr,
-                "-vframes", "1",
-                frame_path,
-            ]
-        else:
-            command = [
-                _ffmpeg_bin(),
-                "-y",
-                "-sseof", "-0.04",
-                "-i", input_path,
-                "-vframes", "1",
-                frame_path,
-            ]
-
+        command = [
+            _ffmpeg_bin(),
+            "-y",
+            "-sseof", "-0.04",
+            "-i", input_path,
+            "-vframes", "1",
+            frame_path,
+        ]
         try:
             _run_command(command)
         except RuntimeError:
@@ -269,8 +194,10 @@ def extract_last_frame(video_bytes: bytes) -> bytes:
 def combine_videos_with_crossfade(
     part1_bytes: bytes,
     part2_bytes: bytes,
+    duration1: Optional[float],
+    duration2: Optional[float],
     fade_duration: float = 1.0,
-) -> Tuple[bytes, float, Tuple[int, int]]:
+) -> Tuple[bytes, float]:
     """
     Склеивает два видео с плавным переходом (видео и, при наличии, аудио) через ffmpeg.
     """
@@ -293,57 +220,63 @@ def combine_videos_with_crossfade(
         os.close(fd_out)
         temp_paths.append(output_path)
 
-        duration1 = _probe_duration(path1) or 0.0
-        duration2 = _probe_duration(path2) or 0.0
+        candidate_fades = [fade_duration]
+        if duration1:
+            candidate_fades.append(duration1 / 2)
+        if duration2:
+            candidate_fades.append(duration2 / 2)
+        fade = max(0.5, min(candidate_fades))
+        offset = max((duration1 or fade) - fade, 0.0)
 
-        fade = max(min(fade_duration, duration1 / 2 if duration1 else fade_duration, duration2 / 2 if duration2 else fade_duration), 0.5)
-        offset = max(duration1 - fade, 0.0)
+        has_audio1 = _detect_audio(path1)
+        has_audio2 = _detect_audio(path2)
 
-        has_audio1 = _probe_has_audio(path1)
-        has_audio2 = _probe_has_audio(path2)
+        def build_command(include_audio: bool) -> List[str]:
+            filter_parts = [
+                f"[0:v][1:v]xfade=transition=fade:duration={fade:.3f}:offset={offset:.3f}[v]"
+            ]
+            map_args: List[str] = ["-map", "[v]"]
+            audio_args: List[str] = ["-an"]
 
-        filter_parts = [
-            f"[0:v][1:v]xfade=transition=fade:duration={fade:.3f}:offset={offset:.3f}[v]"
-        ]
-        map_args: List[str] = ["-map", "[v]"]
-        audio_codec_args: List[str] = ["-an"]
+            if include_audio:
+                if has_audio1 and has_audio2:
+                    filter_parts.append(f"[0:a][1:a]acrossfade=d={fade:.3f}[a]")
+                    map_args.extend(["-map", "[a]"])
+                    audio_args = ["-c:a", "aac", "-b:a", "192k"]
+                elif has_audio2:
+                    map_args.extend(["-map", "1:a"])
+                    audio_args = ["-c:a", "aac", "-b:a", "192k"]
+                elif has_audio1:
+                    map_args.extend(["-map", "0:a"])
+                    audio_args = ["-c:a", "aac", "-b:a", "192k"]
 
-        if has_audio1 and has_audio2:
-            filter_parts.append(f"[0:a][1:a]acrossfade=d={fade:.3f}[a]")
-            map_args.extend(["-map", "[a]"])
-            audio_codec_args = ["-c:a", "aac", "-b:a", "192k"]
-        elif has_audio2:
-            map_args.extend(["-map", "1:a"])
-            audio_codec_args = ["-c:a", "aac", "-b:a", "192k"]
-        elif has_audio1:
-            map_args.extend(["-map", "0:a"])
-            audio_codec_args = ["-c:a", "aac", "-b:a", "192k"]
+            return [
+                _ffmpeg_bin(),
+                "-y",
+                "-i", path1,
+                "-i", path2,
+                "-filter_complex", ";".join(filter_parts),
+                *map_args,
+                "-c:v", "libx264",
+                "-preset", "medium",
+                "-crf", "18",
+                "-pix_fmt", "yuv420p",
+                *audio_args,
+                "-movflags", "+faststart",
+                output_path,
+            ]
 
-        command = [
-            _ffmpeg_bin(),
-            "-y",
-            "-i", path1,
-            "-i", path2,
-            "-filter_complex", ";".join(filter_parts),
-            *map_args,
-            "-c:v", "libx264",
-            "-preset", "medium",
-            "-crf", "18",
-            "-pix_fmt", "yuv420p",
-            *audio_codec_args,
-            "-movflags", "+faststart",
-            output_path,
-        ]
-
-        _run_command(command)
+        try:
+            _run_command(build_command(include_audio=True))
+        except RuntimeError:
+            _run_command(build_command(include_audio=False))
 
         with open(output_path, "rb") as fh_out:
             combined_bytes = fh_out.read()
 
-        final_duration = duration1 + duration2 - fade if duration1 and duration2 else duration1 + duration2
-        width, height = _probe_resolution(output_path)
+        final_duration = (duration1 or 0.0) + (duration2 or 0.0) - (fade if duration1 and duration2 else 0.0)
 
-        return combined_bytes, final_duration, (width or 0, height or 0)
+        return combined_bytes, final_duration
     finally:
         for path in temp_paths:
             try:
@@ -601,7 +534,12 @@ def extend_video_task(self, request_id: int):
         )
         part2_bytes = result.content
 
-        combined_bytes, combined_duration, (width, height) = combine_videos_with_crossfade(part1_bytes, part2_bytes)
+        combined_bytes, combined_duration = combine_videos_with_crossfade(
+            part1_bytes,
+            part2_bytes,
+            parent.duration,
+            result.duration or params.get("duration"),
+        )
 
         upload_result = supabase_upload_video(combined_bytes, mime_type="video/mp4")
         public_url = upload_result.get("public_url") if isinstance(upload_result, dict) else upload_result
@@ -612,7 +550,7 @@ def extend_video_task(self, request_id: int):
             "segment_job_id": result.provider_job_id,
         }
 
-        final_resolution = parent.video_resolution or req.video_resolution or params.get("resolution") or (f"{height}p" if height else None)
+        final_resolution = parent.video_resolution or req.video_resolution or params.get("resolution")
         final_aspect_ratio = parent.aspect_ratio or req.aspect_ratio or params.get("aspect_ratio")
 
         GenerationService.complete_generation(
