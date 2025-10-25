@@ -141,7 +141,7 @@ def _detect_audio(path: str) -> bool:
     return "Audio:" in proc.stderr
 
 
-def extract_last_frame(video_bytes: bytes) -> bytes:
+def extract_last_frame(video_bytes: bytes, duration_hint: Optional[float] = None) -> bytes:
     """Извлекает последний кадр видео (PNG) с помощью ffmpeg."""
     temp_paths: List[str] = []
     try:
@@ -155,21 +155,57 @@ def extract_last_frame(video_bytes: bytes) -> bytes:
         os.close(fd_frame)
         temp_paths.append(frame_path)
 
-        command = [
-            _ffmpeg_bin(),
-            "-y",
-            "-i", input_path,
-            "-vf", "select=eq(n\, -1)",
-            "-vframes", "1",
-            frame_path,
-        ]
-        _run_command(command)
+        attempts: List[List[str]] = []
+        if duration_hint and duration_hint > 0.2:
+            seek_time = max(duration_hint - 0.1, 0.0)
+            attempts.append([
+                _ffmpeg_bin(), "-y",
+                "-ss", f"{seek_time:.3f}",
+                "-i", input_path,
+                "-frames:v", "1",
+                frame_path,
+            ])
+        attempts.extend([
+            [
+                _ffmpeg_bin(), "-y",
+                "-sseof", "-0.1",
+                "-i", input_path,
+                "-frames:v", "1",
+                frame_path,
+            ],
+            [
+                _ffmpeg_bin(), "-y",
+                "-i", input_path,
+                "-vf", "select='gte(n,n_forced-1)'",
+                "-frames:v", "1",
+                frame_path,
+            ],
+            [
+                _ffmpeg_bin(), "-y",
+                "-i", input_path,
+                "-frames:v", "1",
+                frame_path,
+            ],
+        ])
 
-        with open(frame_path, "rb") as fh_frame:
-            frame_bytes = fh_frame.read()
+        frame_bytes: Optional[bytes] = None
+        errors: List[str] = []
+        for command in attempts:
+            try:
+                _run_command(command)
+            except RuntimeError as exc:
+                errors.append(str(exc))
+                continue
+            if os.path.exists(frame_path) and os.path.getsize(frame_path) > 0:
+                with open(frame_path, "rb") as fh_frame:
+                    data = fh_frame.read()
+                if data:
+                    frame_bytes = data
+                    break
 
         if not frame_bytes:
-            raise RuntimeError("Не удалось извлечь кадр видео.")
+            extra = f" Детали: {' | '.join(errors)}" if errors else ""
+            raise RuntimeError("Не удалось извлечь кадр видео." + extra)
 
         return frame_bytes
     finally:
@@ -512,7 +548,7 @@ def extend_video_task(self, request_id: int):
             raise VideoGenerationError("Не найдена ссылка на исходное видео.")
 
         part1_bytes = fetch_remote_file(part1_url)
-        frame_bytes = extract_last_frame(part1_bytes)
+        frame_bytes = extract_last_frame(part1_bytes, parent.duration)
 
         result = provider.generate(
             prompt=prompt,
