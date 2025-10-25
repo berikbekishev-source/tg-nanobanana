@@ -8,5 +8,4 @@ class Migration(migrations.Migration):
         ("botapp", "0008_update_veo_model_name"),
     ]
 
-    operations: list[migrations.Operation] = []
-
+    operations = []
