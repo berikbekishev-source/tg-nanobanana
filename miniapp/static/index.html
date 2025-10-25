@@ -12,12 +12,18 @@
             box-sizing: border-box;
         }
 
-        body {
+        html, body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-            background-color: #1a1a1a;
+            background-color: #000000 !important;
             color: #ffffff;
-            padding: 20px;
+            padding: 0;
+            margin: 0;
             min-height: 100vh;
+        }
+
+        body {
+            padding: 20px;
+            background-color: #000000 !important;
         }
 
         .container {
@@ -27,38 +33,40 @@
 
         /* Заголовок */
         .header {
-            margin-bottom: 30px;
+            margin-bottom: 25px;
         }
 
         .header h1 {
-            font-size: 18px;
-            font-weight: 500;
-            background-color: #2d2d2d;
-            padding: 20px;
-            border-radius: 12px;
+            font-size: 17px;
+            font-weight: 400;
+            background-color: #2a2a2a;
+            padding: 16px;
+            border-radius: 14px;
             text-align: center;
+            color: #ffffff;
         }
 
         /* Секции */
         .section {
-            margin-bottom: 30px;
+            margin-bottom: 25px;
         }
 
         .label {
             display: block;
-            font-size: 18px;
+            font-size: 17px;
             font-weight: 500;
-            margin-bottom: 12px;
+            margin-bottom: 10px;
+            color: #ffffff;
         }
 
         /* Input поле */
         .input {
             width: 100%;
-            padding: 18px 20px;
-            background-color: #2d2d2d;
+            padding: 16px 18px;
+            background-color: #2a2a2a;
             border: none;
-            border-radius: 12px;
-            color: #888;
+            border-radius: 14px;
+            color: #888888;
             font-size: 16px;
             outline: none;
         }
@@ -67,103 +75,107 @@
             color: #ffffff;
         }
 
+        .input::placeholder {
+            color: #666666;
+        }
+
         /* Сетка кредитов */
         .credits-grid {
             display: grid;
             grid-template-columns: repeat(2, 1fr);
-            gap: 12px;
+            gap: 10px;
         }
 
         .credit-btn {
-            padding: 18px;
-            background-color: #2d2d2d;
+            padding: 16px;
+            background-color: #2a2a2a;
             border: none;
-            border-radius: 12px;
+            border-radius: 14px;
             color: #ffffff;
             font-size: 16px;
-            font-weight: 500;
+            font-weight: 400;
             cursor: pointer;
-            transition: all 0.3s ease;
+            transition: all 0.15s ease;
         }
 
         .credit-btn.active {
             background-color: #ffffff;
-            color: #1a1a1a;
+            color: #000000;
         }
 
-        .credit-btn:hover {
-            opacity: 0.8;
+        .credit-btn:hover:not(.active) {
+            background-color: #3a3a3a;
         }
 
         /* Метод оплаты */
         .payment-method {
             display: flex;
             flex-direction: column;
-            gap: 12px;
+            gap: 10px;
         }
 
         .payment-btn {
-            padding: 18px 20px;
+            padding: 16px 18px;
             background-color: #ffffff;
             border: none;
-            border-radius: 12px;
-            color: #1a1a1a;
+            border-radius: 14px;
+            color: #000000;
             font-size: 16px;
-            font-weight: 500;
+            font-weight: 400;
             cursor: pointer;
-            transition: all 0.3s ease;
+            transition: all 0.15s ease;
             text-align: left;
         }
 
         .payment-btn:hover {
-            opacity: 0.9;
+            background-color: #f0f0f0;
         }
 
         /* Сумма */
         .total-price {
-            font-size: 48px;
+            font-size: 42px;
             font-weight: 600;
             color: #ffffff;
-            padding: 10px 0;
+            padding: 8px 0;
         }
 
         /* Кнопка оплаты */
         .pay-btn {
             width: 100%;
-            padding: 20px;
-            background-color: #3d3d3d;
+            padding: 18px;
+            background-color: #3a3a3a;
             border: none;
-            border-radius: 12px;
+            border-radius: 14px;
             color: #ffffff;
-            font-size: 18px;
-            font-weight: 600;
+            font-size: 17px;
+            font-weight: 500;
             cursor: pointer;
-            transition: all 0.3s ease;
-            margin-top: 20px;
+            transition: all 0.15s ease;
+            margin-top: 10px;
         }
 
-        .pay-btn:hover {
-            background-color: #4d4d4d;
+        .pay-btn:hover:not(:disabled) {
+            background-color: #4a4a4a;
         }
 
-        .pay-btn:active {
+        .pay-btn:active:not(:disabled) {
             transform: scale(0.98);
         }
 
         .pay-btn:disabled {
-            opacity: 0.5;
+            opacity: 0.4;
             cursor: not-allowed;
         }
 
         /* Адаптивность */
         @media (max-width: 480px) {
             body {
-                padding: 15px;
+                padding: 16px;
             }
 
             .header h1 {
                 font-size: 16px;
-                padding: 16px;
+                padding: 14px;
             }
 
             .label {
@@ -232,8 +244,9 @@
             tg.ready();
             tg.expand();
 
-            // Применить тему Telegram
-            document.body.style.backgroundColor = tg.themeParams.bg_color || '#1a1a1a';
+            // Установка черного фона принудительно
+            document.body.style.backgroundColor = '#000000';
+            document.documentElement.style.backgroundColor = '#000000';
 
             // Получить данные пользователя
             const user = tg.initDataUnsafe.user;
