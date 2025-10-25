@@ -6,15 +6,13 @@ import httpx
 from django.conf import settings
 from decimal import Decimal
 from typing import Any, Dict, List, Optional, Tuple
+from functools import lru_cache
 import json
 import os
 import tempfile
-import io
+import subprocess
 
-import imageio.v2 as imageio
-from moviepy.editor import VideoFileClip, concatenate_videoclips
-from moviepy.video.fx import all as vfx
-from moviepy.audio.fx import all as afx
+from imageio_ffmpeg import get_ffmpeg_exe
 
 from .models import GenRequest, TgUser, AIModel
 from .services import generate_images, supabase_upload_png, supabase_upload_video
@@ -117,27 +115,101 @@ def _ffmpeg_bin() -> str:
     return get_ffmpeg_exe()
 
 
-def extract_last_frame(video_bytes: bytes, duration_hint: Optional[float] = None) -> bytes:
-    """Извлекает последний кадр видео в формате PNG, используя moviepy."""
-    temp_files: List[str] = []
+def _run_command(command: List[str]) -> str:
+    result = subprocess.run(
+        command,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(
+            f"Command failed ({' '.join(command)}): {result.stderr.strip()}"
+        )
+    return result.stdout.strip()
+
+
+def _probe_duration(path: str) -> Optional[float]:
+    try:
+        output = _run_command([
+            _ffmpeg_bin(),
+            "-i", path,
+            "-hide_banner",
+            "-f", "null",
+            "-"
+        ])
+    except RuntimeError as exc:
+        # ffmpeg prints duration to stderr; ignore errors from -f null
+        text = str(exc)
+    else:
+        text = output
+
+    for line in text.splitlines():
+        if "Duration" in line:
+            try:
+                duration_str = line.split("Duration:", 1)[1].split(",", 1)[0].strip()
+                h, m, s = duration_str.split(":")
+                return int(h) * 3600 + int(m) * 60 + float(s)
+            except Exception:
+                continue
+    return None
+
+
+def _detect_audio(path: str) -> bool:
+    proc = subprocess.run(
+        [_ffmpeg_bin(), "-hide_banner", "-i", path],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        check=False,
+    )
+    return "Audio:" in proc.stderr
+
+
+def extract_last_frame(video_bytes: bytes) -> bytes:
+    """Извлекает последний кадр видео (PNG) с помощью ffmpeg."""
+    temp_paths: List[str] = []
     try:
         fd_input, input_path = tempfile.mkstemp(suffix=".mp4")
         os.close(fd_input)
         with open(input_path, "wb") as fh:
             fh.write(video_bytes)
-        temp_files.append(input_path)
+        temp_paths.append(input_path)
 
-        with VideoFileClip(input_path, audio=False) as clip:
-            fps = clip.fps or 24
-            duration = clip.duration or 0
-            target = max((duration_hint or duration) - (1.0 / fps), 0.0)
-            frame = clip.get_frame(target)
+        fd_frame, frame_path = tempfile.mkstemp(suffix=".png")
+        os.close(fd_frame)
+        temp_paths.append(frame_path)
 
-        buffer = io.BytesIO()
-        imageio.imwrite(buffer, frame, format="PNG")
-        return buffer.getvalue()
+        command = [
+            _ffmpeg_bin(),
+            "-y",
+            "-sseof", "-0.04",
+            "-i", input_path,
+            "-vframes", "1",
+            frame_path,
+        ]
+        try:
+            _run_command(command)
+        except RuntimeError:
+            fallback_command = [
+                _ffmpeg_bin(),
+                "-y",
+                "-i", input_path,
+                "-vframes", "1",
+                frame_path,
+            ]
+            _run_command(fallback_command)
+
+        with open(frame_path, "rb") as fh_frame:
+            frame_bytes = fh_frame.read()
+
+        if not frame_bytes:
+            raise RuntimeError("Не удалось извлечь кадр видео.")
+
+        return frame_bytes
     finally:
-        for path in temp_files:
+        for path in temp_paths:
             try:
                 if os.path.exists(path):
                     os.unlink(path)
@@ -152,71 +224,101 @@ def combine_videos_with_crossfade(
     duration2: Optional[float],
     fade_duration: float = 1.0,
 ) -> Tuple[bytes, float]:
-    """Склеивает два ролика с плавным видео/аудио переходом, используя moviepy."""
-    temp_files: List[str] = []
+    """
+    Склеивает два видео с плавным переходом (видео и, при наличии, аудио) через ffmpeg.
+    """
+    temp_paths: List[str] = []
     try:
         fd1, path1 = tempfile.mkstemp(suffix=".mp4")
         os.close(fd1)
         with open(path1, "wb") as fh:
             fh.write(part1_bytes)
-        temp_files.append(path1)
+        temp_paths.append(path1)
 
         fd2, path2 = tempfile.mkstemp(suffix=".mp4")
         os.close(fd2)
         with open(path2, "wb") as fh:
             fh.write(part2_bytes)
-        temp_files.append(path2)
+        temp_paths.append(path2)
 
         fd_out, output_path = tempfile.mkstemp(suffix=".mp4")
         os.close(fd_out)
-        temp_files.append(output_path)
+        temp_paths.append(output_path)
 
-        with VideoFileClip(path1) as clip1, VideoFileClip(path2) as clip2:
-            actual_d1 = duration1 or clip1.duration or 0
-            actual_d2 = duration2 or clip2.duration or 0
-            base_fade = fade_duration or 1.0
-            fade = max(0.5, min(base_fade, actual_d1 / 2 if actual_d1 else base_fade, actual_d2 / 2 if actual_d2 else base_fade))
+        actual_duration1 = duration1 or _probe_duration(path1) or fade_duration
+        actual_duration2 = duration2 or _probe_duration(path2) or fade_duration
 
-            v1 = clip1.fx(vfx.fadeout, fade)
-            v2 = clip2.fx(vfx.fadein, fade)
+        candidate_fades = [fade_duration]
+        if actual_duration1:
+            candidate_fades.append(actual_duration1 / 2)
+        if actual_duration2:
+            candidate_fades.append(actual_duration2 / 2)
+        fade = max(0.5, min(candidate_fades))
 
-            audio_present = False
-            if clip1.audio or clip2.audio:
-                audio_present = True
-                v1 = v1.set_audio(clip1.audio.fx(afx.audio_fadeout, fade) if clip1.audio else None)
-                v2 = v2.set_audio(clip2.audio.fx(afx.audio_fadein, fade) if clip2.audio else None)
+        pre_cut = max(actual_duration1 - fade, 0.0)
 
-            final_clip = concatenate_videoclips([v1, v2], method="compose", padding=-fade)
-            final_duration = final_clip.duration
-            temp_audiofile = None
-            if audio_present:
-                fd_audio, temp_audiofile = tempfile.mkstemp(suffix=".m4a")
-                os.close(fd_audio)
-                temp_files.append(temp_audiofile)
-            final_clip.write_videofile(
-                output_path,
-                codec="libx264",
-                audio=audio_present,
-                audio_codec="aac" if audio_present else None,
-                temp_audiofile=temp_audiofile,
-                remove_temp=True,
-                fps=clip1.fps or clip2.fps or 24,
-                logger=None,
-                verbose=False,
-            )
-            final_clip.close()
+        has_audio1 = _detect_audio(path1)
+        has_audio2 = _detect_audio(path2)
+        include_audio = has_audio1 and has_audio2
+
+        filter_parts: List[str] = [
+            f"[0:v]trim=0:{pre_cut:.3f},setpts=PTS-STARTPTS[v0]",
+            f"[0:v]trim={pre_cut:.3f}:{actual_duration1:.3f},setpts=PTS-STARTPTS[v1]",
+            f"[1:v]trim=0:{fade:.3f},setpts=PTS-STARTPTS[v2]",
+            f"[1:v]trim={fade:.3f}:{actual_duration2:.3f},setpts=PTS-STARTPTS[v3]",
+            f"[v1][v2]xfade=transition=fade:duration={fade:.3f}:offset=0,format=yuv420p[vf]",
+            "[v0][vf][v3]concat=n=3:v=1:a=0[vout]",
+        ]
+
+        map_args: List[str] = ["-map", "[vout]"]
+        audio_args: List[str] = ["-an"]
+
+        if include_audio:
+            filter_parts.extend([
+                f"[0:a]atrim=0:{pre_cut:.3f},asetpts=PTS-STARTPTS[a0]",
+                f"[0:a]atrim={pre_cut:.3f}:{actual_duration1:.3f},asetpts=PTS-STARTPTS[a1]",
+                f"[1:a]atrim=0:{fade:.3f},asetpts=PTS-STARTPTS[a2]",
+                f"[1:a]atrim={fade:.3f}:{actual_duration2:.3f},asetpts=PTS-STARTPTS[a3]",
+                f"[a1][a2]acrossfade=d={fade:.3f}[af]",
+                "[a0][af][a3]concat=n=3:v=0:a=1[aout]",
+            ])
+            map_args.extend(["-map", "[aout]"])
+            audio_args = ["-c:a", "aac", "-b:a", "192k"]
+
+        command = [
+            _ffmpeg_bin(),
+            "-y",
+            "-i", path1,
+            "-i", path2,
+            "-filter_complex", ";".join(filter_parts),
+            *map_args,
+            "-c:v", "libx264",
+            "-preset", "medium",
+            "-crf", "18",
+            "-pix_fmt", "yuv420p",
+            *audio_args,
+            "-movflags", "+faststart",
+            output_path,
+        ]
+
+        _run_command(command)
 
         with open(output_path, "rb") as fh_out:
             combined_bytes = fh_out.read()
 
+        final_duration = actual_duration1 + actual_duration2 - fade
+
         return combined_bytes, final_duration
     finally:
-        for path in temp_files:
+        for path in temp_paths:
             try:
                 if os.path.exists(path):
                     os.unlink(path)
             except OSError:
                 pass
+
+
+def download_telegram_file(file_id: str) -> Tuple[bytes, str]:
 def download_telegram_file(file_id: str) -> Tuple[bytes, str]:
     """Скачать файл из Telegram и вернуть (bytes, mime_type)."""
     api_base = f"https://api.telegram.org/bot{settings.TELEGRAM_BOT_TOKEN}"
@@ -454,7 +556,7 @@ def extend_video_task(self, request_id: int):
             raise VideoGenerationError("Не найдена ссылка на исходное видео.")
 
         part1_bytes = fetch_remote_file(part1_url)
-        frame_bytes = extract_last_frame(part1_bytes, parent.duration)
+        frame_bytes = extract_last_frame(part1_bytes)
 
         result = provider.generate(
             prompt=prompt,
