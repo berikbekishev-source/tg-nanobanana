@@ -1,17 +1,19 @@
 {
-  "$schema": "https://railway.app/schemas/railway.json",
   "services": {
     "web": {
-      "start": "./.venv/bin/python manage.py migrate && ./.venv/bin/gunicorn -k uvicorn.workers.UvicornWorker config.asgi:application --bind 0.0.0.0:$PORT --workers 2 --timeout 120"
+      "startCommand": "./.venv/bin/python manage.py migrate && ./.venv/bin/gunicorn -k uvicorn.workers.UvicornWorker config.asgi:application --bind 0.0.0.0:$PORT --workers 2 --timeout 120"
     },
     "worker": {
-      "start": "./.venv/bin/celery -A config.celery:app worker -Q default -l INFO --concurrency=2"
+      "startCommand": "./.venv/bin/celery -A config.celery:app worker -Q default -l INFO --concurrency=2",
+      "installCommand": "python3.11 -m venv .venv && ./.venv/bin/pip install --upgrade pip && ./.venv/bin/pip install -r requirements.txt"
     },
     "beat": {
-      "start": "./.venv/bin/celery -A config.celery:app beat -l INFO"
+      "installCommand": "python3.11 -m venv .venv && ./.venv/bin/pip install --upgrade pip && ./.venv/bin/pip install -r requirements.txt",
+      "startCommand": "./.venv/bin/celery -A config.celery:app beat -l INFO"
     },
     "flower": {
-      "start": "./.venv/bin/celery -A config.celery:app flower --address=0.0.0.0 --port=5555"
+      "installCommand": "python3.11 -m venv .venv && ./.venv/bin/pip install --upgrade pip && ./.venv/bin/pip install -r requirements.txt",
+      "startCommand": "./.venv/bin/celery -A config.celery:app flower --address=0.0.0.0 --port=5555"
     }
   }
 }
