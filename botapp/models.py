@@ -163,7 +163,7 @@ class GenRequest(models.Model):
     duration = models.IntegerField(null=True, blank=True)  # Длительность видео в секундах
     video_resolution = models.CharField(max_length=20, blank=True)  # Разрешение видео
     aspect_ratio = models.CharField(max_length=10, blank=True)
-    provider_job_id = models.CharField(max_length=128, blank=True)
+    provider_job_id = models.CharField(max_length=512, blank=True)
     provider_metadata = models.JSONField(default=dict, blank=True)
     source_media = models.JSONField(default=dict, blank=True)  # Источник входных данных (file_id и т.д.)
 
