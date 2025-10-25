@@ -9,6 +9,7 @@ import hmac
 from urllib.parse import parse_qsl
 import logging
 import uuid
+from asgiref.sync import async_to_sync
 
 logger = logging.getLogger(__name__)
 
@@ -337,7 +338,6 @@ def lava_webhook(request):
 
             # Отправляем уведомление пользователю в Telegram
             try:
-                import asyncio
                 from botapp.telegram import bot
 
                 message_text = (
@@ -349,12 +349,12 @@ def lava_webhook(request):
                     f"Теперь вы можете создавать изображения и видео."
                 )
 
-                # Отправляем сообщение асинхронно
-                asyncio.run(bot.send_message(
+                # Отправляем сообщение, не ломая текущий event loop
+                async_to_sync(bot.send_message)(
                     chat_id=trans.user.chat_id,
                     text=message_text,
                     parse_mode="Markdown"
-                ))
+                )
                 logger.info(f"Payment notification sent to user {trans.user.chat_id}")
             except Exception as e:
                 logger.error(f"Failed to send payment notification: {e}")
