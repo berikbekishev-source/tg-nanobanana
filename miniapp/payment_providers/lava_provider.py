@@ -20,7 +20,7 @@ LAVA_PAYMENT_LINKS = {
 }
 
 
-def get_payment_url(credits: int, transaction_id: int, user_email: str = None) -> str:
+def get_payment_url(credits: int, transaction_id, user_email: str = None) -> str:
     """
     Получить ссылку на оплату для указанного количества токенов
 
