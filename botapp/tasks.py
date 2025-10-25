@@ -106,6 +106,54 @@ def fetch_remote_file(url: str) -> bytes:
         return resp.content
 
 
+def extract_last_frame(video_bytes: bytes) -> Tuple[bytes, float, float, Tuple[int, int]]:
+    """
+    Сохранить последний кадр ролика и вернуть его байты, длительность, FPS и размер.
+    """
+    import moviepy.editor as mpe  # noqa: WPS433
+
+    temp_paths: List[str] = []
+    clip = None
+    frame_path = ""
+    try:
+        fd_video, video_path = tempfile.mkstemp(suffix=".mp4")
+        os.close(fd_video)
+        with open(video_path, "wb") as fh_video:
+            fh_video.write(video_bytes)
+        temp_paths.append(video_path)
+
+        clip = mpe.VideoFileClip(video_path)
+        fps = clip.fps or 24.0
+        duration = float(clip.duration or 0.0)
+        frame_time = max(duration - (1.0 / fps), 0.0)
+
+        fd_frame, frame_path = tempfile.mkstemp(suffix=".png")
+        os.close(fd_frame)
+        clip.save_frame(frame_path, t=frame_time)
+        with open(frame_path, "rb") as fh_frame:
+            frame_bytes = fh_frame.read()
+
+        width, height = clip.size
+        return frame_bytes, duration, fps, (width, height)
+    finally:
+        if clip:
+            try:
+                clip.close()
+            except Exception:
+                pass
+        if frame_path and os.path.exists(frame_path):
+            try:
+                os.unlink(frame_path)
+            except OSError:
+                pass
+        for path in temp_paths:
+            try:
+                if os.path.exists(path):
+                    os.unlink(path)
+            except OSError:
+                pass
+
+
 def combine_videos_with_crossfade(
     part1_bytes: bytes,
     part2_bytes: bytes,
@@ -409,7 +457,7 @@ def extend_video_task(self, request_id: int):
             raise VideoGenerationError("Модель для продления видео недоступна.")
 
         prompt = req.prompt
-        generation_type = 'text2video'
+        generation_type = 'image2video'
 
         provider = get_video_provider(model.provider)
 
@@ -419,6 +467,9 @@ def extend_video_task(self, request_id: int):
         params.update(req.generation_params or {})
         params.pop("extend_parent_request_id", None)
         params.pop("parent_request_id", None)
+        params.pop("input_image_file_id", None)
+        params.pop("input_image_mime_type", None)
+        params["mode"] = generation_type
 
         params["duration"] = 8
         if parent.aspect_ratio:
@@ -426,24 +477,22 @@ def extend_video_task(self, request_id: int):
         if parent.video_resolution:
             params["resolution"] = parent.video_resolution
 
-        input_media: Optional[bytes] = None
-        input_mime_type: Optional[str] = None
-
-        result = provider.generate(
-            prompt=prompt,
-            model_name=model.api_model_name,
-            generation_type=generation_type,
-            params=params,
-            input_media=input_media,
-            input_mime_type=input_mime_type,
-        )
-
         source_media = req.source_media if isinstance(req.source_media, dict) else {}
         part1_url = source_media.get("parent_result_url") or (parent.result_urls[0] if parent.result_urls else None)
         if not part1_url:
             raise VideoGenerationError("Не найдена ссылка на исходное видео.")
 
         part1_bytes = fetch_remote_file(part1_url)
+        frame_bytes, _, _, _ = extract_last_frame(part1_bytes)
+
+        result = provider.generate(
+            prompt=prompt,
+            model_name=model.api_model_name,
+            generation_type=generation_type,
+            params=params,
+            input_media=frame_bytes,
+            input_mime_type="image/png",
+        )
         part2_bytes = result.content
 
         combined_bytes, combined_duration, (_width, height) = combine_videos_with_crossfade(part1_bytes, part2_bytes)

@@ -455,7 +455,7 @@ async def handle_video_extension_prompt(message: Message, state: FSMContext):
             ai_model=model,
             prompt=text,
             quantity=1,
-            generation_type='text2video',
+            generation_type='image2video',
             generation_params=generation_params,
             duration=8,
             video_resolution=resolution,
