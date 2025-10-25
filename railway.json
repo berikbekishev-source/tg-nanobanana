@@ -5,14 +5,14 @@
     },
     "worker": {
       "startCommand": "./.venv/bin/celery -A config.celery:app worker -Q default -l INFO --concurrency=2",
-      "installCommand": "python3.11 -m venv .venv && ./.venv/bin/pip install --upgrade pip && ./.venv/bin/pip install -r requirements.txt"
+      "installCommand": "apt-get update && apt-get install -y ffmpeg && python3.11 -m venv .venv && ./.venv/bin/pip install --upgrade pip && ./.venv/bin/pip install -r requirements.txt"
     },
     "beat": {
-      "installCommand": "python3.11 -m venv .venv && ./.venv/bin/pip install --upgrade pip && ./.venv/bin/pip install -r requirements.txt",
+      "installCommand": "apt-get update && apt-get install -y ffmpeg && python3.11 -m venv .venv && ./.venv/bin/pip install --upgrade pip && ./.venv/bin/pip install -r requirements.txt",
       "startCommand": "./.venv/bin/celery -A config.celery:app beat -l INFO"
     },
     "flower": {
-      "installCommand": "python3.11 -m venv .venv && ./.venv/bin/pip install --upgrade pip && ./.venv/bin/pip install -r requirements.txt",
+      "installCommand": "apt-get update && apt-get install -y ffmpeg && python3.11 -m venv .venv && ./.venv/bin/pip install --upgrade pip && ./.venv/bin/pip install -r requirements.txt",
       "startCommand": "./.venv/bin/celery -A config.celery:app flower --address=0.0.0.0 --port=5555"
     }
   }
