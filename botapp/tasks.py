@@ -286,47 +286,63 @@ def combine_videos_with_crossfade(
         has_audio2 = _detect_audio(path2)
         include_audio = has_audio1 and has_audio2
 
-        filter_parts: List[str] = [
-            f"[0:v]trim=0:{pre_cut:.3f},setpts=PTS-STARTPTS[v0]",
-            f"[0:v]trim={pre_cut:.3f}:{actual_d1:.3f},setpts=PTS-STARTPTS[v1]",
-            f"[1:v]trim=0:{fade:.3f},setpts=PTS-STARTPTS[v2]",
-            f"[1:v]trim={fade:.3f}:{actual_d2:.3f},setpts=PTS-STARTPTS[v3]",
-            f"[v1][v2]xfade=transition=fade:duration={fade:.3f}:offset=0[vf]",
-            "[v0][vf][v3]concat=n=3:v=1:a=0[vout]",
-        ]
+        def build_command(include_audio_filter: bool) -> List[str]:
+            filter_parts: List[str] = [
+                f"[0:v]trim=0:{pre_cut:.3f},setpts=PTS-STARTPTS[v0]",
+                f"[0:v]trim={pre_cut:.3f}:{actual_d1:.3f},setpts=PTS-STARTPTS[v1]",
+                f"[1:v]trim=0:{fade:.3f},setpts=PTS-STARTPTS[v2]",
+                f"[1:v]trim={fade:.3f}:{actual_d2:.3f},setpts=PTS-STARTPTS[v3]",
+                f"[v1][v2]xfade=transition=fade:duration={fade:.3f}:offset=0[vf]",
+                "[v0][vf][v3]concat=n=3:v=1:a=0[vout]",
+            ]
 
-        map_args: List[str] = ["-map", "[vout]"]
-        audio_args: List[str] = ["-an"]
+            map_args: List[str] = ["-map", "[vout]"]
+            audio_args: List[str] = ["-an"]
 
+            if include_audio_filter:
+                filter_parts.extend([
+                    f"[0:a]atrim=0:{pre_cut:.3f},asetpts=PTS-STARTPTS[a0]",
+                    f"[0:a]atrim={pre_cut:.3f}:{actual_d1:.3f},asetpts=PTS-STARTPTS[a1]",
+                    f"[1:a]atrim=0:{fade:.3f},asetpts=PTS-STARTPTS[a2]",
+                    f"[1:a]atrim={fade:.3f}:{actual_d2:.3f},asetpts=PTS-STARTPTS[a3]",
+                    f"[a1][a2]acrossfade=d={fade:.3f}[af]",
+                    "[a0][af][a3]concat=n=3:v=0:a=1[aout]",
+                ])
+                map_args.extend(["-map", "[aout]"])
+                audio_args = ["-c:a", "aac", "-b:a", "192k", "-ar", "44100"]
+
+            return [
+                _ffmpeg_bin(),
+                "-y",
+                "-i", path1,
+                "-i", path2,
+                "-filter_complex", ";".join(filter_parts),
+                *map_args,
+                "-c:v", "libx264",
+                "-preset", "medium",
+                "-crf", "18",
+                "-pix_fmt", "yuv420p",
+                *audio_args,
+                "-movflags", "+faststart",
+                output_path,
+            ]
+
+        command_errors: List[str] = []
         if include_audio:
-            filter_parts.extend([
-                f"[0:a]atrim=0:{pre_cut:.3f},asetpts=PTS-STARTPTS[a0]",
-                f"[0:a]atrim={pre_cut:.3f}:{actual_d1:.3f},asetpts=PTS-STARTPTS[a1]",
-                f"[1:a]atrim=0:{fade:.3f},asetpts=PTS-STARTPTS[a2]",
-                f"[1:a]atrim={fade:.3f}:{actual_d2:.3f},asetpts=PTS-STARTPTS[a3]",
-                f"[a1][a2]acrossfade=d={fade:.3f}[af]",
-                "[a0][af][a3]concat=n=3:v=0:a=1[aout]",
-            ])
-            map_args.extend(["-map", "[aout]"])
-            audio_args = ["-c:a", "aac", "-b:a", "192k"]
+            try:
+                _run_command(build_command(include_audio_filter=True))
+            except RuntimeError as exc:
+                command_errors.append(str(exc))
+                include_audio = False
 
-        command = [
-            _ffmpeg_bin(),
-            "-y",
-            "-i", path1,
-            "-i", path2,
-            "-filter_complex", ";".join(filter_parts),
-            *map_args,
-            "-c:v", "libx264",
-            "-preset", "medium",
-            "-crf", "18",
-            "-pix_fmt", "yuv420p",
-            *audio_args,
-            "-movflags", "+faststart",
-            output_path,
-        ]
-
-        _run_command(command)
+        if not include_audio:
+            try:
+                _run_command(build_command(include_audio_filter=False))
+            except RuntimeError as exc:
+                if command_errors:
+                    command_errors.append(str(exc))
+                    raise RuntimeError(" ".join(command_errors)) from exc
+                raise
 
         with open(output_path, "rb") as fh_out:
             combined_bytes = fh_out.read()
