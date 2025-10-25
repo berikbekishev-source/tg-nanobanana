@@ -98,3 +98,16 @@ def supabase_upload_png(content: bytes) -> str:
     public = supabase.storage.from_(settings.SUPABASE_BUCKET).get_public_url(key)
     return public  # dict или строка — у lib v2 возвращается объект; возьмём .get("publicUrl") при необходимости
 
+
+def supabase_upload_video(content: bytes, mime_type: str = "video/mp4") -> str:
+    """Загружает видео в Supabase Storage и возвращает публичный URL."""
+    supabase = create_client(settings.SUPABASE_URL, settings.SUPABASE_KEY)
+    extension = "mp4" if "mp4" in mime_type else "webm"
+    key = f"videos/{uuid.uuid4().hex}.{extension}"
+    supabase.storage.from_(settings.SUPABASE_VIDEO_BUCKET).upload(
+        path=key,
+        file=content,
+        file_options={"content-type": mime_type, "upsert": "true"},
+    )
+    public = supabase.storage.from_(settings.SUPABASE_VIDEO_BUCKET).get_public_url(key)
+    return public

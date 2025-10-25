@@ -13,11 +13,11 @@ def setup_telegram():
     """
     Инициализация Telegram-бота при старте Django (asgi.py).
     """
-    from .handlers import router as basic_router
+    from .handlers import main_router
 
     # Проверка, чтобы не подключать повторно
-    if basic_router not in dp.sub_routers:
-        dp.include_router(basic_router)
-        print("✅ Telegram bot initialized")
+    if main_router not in dp.sub_routers:
+        dp.include_router(main_router)
+        print("✅ Telegram bot initialized with FSM handlers")
     else:
         print("⚠️ Router already attached, skipping setup_telegram()")

@@ -6,6 +6,10 @@ class BotappConfig(AppConfig):
     name = "botapp"
 
     def ready(self):
-        from .telegram import dp  # noqa
-        from .handlers import router as basic_router  # noqa
-        dp.include_router(basic_router)
+        try:
+            from .telegram import dp  # noqa
+            from .handlers import main_router  # noqa
+            dp.include_router(main_router)
+        except ImportError:
+            # aiogram not installed yet
+            pass
