@@ -2,16 +2,16 @@
   "$schema": "https://railway.app/schemas/railway.json",
   "services": {
     "web": {
-      "start": "python manage.py migrate && gunicorn -k uvicorn.workers.UvicornWorker config.asgi:application --bind 0.0.0.0:$PORT --workers 2 --timeout 120"
+      "start": "./.venv/bin/python manage.py migrate && ./.venv/bin/gunicorn -k uvicorn.workers.UvicornWorker config.asgi:application --bind 0.0.0.0:$PORT --workers 2 --timeout 120"
     },
     "worker": {
-      "start": "celery -A config.celery:app worker -Q default -l INFO --concurrency=2"
+      "start": "./.venv/bin/celery -A config.celery:app worker -Q default -l INFO --concurrency=2"
     },
     "beat": {
-      "start": "celery -A config.celery:app beat -l INFO"
+      "start": "./.venv/bin/celery -A config.celery:app beat -l INFO"
     },
     "flower": {
-      "start": "celery -A config.celery:app flower --address=0.0.0.0 --port=5555"
+      "start": "./.venv/bin/celery -A config.celery:app flower --address=0.0.0.0 --port=5555"
     }
   }
 }
