@@ -82,7 +82,7 @@ def health_check(request):
     return {"status": "ok", "api": "miniapp", "timestamp": str(timezone.now())}
 
 
-@miniapp_api.post("/create-payment", response=PaymentResponse)
+@miniapp_api.post("/create-payment")
 def create_payment(request, data: CreatePaymentRequest):
     """
     Создание платежа для пополнения баланса
@@ -176,32 +176,39 @@ def create_payment(request, data: CreatePaymentRequest):
         if not payment_url:
             if user and transaction_id:
                 Transaction.objects.filter(id=transaction_id).delete()
-            return PaymentResponse(
-                success=False,
-                error=f"Платежная ссылка для {data.credits} токенов еще не создана в Lava.top"
-            )
+            return {
+                "success": False,
+                "payment_url": None,
+                "payment_id": None,
+                "error": f"Платежная ссылка для {data.credits} токенов еще не создана в Lava.top"
+            }
 
         logger.info(f"Payment URL generated: {payment_url}")
-        response = PaymentResponse(
-            success=True,
-            payment_url=payment_url,
-            payment_id=str(transaction_id)
-        )
-        logger.info(f"Returning success response: {response.dict()}")
+        response = {
+            "success": True,
+            "payment_url": payment_url,
+            "payment_id": str(transaction_id),
+            "error": None
+        }
+        logger.info(f"Returning success response: {response}")
         return response
 
     except ImportError as e:
         logger.error(f"Import error in create_payment: {e}", exc_info=True)
-        return PaymentResponse(
-            success=False,
-            error="Ошибка импорта модуля"
-        )
+        return {
+            "success": False,
+            "payment_url": None,
+            "payment_id": None,
+            "error": "Ошибка импорта модуля"
+        }
     except Exception as e:
         logger.error(f"Error creating payment: {e}", exc_info=True)
-        return PaymentResponse(
-            success=False,
-            error=f"Ошибка создания платежа: {str(e)}"
-        )
+        return {
+            "success": False,
+            "payment_url": None,
+            "payment_id": None,
+            "error": f"Ошибка создания платежа: {str(e)}"
+        }
 
 
 @miniapp_api.post("/lava-webhook")
