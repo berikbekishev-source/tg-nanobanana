@@ -155,6 +155,7 @@ VERTEX_LOCATION = os.getenv("VERTEX_LOCATION", GCP_LOCATION or "us-central1")
 
 # --- Lava.top Payment ---
 LAVA_WEBHOOK_SECRET = os.getenv("LAVA_WEBHOOK_SECRET")
+LAVA_API_KEY = os.getenv("LAVA_API_KEY")
 PAYMENT_MINI_APP_URL = f"{PUBLIC_BASE_URL.rstrip('/')}/miniapp/"
 
 # --- Sentry (опционально) ---
