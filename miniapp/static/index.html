@@ -299,41 +299,77 @@
                     return;
                 }
 
+                // Проверка наличия данных пользователя
+                const userId = tg.initDataUnsafe.user?.id;
+                console.log('User ID:', userId);
+                console.log('Init Data:', tg.initData);
+
+                if (!userId) {
+                    tg.showAlert('Ошибка: не удалось получить данные пользователя. Попробуйте открыть страницу заново из бота.');
+                    return;
+                }
+
                 // Отключить кнопку
                 payBtn.disabled = true;
                 payBtn.textContent = 'Обработка...';
 
                 try {
+                    const requestData = {
+                        email: email,
+                        credits: selectedCredits,
+                        amount: selectedPrice,
+                        currency: 'USD',
+                        payment_method: 'card',
+                        user_id: userId,
+                        init_data: tg.initData
+                    };
+
+                    console.log('Sending request:', requestData);
+
                     // Отправить данные на сервер
                     const response = await fetch('/api/miniapp/create-payment', {
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/json',
                         },
-                        body: JSON.stringify({
-                            email: email,
-                            credits: selectedCredits,
-                            amount: selectedPrice,
-                            currency: 'USD',
-                            payment_method: 'card',
-                            user_id: tg.initDataUnsafe.user?.id,
-                            init_data: tg.initData
-                        })
+                        body: JSON.stringify(requestData)
                     });
 
+                    console.log('Response status:', response.status);
+
+                    if (!response.ok) {
+                        if (response.status === 500) {
+                            throw new Error('Ошибка сервера. Попробуйте позже.');
+                        } else if (response.status === 404) {
+                            throw new Error('API не найден. Обратитесь к администратору.');
+                        } else {
+                            throw new Error(`Ошибка HTTP: ${response.status}`);
+                        }
+                    }
+
                     const data = await response.json();
+                    console.log('Response data:', data);
 
                     if (data.success && data.payment_url) {
                         // Открыть ссылку на оплату
                         tg.openLink(data.payment_url);
                     } else {
-                        tg.showAlert(data.error || 'Ошибка создания платежа');
+                        const errorMsg = data.error || 'Ошибка создания платежа';
+                        console.error('Payment error:', errorMsg);
+
+                        // Специальная обработка для ошибки пользователя
+                        if (errorMsg.includes('Пользователь не найден')) {
+                            tg.showAlert('Сначала запустите бота командой /start, затем попробуйте снова');
+                        } else {
+                            tg.showAlert(errorMsg);
+                        }
+
                         payBtn.disabled = false;
                         payBtn.textContent = 'Оплатить';
                     }
                 } catch (error) {
-                    console.error('Error:', error);
-                    tg.showAlert('Произошла ошибка. Попробуйте еще раз.');
+                    console.error('Error details:', error);
+                    tg.showAlert(error.message || 'Произошла ошибка. Попробуйте еще раз.');
                     payBtn.disabled = false;
                     payBtn.textContent = 'Оплатить';
                 }
