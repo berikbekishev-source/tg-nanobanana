@@ -90,8 +90,8 @@ def create_payment(request, data: CreatePaymentRequest):
     try:
         logger.info(f"Payment request received: credits={data.credits}, amount={data.amount}, user_id={data.user_id}")
 
-        # Импортируем здесь чтобы избежать циклических зависимостей
-        from miniapp.payment_providers.lava_provider import get_payment_url
+        # Импортируем из нового модуля lavatop
+        from lavatop import get_payment_url
 
         # Валидация Telegram данных (временно отключена для тестирования)
         if data.init_data:
@@ -216,7 +216,7 @@ def lava_webhook(request):
     """
     Webhook для обработки платежей от Lava.top
     """
-    from miniapp.payment_providers.lava_provider import parse_webhook_data
+    from lavatop.webhook import parse_webhook_data
     from django.db import transaction as db_transaction
     import json
 

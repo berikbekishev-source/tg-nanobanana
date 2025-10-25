@@ -1,0 +1,82 @@
+{
+  "products": [
+    {
+      "tokens": 100,
+      "price": 5.00,
+      "currency": "USD",
+      "name": "100 Tokens",
+      "description": "Basic package - 100 tokens for image and video generation",
+      "active": true,
+      "lava_product_id": null,
+      "static_url": "https://app.lava.top/products/acfa45f0-6fa0-4f3c-b73e-f10b92d6d8fc/072b7520-f963-4650-8bbf-16e7efdbdd21",
+      "features": [
+        "Generate up to 20 images",
+        "Create 2-3 short videos",
+        "Standard quality"
+      ]
+    },
+    {
+      "tokens": 200,
+      "price": 10.00,
+      "currency": "USD",
+      "name": "200 Tokens",
+      "description": "Popular package - 200 tokens with no expiration",
+      "active": false,
+      "lava_product_id": null,
+      "static_url": null,
+      "features": [
+        "Generate up to 40 images",
+        "Create 5-6 short videos",
+        "Standard quality",
+        "No expiration"
+      ]
+    },
+    {
+      "tokens": 500,
+      "price": 25.00,
+      "currency": "USD",
+      "name": "500 Tokens",
+      "description": "Pro package - Best value for regular users",
+      "active": false,
+      "lava_product_id": null,
+      "static_url": null,
+      "features": [
+        "Generate up to 100 images",
+        "Create 12-15 videos",
+        "Priority processing",
+        "Premium support"
+      ]
+    },
+    {
+      "tokens": 1000,
+      "price": 50.00,
+      "currency": "USD",
+      "name": "1000 Tokens",
+      "description": "Enterprise package - Maximum tokens for power users",
+      "active": false,
+      "lava_product_id": null,
+      "static_url": null,
+      "features": [
+        "Generate up to 200 images",
+        "Create 25-30 videos",
+        "Priority processing",
+        "Dedicated support",
+        "Bulk operations"
+      ]
+    }
+  ],
+  "settings": {
+    "token_price": 0.05,
+    "currency": "USD",
+    "min_purchase": 100,
+    "max_purchase": 1000,
+    "webhook_url": "/api/miniapp/lava-webhook",
+    "success_url": "/payment/success",
+    "fail_url": "/payment/fail"
+  },
+  "metadata": {
+    "version": "1.0.0",
+    "last_updated": "2025-10-25",
+    "provider": "lava.top"
+  }
+}
