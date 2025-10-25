@@ -1,6 +1,7 @@
 from ninja import NinjaAPI, Schema
 from django.http import JsonResponse
 from django.conf import settings
+from django.utils import timezone
 from botapp.models import TgUser, UserBalance, Transaction
 from decimal import Decimal
 import hashlib
@@ -73,6 +74,14 @@ def validate_telegram_init_data(init_data: str) -> dict:
         return None
 
 
+@miniapp_api.get("/health")
+def health_check(request):
+    """
+    Проверка работоспособности API
+    """
+    return {"status": "ok", "api": "miniapp", "timestamp": str(timezone.now())}
+
+
 @miniapp_api.post("/create-payment", response=PaymentResponse)
 def create_payment(request, data: CreatePaymentRequest):
     """
@@ -80,6 +89,9 @@ def create_payment(request, data: CreatePaymentRequest):
     """
     try:
         logger.info(f"Payment request received: credits={data.credits}, amount={data.amount}, user_id={data.user_id}")
+
+        # Импортируем здесь чтобы избежать циклических зависимостей
+        from miniapp.payment_providers.lava_provider import get_payment_url
 
         # Валидация Telegram данных (временно отключена для тестирования)
         if data.init_data:
@@ -153,9 +165,8 @@ def create_payment(request, data: CreatePaymentRequest):
             # Для тестирования используем фейковый ID
             transaction_id = str(uuid.uuid4())[:8]
 
-        # Интеграция с Lava.top
-        from miniapp.payment_providers.lava_provider import get_payment_url
-
+        # Получаем URL для оплаты
+        logger.info(f"Getting payment URL for credits={data.credits}, transaction_id={transaction_id}")
         payment_url = get_payment_url(
             credits=data.credits,
             transaction_id=transaction_id,
@@ -171,14 +182,22 @@ def create_payment(request, data: CreatePaymentRequest):
             )
 
         logger.info(f"Payment URL generated: {payment_url}")
-        return PaymentResponse(
+        response = PaymentResponse(
             success=True,
             payment_url=payment_url,
             payment_id=str(transaction_id)
         )
+        logger.info(f"Returning success response: {response.dict()}")
+        return response
 
+    except ImportError as e:
+        logger.error(f"Import error in create_payment: {e}", exc_info=True)
+        return PaymentResponse(
+            success=False,
+            error="Ошибка импорта модуля"
+        )
     except Exception as e:
-        logger.error(f"Error creating payment: {e}")
+        logger.error(f"Error creating payment: {e}", exc_info=True)
         return PaymentResponse(
             success=False,
             error=f"Ошибка создания платежа: {str(e)}"
