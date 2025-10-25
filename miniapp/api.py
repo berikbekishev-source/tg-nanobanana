@@ -263,8 +263,8 @@ def lava_webhook(request):
                     user=trans.user
                 )
 
-                # Начисляем токены
-                credits_amount = trans.amount  # Сумма в USD = количество токенов
+                # Начисляем токены (курс: $0.05 за токен = 20 токенов за $1)
+                credits_amount = trans.amount * 20  # Конвертируем USD в токены
                 user_balance.balance += credits_amount
                 user_balance.total_deposited += credits_amount
                 user_balance.save()
