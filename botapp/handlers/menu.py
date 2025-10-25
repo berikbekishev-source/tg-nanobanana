@@ -154,6 +154,8 @@ async def cancel_action(callback: CallbackQuery, state: FSMContext):
     await callback.answer("Действие отменено")
     await callback.message.delete()
 
+    await state.clear()
+
     # Возвращаем в главное меню
     await callback.message.answer(
         "Главное меню:",

@@ -13,10 +13,10 @@ from botapp.keyboards import (
     get_main_menu_inline_keyboard,
     get_generation_start_message
 )
-from botapp.models import TgUser, AIModel
+from botapp.models import TgUser, AIModel, GenRequest
 from botapp.business.generation import GenerationService
 from botapp.business.balance import BalanceService, InsufficientBalanceError
-from botapp.tasks import generate_video_task
+from botapp.tasks import generate_video_task, extend_video_task
 from asgiref.sync import sync_to_async
 
 router = Router()
@@ -293,6 +293,208 @@ async def handle_video_prompt(message: Message, state: FSMContext):
 
     generate_video_task.delay(gen_request.id)
     await state.clear()
+
+
+@router.callback_query(F.data.startswith("extend_video:"))
+async def prompt_video_extension(callback: CallbackQuery, state: FSMContext):
+    """Подготовить пользователя к продлению видео."""
+    await callback.answer()
+
+    try:
+        request_id = int(callback.data.split(":", maxsplit=1)[1])
+    except (ValueError, IndexError):
+        await callback.message.answer(
+            "Не удалось определить, какое видео продлить.",
+            reply_markup=get_main_menu_inline_keyboard()
+        )
+        return
+
+    try:
+        gen_request = await sync_to_async(
+            GenRequest.objects.select_related("ai_model", "user").get
+        )(id=request_id)
+    except GenRequest.DoesNotExist:
+        await callback.message.answer(
+            "Эта генерация больше недоступна.",
+            reply_markup=get_main_menu_inline_keyboard()
+        )
+        return
+
+    if gen_request.chat_id != callback.from_user.id:
+        await callback.answer("Можно продлить только свои видео.", show_alert=True)
+        return
+
+    if gen_request.status != "done" or not gen_request.result_urls:
+        await callback.message.answer(
+            "Видео ещё обрабатывается. Попробуйте чуть позже.",
+            reply_markup=get_main_menu_inline_keyboard()
+        )
+        return
+
+    model = gen_request.ai_model
+    if not model:
+        await callback.message.answer(
+            "Не удалось найти информацию о модели. Попробуйте сгенерировать новое видео.",
+            reply_markup=get_main_menu_inline_keyboard()
+        )
+        return
+
+    aspect_ratio = gen_request.aspect_ratio or gen_request.generation_params.get("aspect_ratio") or "не указан"
+    cost_text = f"⚡ Стоимость продления: {model.price:.2f} токенов."
+
+    await state.update_data(
+        extend_parent_request_id=gen_request.id,
+    )
+    await state.set_state(BotStates.video_extend_prompt)
+
+    prompt_text = (
+        "Можно продлить ваш ролик ещё на 8 секунд.\n\n"
+        f"Модель: {model.display_name}\n"
+        f"Аспект: {aspect_ratio}\n"
+        f"{cost_text}\n\n"
+        "Отправьте новый текст запроса или нажмите «Отмена»."
+    )
+
+    await callback.message.answer(prompt_text, reply_markup=get_cancel_keyboard())
+
+
+@router.message(BotStates.video_extend_prompt, F.text)
+async def handle_video_extension_prompt(message: Message, state: FSMContext):
+    """Получаем текст для продления видео и запускаем задачу."""
+    text = message.text.strip()
+    if text.lower() in {"отмена", "cancel"}:
+        await state.clear()
+        await message.answer(
+            "Продление отменено.",
+            reply_markup=get_main_menu_inline_keyboard()
+        )
+        return
+
+    data = await state.get_data()
+    parent_request_id = data.get("extend_parent_request_id")
+
+    if not parent_request_id:
+        await message.answer(
+            "Не удалось найти исходное видео. Попробуйте снова.",
+            reply_markup=get_main_menu_inline_keyboard()
+        )
+        await state.clear()
+        return
+
+    try:
+        parent_request = await sync_to_async(
+            GenRequest.objects.select_related("ai_model", "user").get
+        )(id=parent_request_id)
+    except GenRequest.DoesNotExist:
+        await message.answer(
+            "Это видео больше недоступно для продления.",
+            reply_markup=get_main_menu_inline_keyboard()
+        )
+        await state.clear()
+        return
+
+    if parent_request.chat_id != message.from_user.id:
+        await message.answer(
+            "Можно продлить только свои видео.",
+            reply_markup=get_main_menu_inline_keyboard()
+        )
+        await state.clear()
+        return
+
+    model = parent_request.ai_model
+    if not model:
+        await message.answer(
+            "Не удалось определить модель генерации. Попробуйте начать новую генерацию.",
+            reply_markup=get_main_menu_inline_keyboard()
+        )
+        await state.clear()
+        return
+
+    if len(text) > model.max_prompt_length:
+        await message.answer(
+            f"❌ Промт слишком длинный! Максимальная длина: {model.max_prompt_length} символов.",
+            reply_markup=get_cancel_keyboard()
+        )
+        return
+
+    if not parent_request.result_urls:
+        await message.answer(
+            "Исходное видео ещё не готово. Попробуйте чуть позже.",
+            reply_markup=get_main_menu_inline_keyboard()
+        )
+        await state.clear()
+        return
+
+    aspect_ratio = (
+        parent_request.aspect_ratio
+        or parent_request.generation_params.get("aspect_ratio")
+        or (model.default_params or {}).get("aspect_ratio")
+        or "16:9"
+    )
+    resolution = (
+        parent_request.video_resolution
+        or parent_request.generation_params.get("resolution")
+        or (model.default_params or {}).get("resolution")
+        or "720p"
+    )
+
+    generation_params = {
+        "duration": 8,
+        "aspect_ratio": aspect_ratio,
+        "resolution": resolution,
+        "extend_parent_request_id": parent_request.id,
+    }
+    source_media = {
+        "parent_request_id": parent_request.id,
+        "parent_result_url": parent_request.result_urls[0],
+    }
+
+    try:
+        gen_request = await sync_to_async(GenerationService.create_generation_request)(
+            user=parent_request.user,
+            ai_model=model,
+            prompt=text,
+            quantity=1,
+            generation_type='text2video',
+            generation_params=generation_params,
+            duration=8,
+            video_resolution=resolution,
+            aspect_ratio=aspect_ratio,
+            source_media=source_media,
+            parent_request=parent_request,
+        )
+    except InsufficientBalanceError as exc:
+        await message.answer(str(exc), reply_markup=get_main_menu_inline_keyboard())
+        await state.clear()
+        return
+    except ValueError as exc:
+        await message.answer(str(exc), reply_markup=get_main_menu_inline_keyboard())
+        await state.clear()
+        return
+    except Exception as exc:
+        await message.answer(
+            f"❌ Произошла ошибка: {exc}",
+            reply_markup=get_main_menu_inline_keyboard()
+        )
+        await state.clear()
+        return
+
+    await message.answer(
+        get_generation_start_message(),
+        reply_markup=get_main_menu_inline_keyboard()
+    )
+
+    extend_video_task.delay(gen_request.id)
+    await state.clear()
+
+
+@router.message(BotStates.video_extend_prompt)
+async def remind_extension_prompt(message: Message):
+    """Если прилетело что-то кроме текста во время ожидания промта."""
+    await message.answer(
+        "Отправьте текстовый промт для продления видео или нажмите «Отмена».",
+        reply_markup=get_cancel_keyboard()
+    )
 
 
 @router.callback_query(F.data == "main_menu")

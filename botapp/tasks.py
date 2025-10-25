@@ -387,6 +387,143 @@ def generate_video_task(self, request_id: int):
         raise
 
 
+@shared_task(bind=True, autoretry_for=(Exception,), retry_backoff=True, max_retries=3)
+def extend_video_task(self, request_id: int):
+    """
+    Продлить ранее сгенерированное видео на дополнительный сегмент.
+    """
+    req = GenRequest.objects.select_related('user', 'ai_model', 'transaction', 'parent_request').get(id=request_id)
+    parent = req.parent_request
+    if not parent:
+        raise VideoGenerationError("Не удалось определить исходный ролик для продления.")
+
+    parent.refresh_from_db()
+    if parent.status != "done" or not parent.result_urls:
+        raise VideoGenerationError("Исходный ролик ещё не готов для продления.")
+
+    try:
+        GenerationService.start_generation(req)
+
+        model = req.ai_model or parent.ai_model
+        if not model:
+            raise VideoGenerationError("Модель для продления видео недоступна.")
+
+        prompt = req.prompt
+        generation_type = 'text2video'
+
+        provider = get_video_provider(model.provider)
+
+        params: Dict[str, Any] = {}
+        params.update(model.default_params or {})
+        params.update(parent.generation_params or {})
+        params.update(req.generation_params or {})
+        params.pop("extend_parent_request_id", None)
+        params.pop("parent_request_id", None)
+
+        params["duration"] = 8
+        if parent.aspect_ratio:
+            params["aspect_ratio"] = parent.aspect_ratio
+        if parent.video_resolution:
+            params["resolution"] = parent.video_resolution
+
+        input_media: Optional[bytes] = None
+        input_mime_type: Optional[str] = None
+
+        result = provider.generate(
+            prompt=prompt,
+            model_name=model.api_model_name,
+            generation_type=generation_type,
+            params=params,
+            input_media=input_media,
+            input_mime_type=input_mime_type,
+        )
+
+        source_media = req.source_media if isinstance(req.source_media, dict) else {}
+        part1_url = source_media.get("parent_result_url") or (parent.result_urls[0] if parent.result_urls else None)
+        if not part1_url:
+            raise VideoGenerationError("Не найдена ссылка на исходное видео.")
+
+        part1_bytes = fetch_remote_file(part1_url)
+        part2_bytes = result.content
+
+        combined_bytes, combined_duration, (_width, height) = combine_videos_with_crossfade(part1_bytes, part2_bytes)
+
+        upload_result = supabase_upload_video(combined_bytes, mime_type="video/mp4")
+        public_url = upload_result.get("public_url") if isinstance(upload_result, dict) else upload_result
+
+        provider_metadata = dict(result.metadata or {})
+        provider_metadata["extension"] = {
+            "parent_request_id": parent.id,
+            "segment_job_id": result.provider_job_id,
+        }
+
+        final_resolution = parent.video_resolution or req.video_resolution or params.get("resolution") or (f"{height}p" if height else None)
+        final_aspect_ratio = parent.aspect_ratio or req.aspect_ratio or params.get("aspect_ratio")
+
+        GenerationService.complete_generation(
+            req,
+            result_urls=[public_url],
+            file_sizes=[len(combined_bytes)],
+            duration=int(round(combined_duration)),
+            video_resolution=final_resolution,
+            aspect_ratio=final_aspect_ratio,
+            provider_job_id=result.provider_job_id,
+            provider_metadata=provider_metadata,
+        )
+
+        req.refresh_from_db()
+        transaction = req.transaction
+        if transaction:
+            transaction.refresh_from_db()
+            charged_amount = transaction.amount
+            balance_after = transaction.balance_after
+        else:
+            charged_amount = Decimal("0.00")
+            balance_after = Decimal("0.00")
+
+        message = get_generation_complete_message(
+            prompt=prompt,
+            generation_type=generation_type,
+            model_name=model.display_name,
+            duration=req.duration or int(round(combined_duration)),
+            resolution=req.video_resolution or final_resolution,
+            aspect_ratio=req.aspect_ratio or final_aspect_ratio,
+            model_hashtag=model.hashtag,
+            charged_amount=charged_amount,
+            balance_after=balance_after,
+        )
+
+        send_telegram_video(
+            chat_id=req.chat_id,
+            video_bytes=combined_bytes,
+            caption=message,
+            reply_markup=get_video_result_markup(req.id),
+        )
+
+    except VideoGenerationError as e:
+        GenerationService.fail_generation(req, str(e), refund=True)
+        error_text = str(e)
+        if len(error_text) > 3500:
+            error_text = error_text[:3500] + "…"
+        try:
+            send_telegram_message(
+                req.chat_id,
+                f"❌ Ошибка продления видео: {error_text}",
+                reply_markup=get_inline_menu_markup(),
+                parse_mode=None,
+            )
+        except Exception:
+            pass
+        raise
+    except Exception as e:
+        GenerationService.fail_generation(req, str(e), refund=True)
+        send_telegram_message(
+            req.chat_id,
+            f"❌ Ошибка продления видео: {str(e)}",
+            reply_markup=get_inline_menu_markup(),
+        )
+        raise
+
 @shared_task(bind=True, max_retries=1)
 def process_payment_webhook(self, payment_data: Dict):
     """
