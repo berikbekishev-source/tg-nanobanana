@@ -236,22 +236,64 @@
 
     <script>
         // Telegram Web App
-        const tg = window.Telegram.WebApp;
+        const tg = window.Telegram ? window.Telegram.WebApp : null;
+
+        // Безопасная функция для показа уведомлений
+        function showNotification(message) {
+            try {
+                // Пробуем использовать Telegram метод
+                if (tg && tg.showAlert && typeof tg.showAlert === 'function') {
+                    tg.showAlert(message);
+                } else {
+                    // Используем обычный alert как запасной вариант
+                    alert(message);
+                }
+            } catch (e) {
+                // Если произошла ошибка, используем обычный alert
+                console.error('Error showing notification:', e);
+                alert(message);
+            }
+        }
+
+        // Безопасная функция для открытия ссылок
+        function openLink(url) {
+            try {
+                if (tg && tg.openLink && typeof tg.openLink === 'function') {
+                    tg.openLink(url);
+                } else {
+                    // Открываем в новом окне
+                    window.open(url, '_blank');
+                }
+            } catch (e) {
+                console.error('Error opening link:', e);
+                window.open(url, '_blank');
+            }
+        }
 
         // Инициализация
         document.addEventListener('DOMContentLoaded', () => {
-            // Настройка Telegram Web App
-            tg.ready();
-            tg.expand();
+            // Настройка Telegram Web App (если доступно)
+            try {
+                if (tg && tg.ready) {
+                    tg.ready();
+                    if (tg.expand) {
+                        tg.expand();
+                    }
+                }
+            } catch (e) {
+                console.log('Running outside Telegram:', e.message);
+            }
 
             // Установка черного фона принудительно
             document.body.style.backgroundColor = '#000000';
             document.documentElement.style.backgroundColor = '#000000';
 
             // Получить данные пользователя
-            const user = tg.initDataUnsafe.user;
+            const user = tg?.initDataUnsafe?.user;
             if (user) {
                 console.log('User:', user);
+            } else {
+                console.log('No Telegram user data available (running in browser)');
             }
 
             // Инициализация элементов
@@ -295,18 +337,18 @@
                 const email = emailInput.value.trim();
 
                 if (!validateEmail(email)) {
-                    tg.showAlert('Пожалуйста, введите корректный E-mail');
+                    showNotification('Пожалуйста, введите корректный E-mail');
                     return;
                 }
 
                 // Проверка наличия данных пользователя
-                const userId = tg.initDataUnsafe.user?.id;
+                const userId = tg?.initDataUnsafe?.user?.id;
                 console.log('User ID:', userId);
-                console.log('Init Data:', tg.initData);
+                console.log('Init Data:', tg?.initData);
 
                 if (!userId) {
-                    tg.showAlert('Ошибка: не удалось получить данные пользователя. Попробуйте открыть страницу заново из бота.');
-                    return;
+                    console.warn('No user ID available - running in test mode');
+                    // Не блокируем для тестирования в браузере
                 }
 
                 // Отключить кнопку
@@ -320,8 +362,8 @@
                         amount: selectedPrice,
                         currency: 'USD',
                         payment_method: 'card',
-                        user_id: userId,
-                        init_data: tg.initData
+                        user_id: userId || null,
+                        init_data: tg?.initData || ''
                     };
 
                     console.log('Sending request:', requestData);
@@ -352,16 +394,22 @@
 
                     if (data.success && data.payment_url) {
                         // Открыть ссылку на оплату
-                        tg.openLink(data.payment_url);
+                        console.log('Opening payment URL:', data.payment_url);
+                        openLink(data.payment_url);
+
+                        // Показываем сообщение об успехе
+                        showNotification('Перенаправляем на страницу оплаты...');
                     } else {
                         const errorMsg = data.error || 'Ошибка создания платежа';
                         console.error('Payment error:', errorMsg);
 
                         // Специальная обработка для ошибки пользователя
                         if (errorMsg.includes('Пользователь не найден')) {
-                            tg.showAlert('Сначала запустите бота командой /start, затем попробуйте снова');
+                            showNotification('Сначала запустите бота командой /start, затем попробуйте снова');
+                        } else if (errorMsg.includes('еще не создана')) {
+                            showNotification('Платежная ссылка для выбранного количества токенов еще не настроена. Попробуйте 100 токенов.');
                         } else {
-                            tg.showAlert(errorMsg);
+                            showNotification(errorMsg);
                         }
 
                         payBtn.disabled = false;
@@ -369,7 +417,7 @@
                     }
                 } catch (error) {
                     console.error('Error details:', error);
-                    tg.showAlert(error.message || 'Произошла ошибка. Попробуйте еще раз.');
+                    showNotification(error.message || 'Произошла ошибка. Попробуйте еще раз.');
                     payBtn.disabled = false;
                     payBtn.textContent = 'Оплатить';
                 }
@@ -396,12 +444,18 @@
             }
         }
 
-        // Обработка закрытия Web App
-        tg.onEvent('viewportChanged', () => {
-            if (!tg.isExpanded) {
-                tg.expand();
+        // Обработка закрытия Web App (если доступно)
+        try {
+            if (tg && tg.onEvent && typeof tg.onEvent === 'function') {
+                tg.onEvent('viewportChanged', () => {
+                    if (!tg.isExpanded && tg.expand) {
+                        tg.expand();
+                    }
+                });
             }
-        });
+        } catch (e) {
+            console.log('Telegram events not available');
+        }
     </script>
 </body>
 </html>
