@@ -6,10 +6,13 @@ import httpx
 from django.conf import settings
 from decimal import Decimal
 from typing import Any, Dict, List, Optional, Tuple
+from functools import lru_cache
 import json
 import os
 import tempfile
 import subprocess
+
+from imageio_ffmpeg import get_ffmpeg_exe, get_ffprobe_exe
 
 from .models import GenRequest, TgUser, AIModel
 from .services import generate_images, supabase_upload_png, supabase_upload_video
@@ -107,6 +110,19 @@ def fetch_remote_file(url: str) -> bytes:
         return resp.content
 
 
+@lru_cache()
+def _ffmpeg_bin() -> str:
+    return get_ffmpeg_exe()
+
+
+@lru_cache()
+def _ffprobe_bin() -> str:
+    try:
+        return get_ffprobe_exe()
+    except Exception:
+        return get_ffmpeg_exe()
+
+
 def _run_command(command: List[str]) -> str:
     result = subprocess.run(
         command,
@@ -125,7 +141,7 @@ def _run_command(command: List[str]) -> str:
 def _probe_frames(path: str) -> int:
     try:
         output = _run_command([
-            "ffprobe",
+            _ffprobe_bin(),
             "-v", "error",
             "-select_streams", "v:0",
             "-count_frames",
@@ -141,7 +157,7 @@ def _probe_frames(path: str) -> int:
 def _probe_duration(path: str) -> Optional[float]:
     try:
         out = _run_command([
-            "ffprobe",
+            _ffprobe_bin(),
             "-v", "error",
             "-show_entries", "format=duration",
             "-of", "default=nokey=1:noprint_wrappers=1",
@@ -155,7 +171,7 @@ def _probe_duration(path: str) -> Optional[float]:
 def _probe_resolution(path: str) -> Tuple[Optional[int], Optional[int]]:
     try:
         out = _run_command([
-            "ffprobe",
+            _ffprobe_bin(),
             "-v", "error",
             "-select_streams", "v:0",
             "-show_entries", "stream=width,height",
@@ -171,7 +187,7 @@ def _probe_resolution(path: str) -> Tuple[Optional[int], Optional[int]]:
 def _probe_has_audio(path: str) -> bool:
     try:
         out = _run_command([
-            "ffprobe",
+            _ffprobe_bin(),
             "-v", "error",
             "-select_streams", "a:0",
             "-show_entries", "stream=codec_type",
@@ -205,7 +221,7 @@ def extract_last_frame(video_bytes: bytes) -> bytes:
             last_idx = max(total_frames - 1, 0)
             select_expr = f"select='eq(n,{last_idx})'"
             command = [
-                "ffmpeg",
+                _ffmpeg_bin(),
                 "-y",
                 "-i", input_path,
                 "-vf", select_expr,
@@ -214,7 +230,7 @@ def extract_last_frame(video_bytes: bytes) -> bytes:
             ]
         else:
             command = [
-                "ffmpeg",
+                _ffmpeg_bin(),
                 "-y",
                 "-sseof", "-0.04",
                 "-i", input_path,
@@ -226,7 +242,7 @@ def extract_last_frame(video_bytes: bytes) -> bytes:
             _run_command(command)
         except RuntimeError:
             fallback_command = [
-                "ffmpeg",
+                _ffmpeg_bin(),
                 "-y",
                 "-i", input_path,
                 "-vframes", "1",
@@ -304,7 +320,7 @@ def combine_videos_with_crossfade(
             audio_codec_args = ["-c:a", "aac", "-b:a", "192k"]
 
         command = [
-            "ffmpeg",
+            _ffmpeg_bin(),
             "-y",
             "-i", path1,
             "-i", path2,
