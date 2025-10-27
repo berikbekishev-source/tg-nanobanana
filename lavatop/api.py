@@ -249,38 +249,43 @@ def lava_webhook(request):
         def _matches(value, *expected_values):
             return any(value == candidate for candidate in expected_values if candidate)
 
-        auth_valid = False
+        auth_present = bool(auth_header)
+        api_key_present = api_key_header is not None and api_key_header != ""
+
+        auth_valid = True  # default to true when header not present
         if auth_header:
             header_value = auth_header.strip()
             if header_value.lower().startswith('bearer '):
                 token = header_value.split(' ', 1)[1].strip()
-                if _matches(token, expected_secret, expected_api_key):
-                    auth_valid = True
+                auth_valid = _matches(token, expected_secret, expected_api_key)
             elif header_value.lower().startswith('basic '):
                 try:
                     decoded = base64.b64decode(header_value.split(' ', 1)[1]).decode('utf-8')
                     username, _, password = decoded.partition(':')
-                    if _matches(password, expected_secret) or _matches(decoded, expected_secret):
-                        auth_valid = True
-                    elif not password and _matches(username, expected_secret):
-                        auth_valid = True
+                    auth_valid = (
+                        _matches(password, expected_secret, expected_api_key)
+                        or _matches(decoded, expected_secret, expected_api_key)
+                        or (not password and _matches(username, expected_secret, expected_api_key))
+                    )
                 except Exception as exc:
                     logger.warning("Failed to decode Lava webhook basic auth header: %s", exc)
+                    auth_valid = False
             else:
-                if _matches(header_value, expected_secret, expected_api_key):
-                    auth_valid = True
+                auth_valid = _matches(header_value, expected_secret, expected_api_key)
 
-        if expected_secret and not auth_valid:
+        api_key_valid = True
+        if api_key_present:
+            api_key_valid = _matches(api_key_header, expected_api_key, expected_secret)
+
+        if not auth_present and not api_key_present:
+            logger.warning("No authorization headers provided for Lava webhook")
+            return JsonResponse({"ok": False, "error": "Unauthorized"}, status=401)
+
+        if auth_present and not auth_valid:
             logger.warning("Invalid Lava webhook Authorization header")
             return JsonResponse({"ok": False, "error": "Unauthorized"}, status=401)
 
-        api_key_valid = True
-        if expected_api_key:
-            api_key_valid = _matches(api_key_header, expected_api_key)
-        elif api_key_header:
-            api_key_valid = _matches(api_key_header, expected_secret) or expected_api_key is None
-
-        if not api_key_valid:
+        if api_key_present and not api_key_valid:
             logger.warning("Invalid Lava webhook API key header")
             return JsonResponse({"ok": False, "error": "Unauthorized"}, status=401)
 
