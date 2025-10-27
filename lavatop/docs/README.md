@@ -37,6 +37,8 @@
   также добавьте «API key вашего сервиса» (`LAVA_API_KEY`). Обработчик принимает любой из вариантов.
 
 ## Payment Flow
+![Lava payment sequence](images/payment_flow.jpg)
+
 1. Клиент вызывает `/api/miniapp/create-payment` (`credits=100`, `amount=5`, `user_id=<telegram_id>`).
 2. `create_payment` создает локальную транзакцию и вызывает `LavaProvider.create_payment`.
 3. Провайдер делает `GET /api/v2/products`, находит нужный `offerId`, затем `POST /api/v2/invoice`
