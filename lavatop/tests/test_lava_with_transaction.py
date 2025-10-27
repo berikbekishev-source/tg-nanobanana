@@ -25,14 +25,17 @@ def create_test_transaction():
     print("Создание тестовой транзакции...")
 
     # Попробуем найти существующего пользователя или создать тестового
+    from django.conf import settings
+
     try:
         # Ищем первого пользователя в базе
         user = TgUser.objects.first()
 
         if not user:
+            fallback_chat = int(getattr(settings, "LAVA_FALLBACK_CHAT_ID", "283738604"))
             # Создаем тестового пользователя
             user = TgUser.objects.create(
-                chat_id=123456789,  # Тестовый ID
+                chat_id=fallback_chat,
                 first_name="Test",
                 last_name="User",
                 username="testuser",

@@ -10,6 +10,7 @@ from urllib.parse import parse_qsl
 import logging
 import uuid
 from asgiref.sync import async_to_sync
+import base64
 
 logger = logging.getLogger(__name__)
 
@@ -238,12 +239,49 @@ def lava_webhook(request):
             if payload.get('product'):
                 logger.info(f"Product: {payload.get('product', {}).get('title', 'N/A')}")
 
-        # Проверка API ключа из заголовка
-        api_key = request.headers.get('Authorization') or request.headers.get('X-API-Key')
-        expected_key = getattr(settings, 'LAVA_WEBHOOK_SECRET', None)
+        # Проверка авторизации согласно требованиям Lava.top (Basic + ApiKey)
+        auth_header = request.headers.get('Authorization', '')
+        api_key_header = request.headers.get('X-API-Key')
 
-        if expected_key and api_key != f"Bearer {expected_key}" and api_key != expected_key:
-            logger.warning(f"Invalid Lava webhook API key")
+        expected_secret = getattr(settings, 'LAVA_WEBHOOK_SECRET', None)
+        expected_api_key = getattr(settings, 'LAVA_API_KEY', None)
+
+        def _matches(value, *expected_values):
+            return any(value == candidate for candidate in expected_values if candidate)
+
+        auth_valid = False
+        if auth_header:
+            header_value = auth_header.strip()
+            if header_value.lower().startswith('bearer '):
+                token = header_value.split(' ', 1)[1].strip()
+                if _matches(token, expected_secret, expected_api_key):
+                    auth_valid = True
+            elif header_value.lower().startswith('basic '):
+                try:
+                    decoded = base64.b64decode(header_value.split(' ', 1)[1]).decode('utf-8')
+                    username, _, password = decoded.partition(':')
+                    if _matches(password, expected_secret) or _matches(decoded, expected_secret):
+                        auth_valid = True
+                    elif not password and _matches(username, expected_secret):
+                        auth_valid = True
+                except Exception as exc:
+                    logger.warning("Failed to decode Lava webhook basic auth header: %s", exc)
+            else:
+                if _matches(header_value, expected_secret, expected_api_key):
+                    auth_valid = True
+
+        if expected_secret and not auth_valid:
+            logger.warning("Invalid Lava webhook Authorization header")
+            return JsonResponse({"ok": False, "error": "Unauthorized"}, status=401)
+
+        api_key_valid = True
+        if expected_api_key:
+            api_key_valid = _matches(api_key_header, expected_api_key)
+        elif api_key_header:
+            api_key_valid = _matches(api_key_header, expected_secret) or expected_api_key is None
+
+        if not api_key_valid:
+            logger.warning("Invalid Lava webhook API key header")
             return JsonResponse({"ok": False, "error": "Unauthorized"}, status=401)
 
         # Парсим данные
@@ -273,34 +311,50 @@ def lava_webhook(request):
                 pass
 
         # Если транзакция не найдена и это новый платеж, создаем новую
-        if not trans and webhook_data.get('event_type') == 'payment.success':
+        success_events = {
+            'payment.success',
+            'subscription.recurring.payment.success'
+        }
+
+        if not trans and webhook_data.get('event_type') in success_events:
             # Для новых платежей от Lava.top создаем транзакцию
             logger.info(f"Creating new transaction for Lava.top payment: {order_id}")
 
-            # Пытаемся найти пользователя по email
-            email = webhook_data.get('email')
-            if email:
-                # В реальной системе нужно связать email с пользователем
-                # Пока используем тестового пользователя
-                try:
-                    test_user = TgUser.objects.get(chat_id=123456789)
-                    user_balance, _ = UserBalance.objects.get_or_create(user=test_user)
+            # Пытаемся сопоставить платёж с существующим пользователем
+            target_user = None
 
-                    trans = Transaction.objects.create(
-                        user=test_user,
-                        type='deposit',
-                        amount=webhook_data.get('amount', Decimal('0')),
-                        balance_after=user_balance.balance,
-                        description=f"Payment from Lava.top: {webhook_data.get('product_title', 'Unknown')}",
-                        payment_method='lava.top',
-                        payment_id=order_id,
-                        is_pending=False,
-                        is_completed=False
-                    )
-                    logger.info(f"Created new transaction {trans.id} for Lava.top payment")
-                except Exception as e:
-                    logger.error(f"Failed to create transaction: {e}")
-                    return JsonResponse({"ok": False, "error": "Failed to create transaction"}, status=500)
+            fallback_chat_id = getattr(settings, "LAVA_FALLBACK_CHAT_ID", None)
+            if fallback_chat_id:
+                try:
+                    target_user = TgUser.objects.get(chat_id=int(fallback_chat_id))
+                except (TgUser.DoesNotExist, ValueError):
+                    target_user = None
+
+            if not target_user:
+                target_user = TgUser.objects.filter(chat_id__isnull=False).order_by('id').first()
+
+            if not target_user:
+                logger.error("Unable to map Lava webhook to a Telegram user")
+                return JsonResponse({"ok": False, "error": "User not found for webhook"}, status=500)
+
+            try:
+                user_balance, _ = UserBalance.objects.get_or_create(user=target_user)
+
+                trans = Transaction.objects.create(
+                    user=target_user,
+                    type='deposit',
+                    amount=webhook_data.get('amount', Decimal('0')),
+                    balance_after=user_balance.balance,
+                    description=f"Payment from Lava.top: {webhook_data.get('product_title', 'Unknown')}",
+                    payment_method='lava.top',
+                    payment_id=order_id,
+                    is_pending=False,
+                    is_completed=False
+                )
+                logger.info(f"Created new transaction {trans.id} for Lava.top payment")
+            except Exception as e:
+                logger.error(f"Failed to create transaction: {e}")
+                return JsonResponse({"ok": False, "error": "Failed to create transaction"}, status=500)
 
         if not trans:
             logger.error(f"Transaction {order_id} not found")
