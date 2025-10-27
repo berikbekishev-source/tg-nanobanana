@@ -362,7 +362,8 @@ def lava_webhook(request):
 
         # Проверяем тип события и статус платежа
         event_type = webhook_data.get('event_type', '')
-        payment_status = webhook_data.get('status', '').lower()
+        payment_status_raw = webhook_data.get('status')
+        payment_status = (payment_status_raw or '').lower()
 
         # Обработка успешных платежей
         if (event_type == 'payment.success' or
