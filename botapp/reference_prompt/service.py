@@ -329,7 +329,11 @@ class ReferencePromptService:
         if not api_key:
             raise ValueError("GEMINI_API_KEY не задан")
 
-        url = GEMINI_URL_TMPL.format(model=model_name)
+        # API ожидает путь вида models/<model-name>. Чтобы избежать двойного префикса,
+        # нормализуем входное значение.
+        normalized_model = model_name if model_name.startswith("models/") else f"models/{model_name}"
+
+        url = GEMINI_URL_TMPL.format(model=normalized_model)
         headers = {
             "x-goog-api-key": api_key,
             "Content-Type": "application/json",
