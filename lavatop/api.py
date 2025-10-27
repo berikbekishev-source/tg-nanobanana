@@ -321,9 +321,8 @@ def lava_webhook(request):
             logger.info(f"Creating new transaction for Lava.top payment: {order_id}")
 
             # Пытаемся сопоставить платёж с существующим пользователем
-            target_user = None
-
             fallback_chat_id = getattr(settings, "LAVA_FALLBACK_CHAT_ID", None)
+            target_user = None
             if fallback_chat_id:
                 try:
                     target_user = TgUser.objects.get(chat_id=int(fallback_chat_id))
@@ -331,10 +330,7 @@ def lava_webhook(request):
                     target_user = None
 
             if not target_user:
-                target_user = TgUser.objects.filter(chat_id__isnull=False).order_by('id').first()
-
-            if not target_user:
-                logger.error("Unable to map Lava webhook to a Telegram user")
+                logger.error("Unable to map Lava webhook to a Telegram user (fallback chat id not configured)")
                 return JsonResponse({"ok": False, "error": "User not found for webhook"}, status=500)
 
             try:
