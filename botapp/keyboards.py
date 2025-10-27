@@ -1,7 +1,7 @@
 """
 Клавиатуры для навигации по боту согласно ТЗ
 """
-from typing import List
+from typing import List, Sequence, Tuple
 from decimal import Decimal
 from aiogram.types import (
     ReplyKeyboardMarkup, KeyboardButton,
@@ -32,6 +32,9 @@ def get_main_menu_keyboard(payment_url: str) -> ReplyKeyboardMarkup:
                     text="💳 Пополнить баланс",
                     web_app=WebAppInfo(url=payment_url)
                 )
+            ],
+            [
+                KeyboardButton(text="Промт по рефференсу")
             ]
         ],
         resize_keyboard=True,
@@ -108,6 +111,34 @@ def get_video_format_keyboard() -> InlineKeyboardMarkup:
     builder.button(text="16:9 (Horizontal)", callback_data="video_format:16:9")
     builder.adjust(2)
     builder.row(InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu"))
+    return builder.as_markup()
+
+
+# === ПРОМТ ПО РЕФФЕРЕНСУ ===
+
+def get_reference_prompt_models_keyboard(models: Sequence[Tuple[str, str]]) -> InlineKeyboardMarkup:
+    """Inline клавиатура выбора модели для генерации промта по референсу."""
+    builder = InlineKeyboardBuilder()
+
+    for slug, title in models:
+        builder.button(
+            text=title,
+            callback_data=f"ref_prompt_model:{slug}"
+        )
+
+    if builder.buttons:
+        builder.adjust(1)
+
+    builder.row(InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu"))
+    return builder.as_markup()
+
+
+def get_reference_prompt_mods_keyboard() -> InlineKeyboardMarkup:
+    """Inline клавиатура выбора необходимости правок перед сборкой промта."""
+    builder = InlineKeyboardBuilder()
+    builder.button(text="✏️ Внести правки", callback_data="ref_prompt_mods:edit")
+    builder.button(text="✅ Без правок", callback_data="ref_prompt_mods:skip")
+    builder.adjust(1)
     return builder.as_markup()
 
 
