@@ -8,7 +8,6 @@
       "description": "Basic package - 100 tokens for image and video generation",
       "active": true,
       "lava_product_id": "b85a5e3c-d89d-46a9-b6fe-e9f9b9ec4696",
-      "static_url": "https://app.lava.top/products/b85a5e3c-d89d-46a9-b6fe-e9f9b9ec4696/45043cfb-f0d3-4b14-8286-3985fee8b4e1?currency=USD",
       "features": [
         "Generate up to 20 images",
         "Create 2-3 short videos",
@@ -26,7 +25,6 @@
       "description": "Popular package - 200 tokens with no expiration",
       "active": false,
       "lava_product_id": null,
-      "static_url": null,
       "features": [
         "Generate up to 40 images",
         "Create 5-6 short videos",
@@ -43,7 +41,6 @@
       "description": "Pro package - Best value for regular users",
       "active": false,
       "lava_product_id": null,
-      "static_url": null,
       "features": [
         "Generate up to 100 images",
         "Create 12-15 videos",
@@ -60,7 +57,6 @@
       "description": "Enterprise package - Maximum tokens for power users",
       "active": false,
       "lava_product_id": null,
-      "static_url": null,
       "features": [
         "Generate up to 200 images",
         "Create 25-30 videos",

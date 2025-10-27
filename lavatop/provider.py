@@ -212,27 +212,8 @@ class LavaProvider:
     # ------------------------------------------------------------------
     @staticmethod
     def _build_fallback(entry: Optional[Dict], order_id: str, email: Optional[str]) -> Optional[Dict]:
-        if not entry:
-            logger.error("Fallback requested without product entry")
-            return None
-
-        static_url = entry.get("static_url")
-        if not static_url:
-            logger.error("No fallback URL configured for product %s", entry.get("tokens"))
-            return None
-
-        url = static_url
-        params = []
-        if order_id:
-            params.append(f"order_id={order_id}")
-        if email:
-            params.append(f"email={email}")
-        if params:
-            separator = "&" if "?" in url else "?"
-            url = f"{url}{separator}{'&'.join(params)}"
-
-        logger.info("Using fallback static link for order %s", order_id)
-        return {"url": url, "payment_id": order_id, "method": "static"}
+        logger.error("Lava API request failed and no static fallback is configured")
+        return None
 
 
 _provider_instance: Optional[LavaProvider] = None
