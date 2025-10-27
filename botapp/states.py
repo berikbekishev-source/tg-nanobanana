@@ -47,6 +47,13 @@ class BotStates(StatesGroup):
     help_menu = State()                 # Меню помощи
     support_ticket = State()            # Создание тикета поддержки
 
+    # Промт по референсу
+    reference_prompt_select_model = State()   # Выбор модели для промта по референсу
+    reference_prompt_wait_reference = State() # Ожидание ссылки, фото или видео
+    reference_prompt_confirm_mods = State()   # Решение о дополнительных правках
+    reference_prompt_wait_mods = State()      # Ввод правок
+    reference_prompt_processing = State()     # Генерация JSON-промта
+
 
 class GenerationStates(StatesGroup):
     """Дополнительные состояния для генерации"""
