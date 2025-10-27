@@ -29,7 +29,7 @@ class LavaProvider:
 
     # Static payment links (fallback)
     PAYMENT_LINKS = {
-        100: "https://app.lava.top/products/acfa45f0-6fa0-4f3c-b73e-f10b92d6d8fc/072b7520-f963-4650-8bbf-16e7efdbdd21",
+        100: "https://app.lava.top/products/b85a5e3c-d89d-46a9-b6fe-e9f9b9ec4696/45043cfb-f0d3-4b14-8286-3985fee8b4e1?currency=USD",
         # Add more packages as they become available:
         # 200: "...",  # $10
         # 500: "...",  # $25
