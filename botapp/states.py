@@ -47,6 +47,13 @@ class BotStates(StatesGroup):
     help_menu = State()                 # Меню помощи
     support_ticket = State()            # Создание тикета поддержки
 
+    # Промт по референсу
+    reference_prompt_select_model = State()   # Выбор модели для промта по референсу
+    reference_prompt_wait_reference = State() # Ожидание ссылки, фото или видео
+    reference_prompt_confirm_mods = State()   # Решение о дополнительных правках
+    reference_prompt_wait_mods = State()      # Ввод правок
+    reference_prompt_processing = State()     # Генерация JSON-промта
+
 
 class GenerationStates(StatesGroup):
     """Дополнительные состояния для генерации"""
@@ -60,13 +67,6 @@ class GenerationStates(StatesGroup):
     video_set_duration = State()        # Установка длительности
     video_set_resolution = State()      # Выбор разрешения
     video_set_fps = State()             # Выбор FPS
-
-    # Промт по референсу
-    reference_prompt_select_model = State()   # Выбор модели для промта по референсу
-    reference_prompt_wait_reference = State() # Ожидание ссылки, фото или видео
-    reference_prompt_confirm_mods = State()   # Решение о дополнительных правках
-    reference_prompt_wait_mods = State()      # Ввод правок
-    reference_prompt_processing = State()     # Генерация JSON-промта
 
 
 class AdminStates(StatesGroup):
