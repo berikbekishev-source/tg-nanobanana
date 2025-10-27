@@ -392,8 +392,8 @@ def lava_webhook(request):
                 return JsonResponse({"ok": False, "error": "Failed to create transaction"}, status=500)
 
         if not trans:
-            logger.error(f"Transaction {order_id} not found")
-            return JsonResponse({"ok": False, "error": "Transaction not found"}, status=404)
+            logger.warning(f"Transaction {order_id} not found for event {event_type}, acknowledging to prevent retries")
+            return JsonResponse({"ok": True, "status": "ignored"}, status=200)
 
         # Проверяем тип события и статус платежа
         event_type = webhook_data.get('event_type', '')
