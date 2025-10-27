@@ -39,7 +39,7 @@
 ## Payment Flow
 ![Lava payment sequence](images/payment_flow.jpg)
 
-1. Клиент вызывает `/api/miniapp/create-payment` (`credits=100`, `amount=5`, `user_id=<telegram_id>`).
+1. Клиент вызывает `/api/miniapp/create-payment` (`credits=100`, `amount=5`, `user_id=<telegram_id>`, дополнительно можно передать `payment_method` = `UNLIMINT`, `STRIPE`, `PAYPAL`, `BANK131`, `SMART_GLOCAL`, `PAY2ME`).
 2. `create_payment` создает локальную транзакцию и вызывает `LavaProvider.create_payment`.
 3. Провайдер делает `GET /api/v2/products`, находит нужный `offerId`, затем `POST /api/v2/invoice`
    (см. схему в документации). В ответ получаем `id` контракта и `paymentUrl`.
@@ -49,10 +49,6 @@
    - `payment.success` / `subscription.*.success` → начисляем токены (`amount * 20`) и шлём уведомление в Telegram;
    - `payment.failed`, `subscription.*.failed`, `cancelled` → помечаем как неуспешный платёж;
    - неизвестные статусы → возвращаем `status: "unknown"`, чтобы Lava прекратила повторные попытки.
-
-> **Примечание:** SDK Lava (`provider.py`) пока возвращает пустой список продуктов. Поэтому fallback‑URL
-> `https://app.lava.top/products/b85a5e3c-d89d-46a9-b6fe-e9f9b9ec4696/45043cfb-f0d3-4b14-8286-3985fee8b4e1?currency=USD`
-> остаётся основным методом покупки.
 
 ## Manual Tools
 В каталоге `lavatop/tests/manual/` находятся скрипты для ручного тестирования:
