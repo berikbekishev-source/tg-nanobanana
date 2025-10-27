@@ -2,9 +2,13 @@
 
 ## Overview
 Модуль `lavatop/` реализует связку между нашим Telegram‑ботом и платёжной платформой Lava.top.
-Поддерживаем единственный продукт (100 токенов за $5) через статическую ссылку и эндпоинт
-`/api/miniapp/create-payment`. Webhook `POST /api/miniapp/lava-webhook` начисляет токены и уведомляет
-пользователя в Telegram.
+Теперь платежи идут по «официальной» схеме из документации Lava: бэкенд запрашивает список продуктов,
+создаёт контракт через `/api/v2/invoice`, получает `paymentUrl` и возвращает его клиенту. Вебхук
+`POST /api/miniapp/lava-webhook` принимает уведомления о статусе (success/failed/in_progress), начисляет
+токены и уведомляет пользователя в Telegram.
+
+> Полное описание REST API Lava находится в `documentation.yaml` (OpenAPI 3.0). Все поля/коды статусов,
+> используемые здесь, берутся именно оттуда.
 
 Основные файлы:
 
@@ -22,7 +26,8 @@
 | `LAVA_API_KEY` | API key из кабинета Lava; используется и как авторизационный заголовок для вебхука. |
 | `LAVA_WEBHOOK_SECRET` | Секрет для Basic‑аутентификации вебхуков и подписи. |
 | `LAVA_FALLBACK_CHAT_ID` | Telegram chat_id, которому начисляются токены, если вебхук пришёл без сопоставимой транзакции. Значение по умолчанию — `283738604`. |
-| `PUBLIC_BASE_URL` | Базовый URL, который попадает в success/fail/hook ссылки при работе SDK (когда он доступен). |
+| `PUBLIC_BASE_URL` | Базовый URL, который попадает в success/fail/hook ссылки при работе SDK/REST. |
+| `LAVA_API_BASE_URL` | Базовый адрес API Lava (по умолчанию `https://gate.lava.top`). |
 | `LAVATOP_RAILWAY_BASE_URL` / `LAVATOP_RAILWAY_WEBHOOK_URL` | Необязательные переменные для ручных тестов, по умолчанию указывают на production Railway.
 
 ## Webhook Configuration (Lava Cabinet)
@@ -32,15 +37,16 @@
   также добавьте «API key вашего сервиса» (`LAVA_API_KEY`). Обработчик принимает любой из вариантов.
 
 ## Payment Flow
-1. Клиент вызывает `/api/miniapp/create-payment` с `credits=100`, `amount=5`, `user_id=<telegram_id>`.
-2. `create_payment` создаёт транзакцию и возвращает URL.
-3. Пользователь оплачивает на стороне Lava. Когда платеж завершён или отменён, Lava бьёт вебхук.
-4. `lava_webhook` сверяет авторизацию, парсит payload, находит/создаёт транзакцию.
-5. Для статуса `success/completed/subscription-active` начисляем токены (`amount * 20`) и отправляем
-   сообщение в Telegram.
-6. Для статуса `failed/cancelled` фиксируем провал, деньги не списываются.
-7. Для `subscription.cancelled` и других неизвестных статусов возвращаем `status: "unknown"` — Lava
-   перестаёт ретраить, а мы только логируем событие.
+1. Клиент вызывает `/api/miniapp/create-payment` (`credits=100`, `amount=5`, `user_id=<telegram_id>`).
+2. `create_payment` создает локальную транзакцию и вызывает `LavaProvider.create_payment`.
+3. Провайдер делает `GET /api/v2/products`, находит нужный `offerId`, затем `POST /api/v2/invoice`
+   (см. схему в документации). В ответ получаем `id` контракта и `paymentUrl`.
+4. Полученный `paymentUrl` отдаём клиенту, а `id` сохраняем в `Transaction.payment_id`.
+5. Клиент открывает платёжное окно Lava, вводит данные — Lava отправляет webhook на `/api/miniapp/lava-webhook`.
+6. `lava_webhook` валидирует авторизацию, парсит payload и обновляет транзакцию:
+   - `payment.success` / `subscription.*.success` → начисляем токены (`amount * 20`) и шлём уведомление в Telegram;
+   - `payment.failed`, `subscription.*.failed`, `cancelled` → помечаем как неуспешный платёж;
+   - неизвестные статусы → возвращаем `status: "unknown"`, чтобы Lava прекратила повторные попытки.
 
 > **Примечание:** SDK Lava (`provider.py`) пока возвращает пустой список продуктов. Поэтому fallback‑URL
 > `https://app.lava.top/products/b85a5e3c-d89d-46a9-b6fe-e9f9b9ec4696/45043cfb-f0d3-4b14-8286-3985fee8b4e1?currency=USD`
@@ -77,4 +83,3 @@
 3. Убедиться, что fallback‑пользователь авторизовался в Telegram боте (иначе скрипты создадут запись автоматически). 
 4. Прогнать `python lavatop/tests/manual/webhook_suite.py` — все запросы должны вернуть HTTP 200. 
 5. Проверить баланс и логи. После этого можно давать доступ пользователям.
-

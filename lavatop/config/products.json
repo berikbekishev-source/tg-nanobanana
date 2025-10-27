@@ -2,22 +2,25 @@
   "products": [
     {
       "tokens": 100,
-      "price": 5.00,
+      "price": 5.0,
       "currency": "USD",
       "name": "100 Tokens",
       "description": "Basic package - 100 tokens for image and video generation",
       "active": true,
-      "lava_product_id": null,
+      "lava_product_id": "b85a5e3c-d89d-46a9-b6fe-e9f9b9ec4696",
       "static_url": "https://app.lava.top/products/b85a5e3c-d89d-46a9-b6fe-e9f9b9ec4696/45043cfb-f0d3-4b14-8286-3985fee8b4e1?currency=USD",
       "features": [
         "Generate up to 20 images",
         "Create 2-3 short videos",
         "Standard quality"
-      ]
+      ],
+      "offer_id": "45043cfb-f0d3-4b14-8286-3985fee8b4e1",
+      "payment_method": "UNLIMINT",
+      "buyer_language": "EN"
     },
     {
       "tokens": 200,
-      "price": 10.00,
+      "price": 10.0,
       "currency": "USD",
       "name": "200 Tokens",
       "description": "Popular package - 200 tokens with no expiration",
@@ -29,11 +32,12 @@
         "Create 5-6 short videos",
         "Standard quality",
         "No expiration"
-      ]
+      ],
+      "offer_id": null
     },
     {
       "tokens": 500,
-      "price": 25.00,
+      "price": 25.0,
       "currency": "USD",
       "name": "500 Tokens",
       "description": "Pro package - Best value for regular users",
@@ -45,11 +49,12 @@
         "Create 12-15 videos",
         "Priority processing",
         "Premium support"
-      ]
+      ],
+      "offer_id": null
     },
     {
       "tokens": 1000,
-      "price": 50.00,
+      "price": 50.0,
       "currency": "USD",
       "name": "1000 Tokens",
       "description": "Enterprise package - Maximum tokens for power users",
@@ -62,7 +67,8 @@
         "Priority processing",
         "Dedicated support",
         "Bulk operations"
-      ]
+      ],
+      "offer_id": null
     }
   ],
   "settings": {
@@ -76,7 +82,7 @@
   },
   "metadata": {
     "version": "1.0.0",
-    "last_updated": "2025-10-25",
+    "last_updated": "2025-10-27",
     "provider": "lava.top"
   }
 }

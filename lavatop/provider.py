@@ -1,213 +1,244 @@
-"""
-Lava.top Payment Provider with SDK Integration
-Handles payment creation with automatic fallback to static links
+"""Lava.top payment provider using official REST API.
+
+The provider tries to follow the reference flow from Lava documentation:
+1. Получить список продуктов через `/api/v2/products`.
+2. Найти оффер (offerId) для нашего пакета токенов.
+3. Создать контракт `/api/v2/invoice` и вернуть `paymentUrl`.
+Если REST‑вызовы недоступны, используется статическая fallback‑ссылка из конфигурации.
 """
 
-import logging
+from __future__ import annotations
+
 import json
-from decimal import Decimal
-from typing import Optional, Dict
+import logging
+import time
+from pathlib import Path
+from typing import Dict, Optional
+
+import requests
 from django.conf import settings
 
 logger = logging.getLogger(__name__)
 
-# Try to import SDK
-try:
-    from lava_top_sdk import LavaClient, LavaClientConfig, PaymentCreateRequest
-    SDK_AVAILABLE = True
-    logger.info("Lava SDK loaded successfully")
-except ImportError:
-    SDK_AVAILABLE = False
-    logger.warning("Lava SDK not installed. Using fallback methods.")
+DEFAULT_API_BASE = "https://gate.lava.top"
+PRODUCTS_CACHE_TTL = 300  # seconds
 
 
 class LavaProvider:
-    """
-    Main provider for Lava.top payments
-    Supports both SDK and static link approaches
-    """
+    """Wrapper around Lava.top public API."""
 
-    # Static payment links (fallback)
-    PAYMENT_LINKS = {
-        100: "https://app.lava.top/products/b85a5e3c-d89d-46a9-b6fe-e9f9b9ec4696/45043cfb-f0d3-4b14-8286-3985fee8b4e1?currency=USD",
-        # Add more packages as they become available:
-        # 200: "...",  # $10
-        # 500: "...",  # $25
-        # 1000: "...", # $50
-    }
+    def __init__(self) -> None:
+        self.api_base = getattr(settings, "LAVA_API_BASE_URL", DEFAULT_API_BASE).rstrip("/")
+        self.api_key = getattr(settings, "LAVA_API_KEY", None)
+        self.session = requests.Session()
+        if self.api_key:
+            self.session.headers.update({"X-Api-Key": self.api_key})
+        self.session.headers.update({"Accept": "application/json"})
 
-    # Supported token packages
-    SUPPORTED_PACKAGES = [100]  # Add more as they become available
+        self._products_cache: Optional[list] = None
+        self._products_cache_ts: float = 0.0
+        self.config = self._load_config()
 
-    def __init__(self):
+        # Для совместимости с webhook.verify_signature
         self.client = None
-        self.product_id = None
-        self._init_sdk()
 
-    def _init_sdk(self):
-        """Initialize SDK client if available"""
-        if not SDK_AVAILABLE:
-            return
-
-        api_key = getattr(settings, 'LAVA_API_KEY', None)
-        webhook_secret = getattr(settings, 'LAVA_WEBHOOK_SECRET', None)
-
-        if not api_key:
-            logger.warning("LAVA_API_KEY not configured")
-            return
-
+    # ------------------------------------------------------------------
+    # Конфигурация и данные из API
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _load_config() -> Dict:
+        config_path = Path(__file__).resolve().parent / "config" / "products.json"
         try:
-            config = LavaClientConfig(
-                api_key=api_key,
-                webhook_secret_key=webhook_secret,
-                env='production',
-                timeout=30,
-                max_retries=3
+            return json.loads(config_path.read_text("utf-8"))
+        except Exception as exc:  # noqa: BLE001
+            logger.error("Failed to load Lava products config: %s", exc)
+            return {"products": []}
+
+    def _fetch_products(self) -> list:
+        if self._products_cache and time.time() - self._products_cache_ts < PRODUCTS_CACHE_TTL:
+            return self._products_cache
+
+        if not self.api_key:
+            logger.warning("LAVA_API_KEY not configured; skipping Lava API request")
+            self._products_cache = []
+            self._products_cache_ts = time.time()
+            return self._products_cache
+
+        url = f"{self.api_base}/api/v2/products"
+        try:
+            response = self.session.get(url, timeout=15)
+            response.raise_for_status()
+            data = response.json()
+            items = data.get("items") or data.get("data") or []
+            self._products_cache = items
+            self._products_cache_ts = time.time()
+            logger.debug("Fetched %s products from Lava", len(items))
+        except requests.HTTPError as exc:  # noqa: BLE001
+            logger.error("Failed to fetch Lava products: %s - %s", exc.response.status_code, exc.response.text)
+            self._products_cache = []
+            self._products_cache_ts = time.time()
+        except Exception as exc:  # noqa: BLE001
+            logger.error("Failed to fetch Lava products: %s", exc)
+            self._products_cache = []
+            self._products_cache_ts = time.time()
+        return self._products_cache
+
+    def _config_entry(self, credits: int) -> Optional[Dict]:
+        for product in self.config.get("products", []):
+            if product.get("tokens") == credits and product.get("active", True):
+                return product
+        return None
+
+    def _resolve_offer(self, entry: Dict) -> Optional[Dict]:
+        products = self._fetch_products()
+        currency = entry.get("currency", "USD")
+        amount = entry.get("price")
+        configured_product_id = entry.get("lava_product_id")
+        configured_offer_id = entry.get("offer_id")
+
+        candidate = None
+        for product in products:
+            if configured_product_id and product.get("id") != configured_product_id:
+                continue
+            for offer in product.get("offers") or []:
+                if configured_offer_id and offer.get("id") != configured_offer_id:
+                    continue
+                for price in offer.get("prices") or []:
+                    if currency and price.get("currency") != currency:
+                        continue
+                    if amount is not None and price.get("amount") is not None:
+                        if abs(price["amount"] - amount) > 1e-6:
+                            continue
+                    candidate = {
+                        "product_id": product.get("id"),
+                        "offer_id": offer.get("id"),
+                        "currency": price.get("currency", currency),
+                        "amount": price.get("amount", amount),
+                        "periodicity": price.get("periodicity"),
+                    }
+                    break
+                if candidate:
+                    break
+            if candidate:
+                break
+
+        if candidate:
+            return candidate
+
+        if configured_offer_id:
+            logger.warning(
+                "Offer %s not found in Lava API; using config fallback",
+                configured_offer_id,
             )
+            return {
+                "product_id": configured_product_id,
+                "offer_id": configured_offer_id,
+                "currency": currency,
+                "amount": amount,
+                "periodicity": entry.get("periodicity"),
+            }
 
-            self.client = LavaClient(config=config)
-            logger.info("Lava SDK client initialized")
-            self._load_product_id()
+        logger.error("Unable to resolve offer for product config: %s", entry)
+        return None
 
-        except Exception as e:
-            logger.error(f"Failed to initialize SDK: {e}")
-
-    def _load_product_id(self):
-        """Load product ID from Lava.top"""
-        if not self.client:
-            return
-
-        try:
-            products = self.client.get_products()
-
-            if products:
-                # Find product for 100 tokens ($5)
-                for product in products:
-                    if hasattr(product, 'price'):
-                        price = float(product.price) if product.price else 0
-                        if abs(price - 5.00) < 0.01:
-                            self.product_id = getattr(product, 'id', None)
-                            logger.info(f"Found product ID: {self.product_id}")
-                            break
-
-                if not self.product_id:
-                    logger.warning("Product for 100 tokens not found in Lava")
-            else:
-                logger.warning("No products found in Lava account")
-
-        except Exception as e:
-            logger.error(f"Error loading products: {e}")
-            # Extract product ID from static URL as fallback
-            self._extract_product_id_from_url()
-
-    def _extract_product_id_from_url(self):
-        """Extract product ID from static payment URL"""
-        url = self.PAYMENT_LINKS.get(100, "")
-        if "products/" in url:
-            parts = url.split("products/")[1].split("/")
-            if parts:
-                self.product_id = parts[0]
-                logger.info(f"Using product ID from URL: {self.product_id}")
-
+    # ------------------------------------------------------------------
+    # Публичные методы
+    # ------------------------------------------------------------------
     def create_payment(
         self,
         credits: int,
         order_id: str,
-        email: str = None,
-        description: str = None,
-        custom_fields: Dict = None
+        email: Optional[str] = None,
+        description: Optional[str] = None,
+        custom_fields: Optional[Dict] = None,
     ) -> Optional[Dict]:
-        """
-        Create payment through SDK or return static link
+        entry = self._config_entry(credits)
+        if not entry:
+            logger.error("Unsupported credits package: %s", credits)
+            return self._build_fallback(entry, order_id, email)
 
-        Args:
-            credits: Number of tokens
-            order_id: Transaction ID
-            email: Customer email
-            description: Payment description
-            custom_fields: Additional data
+        offer = self._resolve_offer(entry)
+        if not offer or not offer.get("offer_id"):
+            return self._build_fallback(entry, order_id, email)
 
-        Returns:
-            Dict with payment URL or None
-        """
+        if not self.api_key:
+            logger.warning("LAVA_API_KEY is missing; falling back to static link")
+            return self._build_fallback(entry, order_id, email)
 
-        # Validate package
-        if credits not in self.SUPPORTED_PACKAGES:
-            logger.error(f"Unsupported package: {credits} tokens")
-            return None
+        payload: Dict[str, object] = {
+            "email": email or entry.get("default_email") or "customer@example.com",
+            "offerId": offer["offer_id"],
+            "currency": offer.get("currency") or entry.get("currency") or "USD",
+        }
+        if entry.get("payment_method"):
+            payload["paymentMethod"] = entry["payment_method"]
+        if entry.get("periodicity"):
+            payload["periodicity"] = entry["periodicity"]
+        if entry.get("buyer_language"):
+            payload["buyerLanguage"] = entry["buyer_language"]
 
-        amount = Decimal(credits * 0.05)  # $0.05 per token
+        url = f"{self.api_base}/api/v2/invoice"
+        try:
+            response = self.session.post(url, json=payload, timeout=20)
+            response.raise_for_status()
+            data = response.json()
+            payment_url = data.get("paymentUrl")
+            if payment_url:
+                logger.info("Lava invoice %s created via API", data.get("id"))
+                return {
+                    "url": payment_url,
+                    "payment_id": data.get("id"),
+                    "method": "api",
+                    "raw": data,
+                }
+            logger.error("Invoice created without paymentUrl: %s", data)
+        except requests.HTTPError as exc:  # noqa: BLE001
+            logger.error(
+                "Failed to create Lava invoice (status %s): %s",
+                exc.response.status_code,
+                exc.response.text,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.error("Failed to create Lava invoice: %s", exc)
 
-        # Try SDK first
-        if self.client and self.product_id:
-            try:
-                payment_request = PaymentCreateRequest(
-                    amount=float(amount),
-                    order_id=str(order_id),
-                    email=email or "customer@example.com",
-                    offer_id=self.product_id,
-                    currency="USD",
-                    description=description or f"Purchase {credits} tokens",
-                    success_url=f"{getattr(settings, 'PUBLIC_BASE_URL', '')}/payment/success",
-                    fail_url=f"{getattr(settings, 'PUBLIC_BASE_URL', '')}/payment/fail",
-                    hook_url=f"{getattr(settings, 'PUBLIC_BASE_URL', '')}/api/miniapp/lava-webhook",
-                    custom_fields=custom_fields or {}
-                )
-
-                response = self.client.create_one_time_payment(payment_request)
-
-                if response:
-                    payment_url = getattr(response, 'url', None)
-                    payment_id = getattr(response, 'id', None)
-
-                    if payment_url:
-                        logger.info(f"Payment created via SDK: {payment_id}")
-                        return {
-                            'url': payment_url,
-                            'id': payment_id,
-                            'method': 'sdk',
-                            'success': True
-                        }
-
-            except Exception as e:
-                logger.error(f"SDK payment failed: {e}")
-
-        # Fallback to static link
-        static_url = self.PAYMENT_LINKS.get(credits)
-
-        if static_url:
-            # Add parameters to track the payment
-            payment_url = f"{static_url}?order_id={order_id}"
-            if email:
-                payment_url += f"&email={email}"
-
-            logger.info(f"Using static link for {credits} tokens")
-            return {
-                'url': payment_url,
-                'id': order_id,
-                'method': 'static',
-                'success': True
-            }
-
-        logger.error(f"No payment method available for {credits} tokens")
-        return None
+        return self._build_fallback(entry, order_id, email)
 
     def verify_webhook_signature(self, payload: str, signature: str) -> bool:
-        """Verify webhook signature through SDK"""
-        if self.client:
-            try:
-                return self.client.verify_webhook_signature(payload, signature)
-            except Exception as e:
-                logger.error(f"Signature verification failed: {e}")
+        """SDK недоступен – возвращаем None, чтобы fallback сработал."""
         return False
 
+    # ------------------------------------------------------------------
+    # Вспомогательные методы
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _build_fallback(entry: Optional[Dict], order_id: str, email: Optional[str]) -> Optional[Dict]:
+        if not entry:
+            logger.error("Fallback requested without product entry")
+            return None
 
-# Singleton instance
-_provider_instance = None
+        static_url = entry.get("static_url")
+        if not static_url:
+            logger.error("No fallback URL configured for product %s", entry.get("tokens"))
+            return None
+
+        url = static_url
+        params = []
+        if order_id:
+            params.append(f"order_id={order_id}")
+        if email:
+            params.append(f"email={email}")
+        if params:
+            separator = "&" if "?" in url else "?"
+            url = f"{url}{separator}{'&'.join(params)}"
+
+        logger.info("Using fallback static link for order %s", order_id)
+        return {"url": url, "payment_id": order_id, "method": "static"}
+
+
+_provider_instance: Optional[LavaProvider] = None
 
 
 def get_provider() -> LavaProvider:
-    """Get singleton provider instance"""
     global _provider_instance
     if _provider_instance is None:
         _provider_instance = LavaProvider()
@@ -217,34 +248,14 @@ def get_provider() -> LavaProvider:
 def get_payment_url(
     credits: int,
     transaction_id: str,
-    user_email: str = None,
-    use_sdk: bool = True
-) -> Optional[str]:
-    """
-    Get payment URL for token purchase
-
-    Args:
-        credits: Number of tokens (currently only 100 supported)
-        transaction_id: Transaction ID for tracking
-        user_email: Customer email
-        use_sdk: Whether to try SDK first
-
-    Returns:
-        Payment URL or None
-    """
-
+    user_email: Optional[str] = None,
+    custom_fields: Optional[Dict] = None,
+) -> Optional[Dict]:
     provider = get_provider()
-
-    result = provider.create_payment(
+    return provider.create_payment(
         credits=credits,
-        order_id=transaction_id,
+        order_id=str(transaction_id),
         email=user_email,
         description=f"Purchase {credits} tokens",
-        custom_fields={
-            'credits': credits,
-            'email': user_email or '',
-            'transaction_id': str(transaction_id)
-        }
+        custom_fields=custom_fields,
     )
-
-    return result['url'] if result else None

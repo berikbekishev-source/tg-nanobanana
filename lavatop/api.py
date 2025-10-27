@@ -31,6 +31,7 @@ class PaymentResponse(Schema):
     success: bool
     payment_url: str = None
     payment_id: str = None
+    invoice_id: str = None
     error: str = None
 
 
@@ -169,13 +170,17 @@ def create_payment(request, data: CreatePaymentRequest):
 
         # Получаем URL для оплаты
         logger.info(f"Getting payment URL for credits={data.credits}, transaction_id={transaction_id}")
-        payment_url = get_payment_url(
+        payment_result = get_payment_url(
             credits=data.credits,
             transaction_id=transaction_id,
-            user_email=data.email
+            user_email=data.email,
+            custom_fields={
+                "credits": data.credits,
+                "transaction_id": str(transaction_id),
+            }
         )
 
-        if not payment_url:
+        if not payment_result:
             if user and transaction_id:
                 Transaction.objects.filter(id=transaction_id).delete()
             return {
@@ -185,11 +190,29 @@ def create_payment(request, data: CreatePaymentRequest):
                 "error": f"Платежная ссылка для {data.credits} токенов еще не создана в Lava.top"
             }
 
+        if isinstance(payment_result, dict):
+            payment_url = payment_result.get("url")
+            contract_id = payment_result.get("payment_id")
+        else:
+            payment_url = payment_result
+            contract_id = None
+
+        if user and transaction_id and (contract_id or isinstance(payment_result, dict)):
+            update_fields = {}
+            if contract_id:
+                update_fields["payment_id"] = contract_id
+            raw = payment_result.get("raw") if isinstance(payment_result, dict) else None
+            if raw:
+                update_fields["payment_data"] = raw
+            if update_fields:
+                Transaction.objects.filter(id=transaction_id).update(**update_fields)
+
         logger.info(f"Payment URL generated: {payment_url}")
         response = {
             "success": True,
             "payment_url": payment_url,
-            "payment_id": str(transaction_id),
+            "payment_id": str(contract_id or transaction_id),
+            "invoice_id": contract_id,
             "error": None
         }
         logger.info(f"Returning success response: {response}")
