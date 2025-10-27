@@ -22,7 +22,7 @@ class CreatePaymentRequest(Schema):
     credits: int
     amount: float
     currency: str = 'USD'
-    payment_method: str = 'card'
+    payment_method: str | None = None  # Lava provider enum (UNLIMINT, STRIPE, PAYPAL, ...)
     user_id: int = None
     init_data: str = None
 
@@ -170,10 +170,21 @@ def create_payment(request, data: CreatePaymentRequest):
 
         # Получаем URL для оплаты
         logger.info(f"Getting payment URL for credits={data.credits}, transaction_id={transaction_id}")
+        preferred_method = None
+        if isinstance(data.payment_method, str):
+            candidate = data.payment_method.upper()
+            supported = {"BANK131", "SMART_GLOCAL", "PAY2ME", "UNLIMINT", "PAYPAL", "STRIPE"}
+            if candidate == "CARD":
+                candidate = None
+            elif candidate not in supported:
+                candidate = None
+            preferred_method = candidate
+
         payment_result = get_payment_url(
             credits=data.credits,
             transaction_id=transaction_id,
             user_email=data.email,
+            payment_method=preferred_method,
             custom_fields={
                 "credits": data.credits,
                 "transaction_id": str(transaction_id),

@@ -150,6 +150,7 @@ class LavaProvider:
         order_id: str,
         email: Optional[str] = None,
         description: Optional[str] = None,
+        payment_method: Optional[str] = None,
         custom_fields: Optional[Dict] = None,
     ) -> Optional[Dict]:
         entry = self._config_entry(credits)
@@ -170,7 +171,9 @@ class LavaProvider:
             "offerId": offer["offer_id"],
             "currency": offer.get("currency") or entry.get("currency") or "USD",
         }
-        if entry.get("payment_method"):
+        if payment_method:
+            payload["paymentMethod"] = payment_method
+        elif entry.get("payment_method"):
             payload["paymentMethod"] = entry["payment_method"]
         if entry.get("periodicity"):
             payload["periodicity"] = entry["periodicity"]
@@ -230,6 +233,7 @@ def get_payment_url(
     credits: int,
     transaction_id: str,
     user_email: Optional[str] = None,
+    payment_method: Optional[str] = None,
     custom_fields: Optional[Dict] = None,
 ) -> Optional[Dict]:
     provider = get_provider()
@@ -238,5 +242,6 @@ def get_payment_url(
         order_id=str(transaction_id),
         email=user_email,
         description=f"Purchase {credits} tokens",
+        payment_method=payment_method,
         custom_fields=custom_fields,
     )
