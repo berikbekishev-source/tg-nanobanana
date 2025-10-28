@@ -349,13 +349,16 @@ def lava_webhook(request):
             except:
                 pass
 
+        # Фиксируем тип события заранее, чтобы использовать ниже даже если транзакция не найдена
+        event_type = webhook_data.get('event_type', '') or ''
+
         # Если транзакция не найдена и это новый платеж, создаем новую
         success_events = {
             'payment.success',
             'subscription.recurring.payment.success'
         }
 
-        if not trans and webhook_data.get('event_type') in success_events:
+        if not trans and event_type in success_events:
             # Для новых платежей от Lava.top создаем транзакцию
             logger.info(f"Creating new transaction for Lava.top payment: {order_id}")
 
@@ -396,7 +399,6 @@ def lava_webhook(request):
             return JsonResponse({"ok": True, "status": "ignored"}, status=200)
 
         # Проверяем тип события и статус платежа
-        event_type = webhook_data.get('event_type', '')
         payment_status_raw = webhook_data.get('status')
         payment_status = (payment_status_raw or '').lower()
 
