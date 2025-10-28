@@ -12,6 +12,8 @@ from asgiref.sync import sync_to_async
 from botapp.states import BotStates
 from botapp.keyboards import (
     get_back_to_menu_keyboard,
+    get_balance_actions_keyboard,
+    get_cancel_keyboard,
     get_main_menu_inline_keyboard,
     format_balance
 )
@@ -19,6 +21,99 @@ from botapp.models import TgUser, Transaction, Promocode
 from botapp.business.balance import BalanceService
 
 router = Router()
+
+
+def _format_tokens(amount: Decimal) -> str:
+    if amount % 1 == 0:
+        return str(int(amount))
+    return format(amount.normalize(), "f")
+
+
+async def _process_promocode_activation(
+    message: Message,
+    *,
+    user: TgUser,
+    promo_code_raw: str,
+    success_markup,
+    failure_markup,
+) -> bool:
+    promo_code = (promo_code_raw or "").strip()
+
+    if not promo_code:
+        await message.answer(
+            "Извините, такого промокода нет в базе, пожалуйста введите корректный промокод.",
+            reply_markup=failure_markup,
+        )
+        return False
+
+    try:
+        promocode = await sync_to_async(Promocode.objects.get)(
+            code__iexact=promo_code,
+            is_active=True,
+        )
+    except Promocode.DoesNotExist:
+        await message.answer(
+            "Извините, такого промокода нет в базе, пожалуйста введите корректный промокод.",
+            reply_markup=failure_markup,
+        )
+        return False
+
+    now = timezone.now()
+    if promocode.valid_from > now or promocode.valid_until < now:
+        await message.answer(
+            "Извините, такого промокода нет в базе, пожалуйста введите корректный промокод.",
+            reply_markup=failure_markup,
+        )
+        return False
+
+    already_used = await sync_to_async(promocode.used_by.filter(id=user.id).exists)()
+    if already_used:
+        await message.answer(
+            f"Данный промокод уже был активирован, вам уже было начислено "
+            f"{_format_tokens(promocode.value)} бонусных токенов.",
+            reply_markup=failure_markup,
+        )
+        return False
+
+    if promocode.max_uses and promocode.current_uses >= promocode.max_uses:
+        await message.answer(
+            "Извините, такого промокода нет в базе, пожалуйста введите корректный промокод.",
+            reply_markup=failure_markup,
+        )
+        return False
+
+    if promocode.is_percentage:
+        await message.answer(
+            "Извините, такого промокода нет в базе, пожалуйста введите корректный промокод.",
+            reply_markup=failure_markup,
+        )
+        return False
+
+    bonus_amount = promocode.value
+    await sync_to_async(BalanceService.add_bonus)(
+        user,
+        amount=bonus_amount,
+        description=f"Промокод {promocode.code}",
+        description_en=f"Promocode {promocode.code}",
+    )
+
+    await sync_to_async(promocode.used_by.add)(user)
+    promocode.current_uses += 1
+    promocode.total_activated += 1
+    promocode.total_bonus_given += bonus_amount
+    await sync_to_async(promocode.save)(
+        update_fields=["current_uses", "total_activated", "total_bonus_given", "updated_at"]
+    )
+
+    new_balance = await sync_to_async(BalanceService.get_balance)(user)
+
+    await message.answer(
+        f"Поздравляю! {_format_tokens(bonus_amount)} бонусных токенов успешно зачислены! "
+        f"Ваш баланс: {format_balance(new_balance)}.",
+        reply_markup=success_markup,
+    )
+
+    return True
 
 
 @router.message(F.text == "💳 Пополнить баланс")
@@ -57,7 +152,7 @@ async def deposit_from_menu(message: Message, state: FSMContext):
     # Отправляем кнопку главного меню
     await message.answer(
         "Или вернитесь в меню:",
-        reply_markup=get_back_to_menu_keyboard()
+        reply_markup=get_balance_actions_keyboard()
     )
 
 
@@ -215,76 +310,44 @@ async def handle_promocode(message: Message, state: FSMContext):
     Обработчик промокодов (формат: PROMOXXXX).
     Промокод может начислить фиксированное количество токенов.
     """
-    promo_code = message.text.strip()
-
     user = await sync_to_async(TgUser.objects.get)(chat_id=message.from_user.id)
 
-    try:
-        promocode = await sync_to_async(Promocode.objects.get)(code=promo_code, is_active=True)
-    except Promocode.DoesNotExist:
-        await message.answer(
-            "❌ Промокод не найден или недействителен.",
-            reply_markup=get_main_menu_inline_keyboard(),
-        )
-        return
-
-    now = timezone.now()
-    if promocode.valid_from > now or promocode.valid_until < now:
-        await message.answer(
-            "❌ Срок действия этого промокода истёк.",
-            reply_markup=get_main_menu_inline_keyboard(),
-        )
-        return
-
-    already_used = await sync_to_async(promocode.used_by.filter(id=user.id).exists)()
-    if already_used:
-        await message.answer(
-            "❌ Вы уже активировали этот промокод.",
-            reply_markup=get_main_menu_inline_keyboard(),
-        )
-        return
-
-    if promocode.max_uses and promocode.current_uses >= promocode.max_uses:
-        await message.answer(
-            "❌ Лимит активаций этого промокода исчерпан.",
-            reply_markup=get_main_menu_inline_keyboard(),
-        )
-        return
-
-    if promocode.is_percentage:
-        await message.answer(
-            "ℹ️ Промокоды со скидками будут доступны в ближайшем обновлении.",
-            reply_markup=get_main_menu_inline_keyboard(),
-        )
-        return
-
-    bonus_amount = promocode.value
-    transaction = await sync_to_async(BalanceService.add_bonus)(
-        user,
-        amount=bonus_amount,
-        description=f"Промокод {promo_code}",
-        description_en=f"Promocode {promo_code}",
+    await _process_promocode_activation(
+        message,
+        user=user,
+        promo_code_raw=message.text,
+        success_markup=get_main_menu_inline_keyboard(),
+        failure_markup=get_main_menu_inline_keyboard(),
     )
 
-    await sync_to_async(promocode.used_by.add)(user)
-    promocode.current_uses += 1
-    promocode.total_activated += 1
-    promocode.total_bonus_given += bonus_amount
-    await sync_to_async(promocode.save)(
-        update_fields=["current_uses", "total_activated", "total_bonus_given", "updated_at"]
+
+@router.callback_query(F.data == "enter_promocode")
+async def prompt_promocode_input(callback: CallbackQuery, state: FSMContext):
+    """Запрос ввода промокода из раздела баланса."""
+    await callback.answer()
+    await state.set_state(BotStates.payment_enter_promocode)
+
+    await callback.message.answer(
+        "Введите промокод в чат.",
+        reply_markup=get_cancel_keyboard(),
     )
 
-    new_balance = await sync_to_async(BalanceService.get_balance)(user)
 
-    await message.answer(
-        f"🎉 **Промокод активирован!**\n\n"
-        f"Промокод: {promo_code}\n"
-        f"Бонус: ⚡ {bonus_amount} токенов\n"
-        f"Ваш новый баланс: {format_balance(new_balance)}\n\n"
-        f"Спасибо за использование промокода!",
-        parse_mode="Markdown",
-        reply_markup=get_main_menu_inline_keyboard(),
+@router.message(BotStates.payment_enter_promocode)
+async def process_promocode_input(message: Message, state: FSMContext):
+    """Обрабатывает промокод, введённый пользователем в режиме ввода промокода."""
+    user = await sync_to_async(TgUser.objects.get)(chat_id=message.from_user.id)
+    success = await _process_promocode_activation(
+        message,
+        user=user,
+        promo_code_raw=message.text or "",
+        success_markup=get_main_menu_inline_keyboard(),
+        failure_markup=get_cancel_keyboard(),
     )
+
+    if success:
+        await state.clear()
+        await state.set_state(BotStates.main_menu)
 
 
 @router.callback_query(F.data == "main_menu")

@@ -13,7 +13,8 @@ from botapp.keyboards import (
     get_back_to_menu_keyboard,
     get_balance_keyboard,
     format_balance,
-    get_prices_info
+    get_prices_info,
+    get_balance_actions_keyboard,
 )
 from botapp.models import TgUser, UserSettings
 from botapp.business.balance import BalanceService
@@ -106,7 +107,7 @@ async def show_balance(message: Message, state: FSMContext):
     # Меняем клавиатуру на кнопку "Главное меню"
     await message.answer(
         "Выберите действие:",
-        reply_markup=get_back_to_menu_keyboard()
+        reply_markup=get_balance_actions_keyboard()
     )
 
     # Устанавливаем состояние просмотра баланса
