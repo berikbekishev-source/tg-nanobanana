@@ -275,8 +275,9 @@ class OpenAISoraProviderTests(TestCase):
         self.assertEqual(client_instance.request.call_count, 4)
 
         called_urls = [call.args[1] for call in client_instance.request.call_args_list]
-        self.assertTrue(called_urls[0].endswith("/videos"))
-        self.assertTrue(called_urls[-1].endswith("/videos/job-123/download"))
+        self.assertTrue(called_urls[0].endswith("/video/generations"))
+        self.assertTrue(called_urls[1].endswith("/video/generations/job-123"))
+        self.assertTrue(called_urls[-1].endswith("/video/generations/job-123/content"))
 
     @override_settings(OPENAI_API_KEY=None)
     def test_missing_api_key_raises(self):
