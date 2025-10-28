@@ -141,16 +141,38 @@ def _download_instagram_via_ddinstagram(insta_url: str) -> Optional[DownloadedMe
     dd_url = f"https://ddinstagram.com/reel/{shortcode}"
 
     try:
+        headers = {
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/129.0.0.0 Safari/537.36"
+            ),
+            "Accept-Language": "en-US,en;q=0.9",
+        }
         with httpx.Client(timeout=httpx.Timeout(20.0, connect=10.0), follow_redirects=True) as client:
-            page = client.get(dd_url)
+            page = client.get(dd_url, headers=headers)
             page.raise_for_status()
             html = page.text
 
-            video_url = _extract_meta_content(html, "og:video")
+            video_url = (
+                _extract_meta_content(html, "og:video")
+                or _extract_meta_content(html, "og:video:secure_url")
+            )
             if not video_url:
+                # Некоторые зеркала ddinstagram отдают JSON с downloadUrl
+                json_candidate = _extract_json_download(html)
+                if json_candidate:
+                    video_url = json_candidate
+                else:
+                    return None
+
+            if video_url.startswith("//"):
+                video_url = "https:" + video_url
+
+            if not video_url.startswith("http"):
                 return None
 
-            video_resp = client.get(video_url)
+            video_resp = client.get(video_url, headers=headers)
             video_resp.raise_for_status()
 
             mime_type = video_resp.headers.get("Content-Type", "video/mp4")
@@ -192,3 +214,15 @@ def _parse_int(value: Optional[str]) -> Optional[int]:
         return int(value)
     except ValueError:
         return None
+
+
+_JSON_DOWNLOAD_RE = re.compile(
+    r'"download_urls?"\s*:\s*\[\s*"([^"\s]+)"\s*\]', re.IGNORECASE
+)
+
+
+def _extract_json_download(html: str) -> Optional[str]:
+    match = _JSON_DOWNLOAD_RE.search(html)
+    if match:
+        return match.group(1)
+    return None
