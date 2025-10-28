@@ -65,6 +65,7 @@ class AIModel(models.Model):
         ('gemini', 'Google Gemini'),
         ('vertex', 'Google Vertex AI'),
         ('veo', 'Google Veo'),
+        ('openai', 'OpenAI Sora'),
         ('imagen', 'Google Imagen'),
     ]
 

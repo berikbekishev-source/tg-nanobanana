@@ -153,6 +153,19 @@ GCP_LOCATION = os.getenv("GCP_LOCATION", "us-central1")
 VERTEX_PROJECT_ID = os.getenv("VERTEX_PROJECT_ID", GCP_PROJECT_ID)
 VERTEX_LOCATION = os.getenv("VERTEX_LOCATION", GCP_LOCATION or "us-central1")
 
+# --- OpenAI Sora ---
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+OPENAI_API_BASE = os.getenv("OPENAI_API_BASE", "https://api.openai.com/v1")
+OPENAI_ORGANIZATION = os.getenv("OPENAI_ORGANIZATION")
+OPENAI_VIDEO_POLL_INTERVAL = int(os.getenv("OPENAI_VIDEO_POLL_INTERVAL", "5"))
+OPENAI_VIDEO_POLL_TIMEOUT = int(os.getenv("OPENAI_VIDEO_POLL_TIMEOUT", str(15 * 60)))
+
+_openai_request_timeout_raw = os.getenv("OPENAI_VIDEO_REQUEST_TIMEOUT")
+OPENAI_VIDEO_REQUEST_TIMEOUT = float(_openai_request_timeout_raw) if _openai_request_timeout_raw else None
+
+_openai_content_timeout_raw = os.getenv("OPENAI_VIDEO_CONTENT_TIMEOUT")
+OPENAI_VIDEO_CONTENT_TIMEOUT = float(_openai_content_timeout_raw) if _openai_content_timeout_raw else None
+
 # --- Lava.top Payment ---
 LAVA_WEBHOOK_SECRET = os.getenv("LAVA_WEBHOOK_SECRET")
 LAVA_API_KEY = os.getenv("LAVA_API_KEY")

@@ -338,6 +338,9 @@ async def prompt_video_extension(callback: CallbackQuery, state: FSMContext):
             reply_markup=get_main_menu_inline_keyboard()
         )
         return
+    if model.provider != "veo":
+        await callback.answer("Продление доступно только для Veo.", show_alert=True)
+        return
 
     aspect_ratio = gen_request.aspect_ratio or gen_request.generation_params.get("aspect_ratio") or "не указан"
     cost_text = f"⚡ Стоимость продления: {model.price:.2f} токенов."

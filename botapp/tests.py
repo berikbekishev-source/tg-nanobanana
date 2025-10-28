@@ -1,10 +1,13 @@
 from decimal import Decimal
+from unittest.mock import MagicMock, patch
 
-from django.test import TestCase
+from django.test import TestCase, override_settings
 
 from botapp.business.balance import BalanceService, InsufficientBalanceError
 from botapp.business.generation import GenerationService
 from botapp.models import AIModel, TgUser, Transaction, UserBalance
+from botapp.providers.video.base import VideoGenerationError
+from botapp.providers.video.openai_sora import OpenAISoraProvider
 
 
 class BalanceServiceTests(TestCase):
@@ -187,3 +190,84 @@ class GenerationServiceTests(TestCase):
         self.assertEqual(req.aspect_ratio, "9:16")
         self.assertEqual(req.cost, Decimal("19.00"))
         self.assertIsNotNone(req.transaction)
+
+
+class OpenAISoraProviderTests(TestCase):
+    @override_settings(
+        OPENAI_API_KEY="test-key",
+        OPENAI_API_BASE="https://api.openai.com/v1",
+        OPENAI_VIDEO_POLL_INTERVAL=1,
+        OPENAI_VIDEO_POLL_TIMEOUT=30,
+    )
+    @patch("botapp.providers.video.openai_sora.time.sleep", return_value=None)
+    @patch("botapp.providers.video.openai_sora.httpx.Client")
+    def test_generate_video_success(self, client_cls: MagicMock, _sleep: MagicMock):
+        client_instance = MagicMock()
+        client_ctx_manager = MagicMock()
+        client_ctx_manager.__enter__.return_value = client_instance
+        client_ctx_manager.__exit__.return_value = False
+        client_cls.return_value = client_ctx_manager
+
+        post_response = MagicMock()
+        post_response.json.return_value = {"id": "job-123", "status": "queued"}
+        post_response.headers = {}
+        post_response.content = b""
+        post_response.raise_for_status.return_value = None
+
+        poll_response_running = MagicMock()
+        poll_response_running.json.return_value = {"id": "job-123", "status": "processing"}
+        poll_response_running.headers = {}
+        poll_response_running.content = b""
+        poll_response_running.raise_for_status.return_value = None
+
+        poll_response_done = MagicMock()
+        poll_response_done.json.return_value = {
+            "id": "job-123",
+            "status": "succeeded",
+            "output": {
+                "duration": 12,
+                "resolution": "1080p",
+                "aspect_ratio": "9:16",
+            },
+        }
+        poll_response_done.headers = {}
+        poll_response_done.content = b""
+        poll_response_done.raise_for_status.return_value = None
+
+        content_response = MagicMock()
+        content_response.content = b"binary-video-data"
+        content_response.headers = {"content-type": "video/mp4"}
+        content_response.raise_for_status.return_value = None
+
+        client_instance.request.side_effect = [
+            post_response,
+            poll_response_running,
+            poll_response_done,
+            content_response,
+        ]
+
+        provider = OpenAISoraProvider()
+        result = provider.generate(
+            prompt="Create a sunset skyline",
+            model_name="sora-2",
+            generation_type="text2video",
+            params={"duration": 10, "resolution": "1080p"},
+        )
+
+        self.assertEqual(result.content, b"binary-video-data")
+        self.assertEqual(result.mime_type, "video/mp4")
+        self.assertEqual(result.duration, 12)
+        self.assertEqual(result.resolution, "1080p")
+        self.assertEqual(result.aspect_ratio, "9:16")
+        self.assertEqual(result.provider_job_id, "job-123")
+        self.assertIn("job", result.metadata)
+        self.assertEqual(client_instance.request.call_count, 4)
+
+        called_urls = [call.args[1] for call in client_instance.request.call_args_list]
+        self.assertTrue(called_urls[0].endswith("/videos"))
+        self.assertTrue(called_urls[-1].endswith("/videos/job-123/content"))
+
+    @override_settings(OPENAI_API_KEY=None)
+    def test_missing_api_key_raises(self):
+        with self.assertRaises(VideoGenerationError):
+            OpenAISoraProvider()

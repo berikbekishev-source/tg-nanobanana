@@ -556,11 +556,13 @@ def generate_video_task(self, request_id: int):
             balance_after=balance_after,
         )
 
+        allow_extension = model.provider == "veo"
+
         send_telegram_video(
             chat_id=req.chat_id,
             video_bytes=result.content,
             caption=message,
-            reply_markup=get_video_result_markup(req.id),
+            reply_markup=get_video_result_markup(req.id, include_extension=allow_extension),
         )
 
     except VideoGenerationError as e:
@@ -608,6 +610,8 @@ def extend_video_task(self, request_id: int):
         model = req.ai_model or parent.ai_model
         if not model:
             raise VideoGenerationError("Модель для продления видео недоступна.")
+        if model.provider != "veo":
+            raise VideoGenerationError("Продление доступно только для видео, созданных моделью Veo.")
 
         prompt = req.prompt
         generation_type = 'image2video'
