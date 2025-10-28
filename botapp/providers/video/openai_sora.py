@@ -29,6 +29,8 @@ class OpenAISoraProvider(BaseVideoProvider):
 
         self._api_base: str = getattr(settings, "OPENAI_API_BASE", self._DEFAULT_API_BASE) or self._DEFAULT_API_BASE
         self._organization: Optional[str] = getattr(settings, "OPENAI_ORGANIZATION", None)
+        self._project_id: Optional[str] = getattr(settings, "OPENAI_PROJECT_ID", None)
+        self._beta_header: Optional[str] = getattr(settings, "OPENAI_BETA_HEADER", None)
         self._poll_interval: int = int(
             getattr(settings, "OPENAI_VIDEO_POLL_INTERVAL", self._DEFAULT_POLL_INTERVAL)
         )
@@ -396,6 +398,10 @@ class OpenAISoraProvider(BaseVideoProvider):
         }
         if self._organization:
             headers["OpenAI-Organization"] = self._organization
+        if self._project_id:
+            headers["OpenAI-Project"] = self._project_id
+        if self._beta_header:
+            headers["OpenAI-Beta"] = self._beta_header
         return headers
 
     def _build_url(self, path: str) -> str:
