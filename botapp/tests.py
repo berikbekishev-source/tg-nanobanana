@@ -224,11 +224,8 @@ class OpenAISoraProviderTests(TestCase):
         poll_response_done.json.return_value = {
             "id": "job-123",
             "status": "succeeded",
-            "output": {
-                "duration": 12,
-                "resolution": "1080p",
-                "aspect_ratio": "9:16",
-            },
+            "seconds": "12",
+            "size": "1080x1920",
         }
         poll_response_done.headers = {}
         poll_response_done.content = b""
@@ -254,6 +251,20 @@ class OpenAISoraProviderTests(TestCase):
             params={"duration": 10, "resolution": "1080p"},
         )
 
+        first_request_kwargs = client_instance.request.call_args_list[0].kwargs
+        self.assertEqual(
+            first_request_kwargs.get("json"),
+            {
+                "prompt": "Create a sunset skyline",
+                "model": "sora-2",
+                "seconds": "10",
+                "size": "1920x1080",
+            },
+        )
+        self.assertNotIn("duration", first_request_kwargs.get("json", {}))
+        self.assertIsNone(first_request_kwargs.get("data"))
+        self.assertIsNone(first_request_kwargs.get("files"))
+
         self.assertEqual(result.content, b"binary-video-data")
         self.assertEqual(result.mime_type, "video/mp4")
         self.assertEqual(result.duration, 12)
@@ -265,7 +276,7 @@ class OpenAISoraProviderTests(TestCase):
 
         called_urls = [call.args[1] for call in client_instance.request.call_args_list]
         self.assertTrue(called_urls[0].endswith("/videos"))
-        self.assertTrue(called_urls[-1].endswith("/videos/job-123/content"))
+        self.assertTrue(called_urls[-1].endswith("/videos/job-123/download"))
 
     @override_settings(OPENAI_API_KEY=None)
     def test_missing_api_key_raises(self):
