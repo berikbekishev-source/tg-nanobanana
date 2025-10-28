@@ -12,7 +12,6 @@ from asgiref.sync import sync_to_async
 from botapp.states import BotStates
 from botapp.keyboards import (
     get_back_to_menu_keyboard,
-    get_balance_actions_keyboard,
     get_cancel_keyboard,
     get_main_menu_inline_keyboard,
     format_balance
@@ -152,7 +151,7 @@ async def deposit_from_menu(message: Message, state: FSMContext):
     # Отправляем кнопку главного меню
     await message.answer(
         "Или вернитесь в меню:",
-        reply_markup=get_balance_actions_keyboard()
+        reply_markup=get_back_to_menu_keyboard()
     )
 
 

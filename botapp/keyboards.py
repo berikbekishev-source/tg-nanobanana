@@ -54,21 +54,6 @@ def get_back_to_menu_keyboard() -> ReplyKeyboardMarkup:
     return keyboard
 
 
-def get_balance_actions_keyboard() -> ReplyKeyboardMarkup:
-    """Клавиатура действий после просмотра баланса."""
-    keyboard = ReplyKeyboardMarkup(
-        keyboard=[
-            [
-                KeyboardButton(text="🎁 Ввести промокод"),
-                KeyboardButton(text="🏠 Главное меню"),
-            ]
-        ],
-        resize_keyboard=True,
-        one_time_keyboard=False,
-    )
-    return keyboard
-
-
 # === ГЕНЕРАЦИЯ ИЗОБРАЖЕНИЙ ===
 
 def get_image_models_keyboard(models: List[AIModel]) -> InlineKeyboardMarkup:
