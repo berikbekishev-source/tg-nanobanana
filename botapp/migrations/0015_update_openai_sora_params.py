@@ -40,7 +40,7 @@ def revert_sora_params(apps, schema_editor):
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("botapp", "0013_add_openai_sora_model"),
+        ("botapp", "0014_set_sora_min_level"),
     ]
 
     operations = [
