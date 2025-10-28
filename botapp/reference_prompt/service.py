@@ -332,7 +332,7 @@ class ReferencePromptService:
         # API ожидает путь вида models/<model-name>. Чтобы избежать двойного префикса,
         # нормализуем входное значение.
         normalized_model = model_name if model_name.startswith("models/") else f"models/{model_name}"
-        logger.debug("Gemini model resolved: %s -> %s", model_name, normalized_model)
+        logger.info("Gemini model resolved: %s -> %s", model_name, normalized_model)
 
         url = GEMINI_URL_TMPL.format(model=normalized_model)
         headers = {
