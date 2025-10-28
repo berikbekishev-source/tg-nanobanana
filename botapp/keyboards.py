@@ -114,6 +114,20 @@ def get_video_format_keyboard() -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
+def get_video_duration_keyboard(durations: Sequence[int]) -> InlineKeyboardMarkup:
+    """Клавиатура выбора длительности ролика."""
+    builder = InlineKeyboardBuilder()
+    for duration in durations:
+        builder.button(
+            text=f"{duration} сек",
+            callback_data=f"video_duration:{duration}",
+        )
+    if builder.buttons:
+        builder.adjust(len(durations) if len(durations) <= 3 else 3)
+    builder.row(InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu"))
+    return builder.as_markup()
+
+
 # === ПРОМТ ПО РЕФФЕРЕНСУ ===
 
 def get_reference_prompt_models_keyboard(models: Sequence[Tuple[str, str]]) -> InlineKeyboardMarkup:

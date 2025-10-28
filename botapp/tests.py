@@ -248,7 +248,7 @@ class OpenAISoraProviderTests(TestCase):
             prompt="Create a sunset skyline",
             model_name="sora-2",
             generation_type="text2video",
-            params={"duration": 10, "resolution": "1080p"},
+            params={"duration": 8, "resolution": "1080p"},
         )
 
         first_request_kwargs = client_instance.request.call_args_list[0].kwargs
@@ -257,7 +257,7 @@ class OpenAISoraProviderTests(TestCase):
             {
                 "prompt": "Create a sunset skyline",
                 "model": "sora-2",
-                "seconds": "10",
+                "seconds": "8",
                 "size": "1920x1080",
             },
         )

@@ -1,6 +1,8 @@
 """
 Обработчики генерации видео
 """
+from typing import List, Optional
+
 from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery
 from aiogram.fsm.context import FSMContext
@@ -9,6 +11,7 @@ from botapp.states import BotStates
 from botapp.keyboards import (
     get_video_models_keyboard,
     get_video_format_keyboard,
+    get_video_duration_keyboard,
     get_cancel_keyboard,
     get_main_menu_inline_keyboard,
     get_generation_start_message
@@ -20,6 +23,64 @@ from botapp.tasks import generate_video_task, extend_video_task
 from asgiref.sync import sync_to_async
 
 router = Router()
+
+
+def _extract_duration_options(model: AIModel) -> Optional[List[int]]:
+    """
+    Вернуть список поддерживаемых длительностей, если они заданы в allowed_params.
+    """
+    allowed_params = model.allowed_params or {}
+    duration_param = allowed_params.get("duration")
+
+    raw_options: Optional[List[int]] = None
+    if isinstance(duration_param, list):
+        raw_options = duration_param
+    elif isinstance(duration_param, dict):
+        options = duration_param.get("options") or duration_param.get("values")
+        if isinstance(options, list):
+            raw_options = options
+
+    if not raw_options and model.provider == "openai":
+        raw_options = [4, 8, 12]
+
+    if not raw_options:
+        return None
+
+    cleaned: List[int] = []
+    for value in raw_options:
+        try:
+            ivalue = int(value)
+        except (TypeError, ValueError):
+            continue
+        if ivalue > 0:
+            cleaned.append(ivalue)
+
+    if not cleaned:
+        return None
+
+    cleaned = sorted(set(cleaned))
+    return cleaned
+
+
+async def _prompt_user_for_description(
+    message: Message,
+    *,
+    supports_images: bool,
+    aspect_ratio: str,
+    duration: Optional[int],
+) -> None:
+    """Отправить пользователю инструкции по вводу промта."""
+    intro = [f"Формат выбран: {aspect_ratio}"]
+    if duration:
+        intro.append(f"Длительность: {duration} сек.")
+    intro.append("Отправьте текстовое описание для генерации видео.")
+    if supports_images:
+        intro.append("Либо загрузите изображение и добавьте описание, чтобы использовать режим img2video.")
+
+    await message.answer(
+        "\n".join(intro),
+        reply_markup=get_cancel_keyboard()
+    )
 
 
 @router.message(F.text == "🎬 Создать видео")
@@ -91,7 +152,10 @@ async def select_video_model(callback: CallbackQuery, state: FSMContext):
         return
 
     default_params = model.default_params or {}
+    duration_options = _extract_duration_options(model)
     default_duration = default_params.get('duration', 8)
+    if duration_options and default_duration not in duration_options:
+        default_duration = min(duration_options, key=lambda x: abs(x - default_duration))
     default_resolution = default_params.get('resolution', '720p')
     default_aspect_ratio = default_params.get('aspect_ratio', '16:9')
 
@@ -102,6 +166,9 @@ async def select_video_model(callback: CallbackQuery, state: FSMContext):
         "Для генерации в режиме txt2video отправьте текстовый промт.\n"
         "Для генерации в режиме img2video загрузите изображение и в описании напишите текстовый промт."
     )
+    if duration_options:
+        options_text = ", ".join(f"{value} сек" for value in duration_options)
+        info_message += f"\nДоступная длительность: {options_text}."
 
     await callback.message.answer(
         info_message,
@@ -122,6 +189,7 @@ async def select_video_model(callback: CallbackQuery, state: FSMContext):
         default_duration=default_duration,
         default_resolution=default_resolution,
         default_aspect_ratio=default_aspect_ratio,
+        duration_options=duration_options,
         generation_type='text2video'
     )
 
@@ -135,6 +203,19 @@ async def wait_format_selection(message: Message, state: FSMContext):
     )
 
 
+@router.message(BotStates.video_select_duration)
+async def wait_duration_selection(message: Message, state: FSMContext):
+    """Напоминаем выбрать длительность, если пользователь отправил что-то раньше времени."""
+    data = await state.get_data()
+    duration_options = data.get('duration_options') or []
+    if not duration_options:
+        duration_options = [data.get('default_duration', 8)]
+    await message.answer(
+        "Выберите длительность ролика, используя кнопки ниже.",
+        reply_markup=get_video_duration_keyboard(duration_options),
+    )
+
+
 @router.callback_query(BotStates.video_select_format, F.data.startswith("video_format:"))
 async def set_video_format(callback: CallbackQuery, state: FSMContext):
     """Сохраняем выбранное соотношение сторон и переходим к сбору промта."""
@@ -145,24 +226,72 @@ async def set_video_format(callback: CallbackQuery, state: FSMContext):
 
     data = await state.get_data()
     supports_images = data.get('supports_images', False)
+    duration_options = data.get('duration_options') or []
+    default_duration = data.get('default_duration')
 
     await state.update_data(
         selected_aspect_ratio=aspect_ratio,
         generation_type='text2video',
         input_image_file_id=None,
-        input_image_mime_type=None
+        input_image_mime_type=None,
+        selected_duration=None,
     )
 
-    intro = [
-        f"Формат выбран: {aspect_ratio}",
-        "Отправьте текстовое описание для генерации видео.",
-    ]
-    if supports_images:
-        intro.append("Либо загрузите изображение и добавьте описание, чтобы использовать режим img2video.")
+    if duration_options:
+        await state.set_state(BotStates.video_select_duration)
+        await callback.message.answer(
+            "Выберите длительность ролика:",
+            reply_markup=get_video_duration_keyboard(duration_options),
+        )
+        return
 
-    await callback.message.answer(
-        "\n".join(intro),
-        reply_markup=get_cancel_keyboard()
+    selected_duration = data.get('selected_duration') or default_duration
+    await state.update_data(selected_duration=selected_duration)
+
+    await _prompt_user_for_description(
+        callback.message,
+        supports_images=supports_images,
+        aspect_ratio=aspect_ratio,
+        duration=selected_duration,
+    )
+    await state.set_state(BotStates.video_wait_prompt)
+
+
+@router.callback_query(BotStates.video_select_duration, F.data.startswith("video_duration:"))
+async def set_video_duration(callback: CallbackQuery, state: FSMContext):
+    """Сохраняем выбранную длительность и переходим к сбору промта."""
+    await callback.answer()
+
+    data = await state.get_data()
+    duration_options = data.get('duration_options') or []
+    keyboard_options = duration_options or [data.get('default_duration', 8)]
+
+    try:
+        duration_value = int(callback.data.split(":", maxsplit=1)[1])
+    except (ValueError, IndexError):
+        await callback.message.answer(
+            "Не удалось распознать выбранную длительность. Попробуйте снова.",
+            reply_markup=get_video_duration_keyboard(keyboard_options),
+        )
+        return
+
+    if duration_options and duration_value not in duration_options:
+        await callback.message.answer(
+            "Эта длительность недоступна для выбранной модели. Пожалуйста, выберите из списка ниже.",
+            reply_markup=get_video_duration_keyboard(duration_options),
+        )
+        return
+
+    supports_images = data.get('supports_images', False)
+    aspect_ratio = data.get('selected_aspect_ratio', '16:9')
+
+    await state.update_data(selected_duration=duration_value)
+
+    await _prompt_user_for_description(
+        callback.message,
+        supports_images=supports_images,
+        aspect_ratio=aspect_ratio,
+        duration=duration_value,
     )
 
     await state.set_state(BotStates.video_wait_prompt)
@@ -232,12 +361,13 @@ async def handle_video_prompt(message: Message, state: FSMContext):
 
     generation_type = data.get('generation_type', 'text2video')
     default_duration = data.get('default_duration') or model.default_params.get('duration') or 8
+    selected_duration = data.get('selected_duration') or default_duration
     default_resolution = data.get('default_resolution') or model.default_params.get('resolution') or '720p'
     default_aspect_ratio = data.get('default_aspect_ratio') or model.default_params.get('aspect_ratio') or '16:9'
     selected_aspect_ratio = data.get('selected_aspect_ratio') or default_aspect_ratio
 
     generation_params = {
-        'duration': default_duration,
+        'duration': selected_duration,
         'resolution': default_resolution,
         'aspect_ratio': selected_aspect_ratio,
     }
@@ -264,7 +394,7 @@ async def handle_video_prompt(message: Message, state: FSMContext):
             quantity=1,
             generation_type=generation_type,
             generation_params=generation_params,
-            duration=default_duration,
+            duration=selected_duration,
             video_resolution=default_resolution,
             aspect_ratio=selected_aspect_ratio,
             input_image_file_id=input_image_file_id,
