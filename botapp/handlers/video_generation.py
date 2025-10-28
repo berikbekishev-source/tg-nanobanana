@@ -154,10 +154,17 @@ async def select_video_model(callback: CallbackQuery, state: FSMContext):
     default_params = model.default_params or {}
     duration_options = _extract_duration_options(model)
     default_duration = default_params.get('duration', 8)
+    is_sora_model = model.slug == "sora2" or model.provider == "openai"
     if duration_options and default_duration not in duration_options:
         default_duration = min(duration_options, key=lambda x: abs(x - default_duration))
     default_resolution = default_params.get('resolution', '720p')
     default_aspect_ratio = default_params.get('aspect_ratio', '16:9')
+
+    if is_sora_model:
+        duration_options = duration_options or [4, 8, 12]
+        default_duration = 8
+        default_resolution = "720p"
+        default_aspect_ratio = "9:16"
 
     info_message = (
         f"Модель: {model.name}.\n"
@@ -184,12 +191,15 @@ async def select_video_model(callback: CallbackQuery, state: FSMContext):
     await state.update_data(
         model_slug=model_slug,
         model_id=model.id,
+        model_provider=model.provider,
+        is_sora=is_sora_model,
         model_name=model.display_name,
         supports_images=model.supports_image_input,
         default_duration=default_duration,
         default_resolution=default_resolution,
         default_aspect_ratio=default_aspect_ratio,
         duration_options=duration_options,
+        selected_resolution=default_resolution,
         generation_type='text2video'
     )
 
@@ -365,10 +375,16 @@ async def handle_video_prompt(message: Message, state: FSMContext):
     default_resolution = data.get('default_resolution') or model.default_params.get('resolution') or '720p'
     default_aspect_ratio = data.get('default_aspect_ratio') or model.default_params.get('aspect_ratio') or '16:9'
     selected_aspect_ratio = data.get('selected_aspect_ratio') or default_aspect_ratio
+    selected_resolution = data.get('selected_resolution') or default_resolution
+
+    is_sora = data.get('is_sora') or model.provider == "openai"
+    if is_sora:
+        selected_resolution = "720p"
+        default_resolution = "720p"
 
     generation_params = {
         'duration': selected_duration,
-        'resolution': default_resolution,
+        'resolution': selected_resolution,
         'aspect_ratio': selected_aspect_ratio,
     }
 
@@ -395,7 +411,7 @@ async def handle_video_prompt(message: Message, state: FSMContext):
             generation_type=generation_type,
             generation_params=generation_params,
             duration=selected_duration,
-            video_resolution=default_resolution,
+            video_resolution=selected_resolution,
             aspect_ratio=selected_aspect_ratio,
             input_image_file_id=input_image_file_id,
             source_media=source_media
