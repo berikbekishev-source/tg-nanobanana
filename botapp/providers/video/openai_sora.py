@@ -130,7 +130,6 @@ class OpenAISoraProvider(BaseVideoProvider):
         payload: Dict[str, Any] = {
             "model": model_name,
             "prompt": prompt,
-            "mode": "image2video" if generation_type == "image2video" else "text2video",
         }
 
         if generation_type == "image2video":
