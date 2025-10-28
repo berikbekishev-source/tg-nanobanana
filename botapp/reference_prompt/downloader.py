@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import asyncio
 import os
+import re
 import tempfile
 from dataclasses import dataclass
 from typing import Dict, Optional
 
 import yt_dlp
+import httpx
 
 
 SUPPORTED_DOMAINS = (
@@ -48,6 +50,12 @@ def _select_mime(ext: Optional[str]) -> str:
 
 
 def _download_sync(url: str) -> DownloadedMedia:
+    # Попытка обхода Instagram без авторизации через ddinstagram
+    if "instagram.com" in url:
+        dd_result = _download_instagram_via_ddinstagram(url)
+        if dd_result:
+            return dd_result
+
     with tempfile.TemporaryDirectory(prefix="ref_prompt_") as tmpdir:
         ydl_opts: Dict[str, object] = {
             "format": "mp4/best",
@@ -112,3 +120,75 @@ async def download_video(url: str) -> DownloadedMedia:
 def is_supported_url(url: str) -> bool:
     lowered = url.lower()
     return any(domain in lowered for domain in SUPPORTED_DOMAINS)
+
+
+_INSTAGRAM_SHORTCODE_RE = re.compile(
+    r"instagram\.com/(?:reel|p|shorts)/([A-Za-z0-9_\-]+)/?"
+)
+
+
+def _download_instagram_via_ddinstagram(insta_url: str) -> Optional[DownloadedMedia]:
+    """Пытаемся скачать видео Instagram через ddinstagram без авторизации.
+
+    Возвращает DownloadedMedia или None, если получить не удалось.
+    """
+
+    match = _INSTAGRAM_SHORTCODE_RE.search(insta_url)
+    if not match:
+        return None
+
+    shortcode = match.group(1)
+    dd_url = f"https://ddinstagram.com/reel/{shortcode}"
+
+    try:
+        with httpx.Client(timeout=httpx.Timeout(20.0, connect=10.0), follow_redirects=True) as client:
+            page = client.get(dd_url)
+            page.raise_for_status()
+            html = page.text
+
+            video_url = _extract_meta_content(html, "og:video")
+            if not video_url:
+                return None
+
+            video_resp = client.get(video_url)
+            video_resp.raise_for_status()
+
+            mime_type = video_resp.headers.get("Content-Type", "video/mp4")
+            title = _extract_meta_content(html, "og:title")
+            description = _extract_meta_content(html, "og:description")
+            width = _parse_int(_extract_meta_content(html, "og:video:width"))
+            height = _parse_int(_extract_meta_content(html, "og:video:height"))
+
+            return DownloadedMedia(
+                content=video_resp.content,
+                mime_type=mime_type,
+                duration=None,
+                title=title,
+                description=description,
+                width=width,
+                height=height,
+            )
+    except Exception:
+        return None
+
+    return None
+
+
+def _extract_meta_content(html: str, property_name: str) -> Optional[str]:
+    pattern = re.compile(
+        rf'<meta[^>]+property=["\']{re.escape(property_name)}["\'][^>]+content=["\']([^"\']+)["\']',
+        flags=re.IGNORECASE,
+    )
+    match = pattern.search(html)
+    if match:
+        return match.group(1)
+    return None
+
+
+def _parse_int(value: Optional[str]) -> Optional[int]:
+    if not value:
+        return None
+    try:
+        return int(value)
+    except ValueError:
+        return None
