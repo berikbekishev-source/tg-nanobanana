@@ -21,14 +21,6 @@ class OpenAISoraProvider(BaseVideoProvider):
     _DEFAULT_POLL_TIMEOUT = 15 * 60  # seconds
     _DEFAULT_TIMEOUT = httpx.Timeout(120.0, connect=30.0)
     _DEFAULT_CONTENT_TIMEOUT = httpx.Timeout(600.0, connect=30.0)
-    _CREATE_PATH = "/video/generations"
-    _JOB_PATH_TEMPLATE = "/video/generations/{job_id}"
-    _DOWNLOAD_PATHS = (
-        "/video/generations/{job_id}/content",
-        "/video/generations/{job_id}/download",
-        "/videos/{job_id}/content",
-        "/videos/{job_id}/download",
-    )
 
     def _validate_settings(self) -> None:
         self._api_key: Optional[str] = getattr(settings, "OPENAI_API_KEY", None)
@@ -38,7 +30,6 @@ class OpenAISoraProvider(BaseVideoProvider):
         self._api_base: str = getattr(settings, "OPENAI_API_BASE", self._DEFAULT_API_BASE) or self._DEFAULT_API_BASE
         self._organization: Optional[str] = getattr(settings, "OPENAI_ORGANIZATION", None)
         self._project_id: Optional[str] = getattr(settings, "OPENAI_PROJECT_ID", None)
-        self._beta_header: Optional[str] = getattr(settings, "OPENAI_BETA_HEADER", None)
         self._poll_interval: int = int(
             getattr(settings, "OPENAI_VIDEO_POLL_INTERVAL", self._DEFAULT_POLL_INTERVAL)
         )
@@ -75,7 +66,7 @@ class OpenAISoraProvider(BaseVideoProvider):
 
         initial_response = self._request_json(
             "POST",
-            self._CREATE_PATH,
+            "/videos",
             json_payload=json_payload,
             data=form_payload,
             files=files,
@@ -157,7 +148,7 @@ class OpenAISoraProvider(BaseVideoProvider):
             if time.monotonic() - start_time > self._poll_timeout:
                 raise VideoGenerationError("Превышено время ожидания результата от Sora.")
 
-            job_details = self._request_json("GET", self._JOB_PATH_TEMPLATE.format(job_id=job_id))
+            job_details = self._request_json("GET", f"/videos/{job_id}")
             status = job_details.get("status")
             if status in {"queued", "processing", "running"}:
                 time.sleep(self._poll_interval)
@@ -184,8 +175,7 @@ class OpenAISoraProvider(BaseVideoProvider):
         if not job_id:
             raise VideoGenerationError("Sora вернула ответ без идентификатора задания.")
 
-        for template in self._DOWNLOAD_PATHS:
-            path = template.format(job_id=job_id)
+        for path in (f"/videos/{job_id}/download", f"/videos/{job_id}/content"):
             try:
                 response = self._request(
                     "GET",
@@ -409,8 +399,6 @@ class OpenAISoraProvider(BaseVideoProvider):
             headers["OpenAI-Organization"] = self._organization
         if self._project_id:
             headers["OpenAI-Project"] = self._project_id
-        if self._beta_header:
-            headers["OpenAI-Beta"] = self._beta_header
         return headers
 
     def _build_url(self, path: str) -> str:
