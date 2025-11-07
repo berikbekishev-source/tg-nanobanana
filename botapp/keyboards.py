@@ -251,18 +251,33 @@ def get_image_mode_keyboard() -> InlineKeyboardMarkup:
 
 
 def get_prices_info() -> str:
-    """Информация о ценах для раздела баланса"""
-    return (
-        "💰 **Текущие цены:**\n\n"
-        "**Изображения:**\n"
-        "🍌 Nano Banana - ⚡1.5 токена\n"
-        "🎨 Imagen 3.0 - ⚡3 токена (скоро)\n\n"
-        "**Видео:**\n"
-        "⚡ Veo 3.1 Fast - ⚡19 токенов\n"
-        "🎬 Veo 3.1 Pro - ⚡49 токенов (скоро)\n\n"
-        "💎 Чем больше пополнение - тем выгоднее!\n"
-        "🎁 Используйте промокод WELCOME2025 для бонуса"
-    )
+    """Информация о ценах для раздела баланса (динамически из БД)."""
+    image_models = AIModel.objects.filter(is_active=True, type='image').order_by('order', 'price')
+    video_models = AIModel.objects.filter(is_active=True, type='video').order_by('order', 'price')
+
+    def _format_model(model: AIModel) -> str:
+        return f"{model.display_name} — ⚡{model.price:.2f} токенов"
+
+    parts: List[str] = ["💰 **Текущие цены:**", ""]
+
+    parts.append("**Изображения:**")
+    if image_models:
+        parts.extend(_format_model(model) for model in image_models)
+    else:
+        parts.append("_Нет активных моделей_")
+    parts.append("")
+
+    parts.append("**Видео:**")
+    if video_models:
+        parts.extend(_format_model(model) for model in video_models)
+    else:
+        parts.append("_Нет активных моделей_")
+    parts.append("")
+
+    parts.append("💎 Чем выше пакет пополнения — тем ниже цена за токен.")
+    parts.append("🎁 Промокод `WELCOME2025` даст бонус к первому пополнению.")
+
+    return "\n".join(parts).strip()
 
 
 def get_generation_start_message() -> str:

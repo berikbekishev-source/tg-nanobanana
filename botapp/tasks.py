@@ -19,6 +19,7 @@ from .services import generate_images_for_model, supabase_upload_png, supabase_u
 from .keyboards import get_generation_complete_message, get_main_menu_inline_keyboard
 from .providers import get_video_provider, VideoGenerationError
 from .business.generation import GenerationService
+from .business.balance import BalanceService
 from .media_utils import detect_reference_mime, ensure_png_format
 from .media_utils import detect_reference_mime
 
@@ -451,13 +452,46 @@ def _prepare_input_images(sources: List[Any], limit: Optional[int]) -> List[Dict
     return payloads
 
 
+def _extract_charge_details(req: GenRequest) -> Tuple[Optional[Decimal], Optional[Decimal]]:
+    """
+    Возвращает списанную сумму и баланс после операции для указанного запроса.
+    """
+    charged_amount: Optional[Decimal] = None
+    balance_after: Optional[Decimal] = None
+
+    transaction = getattr(req, "transaction", None)
+    if transaction:
+        transaction.refresh_from_db()
+        charged_amount = abs(transaction.amount)
+        balance_after = transaction.balance_after
+
+    if charged_amount is None:
+        cost = getattr(req, "cost", None)
+        if cost is not None:
+            charged_amount = abs(Decimal(cost))
+
+    if balance_after is None:
+        try:
+            balance = BalanceService.ensure_balance(req.user)
+            balance_after = balance.balance
+        except Exception:
+            balance_after = None
+
+    if charged_amount is None:
+        charged_amount = Decimal("0.00")
+    if balance_after is None:
+        balance_after = Decimal("0.00")
+
+    return charged_amount, balance_after
+
+
 @shared_task(bind=True, autoretry_for=(Exception,), retry_backoff=True, max_retries=3)
 def generate_image_task(self, request_id: int):
     """
     Задача генерации изображений
     """
     try:
-        req = GenRequest.objects.select_related('user', 'ai_model').get(id=request_id)
+        req = GenRequest.objects.select_related('user', 'ai_model', 'transaction').get(id=request_id)
 
         # Получаем модель и параметры
         model = req.ai_model
@@ -492,6 +526,7 @@ def generate_image_task(self, request_id: int):
 
         urls = []
         inline_markup = get_inline_menu_markup()
+        charged_amount, balance_after = _extract_charge_details(req)
 
         # Загружаем и отправляем каждое изображение
         for idx, img in enumerate(imgs, start=1):
@@ -506,7 +541,9 @@ def generate_image_task(self, request_id: int):
                 generation_type=generation_type,
                 model_name=model.display_name,
                 quantity=quantity,
-                aspect_ratio=req.aspect_ratio or "1:1"
+                aspect_ratio=req.aspect_ratio or "1:1",
+                charged_amount=charged_amount,
+                balance_after=balance_after,
             )
 
             # Отправляем изображение с системным сообщением
@@ -592,14 +629,7 @@ def generate_video_task(self, request_id: int):
             provider_metadata=result.metadata,
         )
 
-        transaction = req.transaction
-        if transaction:
-            transaction.refresh_from_db()
-            charged_amount = transaction.amount
-            balance_after = transaction.balance_after
-        else:
-            charged_amount = Decimal("0.00")
-            balance_after = Decimal("0.00")
+        charged_amount, balance_after = _extract_charge_details(req)
 
         message = get_generation_complete_message(
             prompt=prompt,
@@ -741,14 +771,7 @@ def extend_video_task(self, request_id: int):
         )
 
         req.refresh_from_db()
-        transaction = req.transaction
-        if transaction:
-            transaction.refresh_from_db()
-            charged_amount = transaction.amount
-            balance_after = transaction.balance_after
-        else:
-            charged_amount = Decimal("0.00")
-            balance_after = Decimal("0.00")
+        charged_amount, balance_after = _extract_charge_details(req)
 
         message = get_generation_complete_message(
             prompt=prompt,
