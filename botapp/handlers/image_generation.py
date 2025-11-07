@@ -104,8 +104,10 @@ async def select_image_model(callback: CallbackQuery, state: FSMContext):
         model_price=float(model.price),
         max_images=model.max_input_images,
         supports_images=model.supports_image_input,
-        input_images=[],
         image_mode=None,
+        remix_images=[],
+        edit_base_id=None,
+        edit_mask_id=None,
     )
 
     info_message = (
@@ -131,7 +133,9 @@ async def receive_image_prompt(message: Message, state: FSMContext):
     data = await state.get_data()
     prompt = message.text
     mode = data.get("image_mode") or "text"
-    input_images = data.get("input_images") or []
+    remix_images = data.get("remix_images") or []
+    edit_base_id = data.get("edit_base_id")
+    edit_mask_id = data.get("edit_mask_id")
 
     # Проверяем длину промта
     model = await sync_to_async(AIModel.objects.get)(id=data['model_id'])
@@ -149,25 +153,31 @@ async def receive_image_prompt(message: Message, state: FSMContext):
 
     # Создаем запрос на генерацию через сервис
     generation_type = 'text2image'
+    input_entries: List[Dict[str, Any]] = []
     if mode == "edit":
-        if len(input_images) < 1:
+        if not edit_base_id or not edit_mask_id:
             await message.answer(
-                "Отправьте изображение, которое нужно отредактировать, затем текстовый промт.",
+                "Сначала отправьте и изображение, и маску. После этого пришлите текстовый промт.",
                 reply_markup=get_cancel_keyboard(),
             )
             return
         generation_type = 'image2image'
+        input_entries = [
+            {"telegram_file_id": edit_base_id, "type": "raw"},
+            {"telegram_file_id": edit_mask_id, "type": "mask"},
+        ]
     elif mode == "remix":
         min_images = max(2, min(data.get("max_images", 4), 4))
-        if len(input_images) < min_images:
+        if len(remix_images) < min_images:
             await message.answer(
                 f"Для режима «Ремикс» нужно минимум {min_images} изображений. Загрузите ещё и повторите попытку.",
                 reply_markup=get_cancel_keyboard(),
             )
             return
         generation_type = 'image2image'
+        input_entries = [{"telegram_file_id": file_id, "type": "subject"} for file_id in remix_images[:4]]
     else:
-        input_images = []
+        input_entries = []
 
     try:
         gen_request = await sync_to_async(GenerationService.create_generation_request)(
@@ -176,7 +186,7 @@ async def receive_image_prompt(message: Message, state: FSMContext):
             prompt=prompt,
             quantity=1,  # По умолчанию 1 изображение
             generation_type=generation_type,
-            input_images=input_images,
+            input_images=input_entries,
             generation_params={"image_mode": mode},
         )
 
@@ -221,7 +231,7 @@ async def receive_image_prompt(message: Message, state: FSMContext):
 @router.message(BotStates.image_wait_prompt, F.photo)
 async def receive_image_for_prompt(message: Message, state: FSMContext):
     """
-    Получаем изображения для режимов edit/remix.
+    Получаем изображения или маску в зависимости от выбранного режима.
     """
     data = await state.get_data()
     mode = data.get("image_mode") or "text"
@@ -241,40 +251,55 @@ async def receive_image_for_prompt(message: Message, state: FSMContext):
         )
         return
 
-    images = data.get('input_images', [])
-    max_images = max(1, data.get('max_images', 4))
     photo = message.photo[-1]
+    max_images = max(1, data.get('max_images', 4))
 
     if mode == "edit":
-        images = [photo.file_id]
-        await state.update_data(input_images=images)
+        edit_base_id = data.get("edit_base_id")
+        edit_mask_id = data.get("edit_mask_id")
+        if not edit_base_id:
+            await state.update_data(edit_base_id=photo.file_id)
+            await message.answer(
+                "🖼️ Изображение получено. Теперь отправьте маску (PNG/фото, где выделены участки для правки).",
+                reply_markup=get_cancel_keyboard(),
+            )
+            return
+        if not edit_mask_id:
+            await state.update_data(edit_mask_id=photo.file_id)
+            await message.answer(
+                "✅ Маска получена! Теперь пришлите текстовое описание изменений.",
+                reply_markup=get_cancel_keyboard(),
+            )
+            return
+        await state.update_data(edit_base_id=photo.file_id, edit_mask_id=None)
         await message.answer(
-            "🖼️ Изображение получено! Теперь отправьте текстовый промт для редактирования.",
+            "Базовое изображение обновлено. Отправьте маску для нового редактирования.",
             reply_markup=get_cancel_keyboard(),
         )
         return
 
     # режим remix
-    if len(images) >= max_images:
+    remix_images = data.get('remix_images', [])
+    if len(remix_images) >= max_images:
         await message.answer(
             f"❌ Уже загружено максимальное количество изображений ({max_images}). Теперь отправьте текстовый промт.",
             reply_markup=get_cancel_keyboard(),
         )
         return
 
-    images.append(photo.file_id)
-    await state.update_data(input_images=images)
+    remix_images.append(photo.file_id)
+    await state.update_data(remix_images=remix_images)
 
     min_needed = max(2, min(max_images, 4))
-    if len(images) < min_needed:
+    if len(remix_images) < min_needed:
         await message.answer(
-            f"✅ Изображение {len(images)} загружено. Нужно минимум {min_needed} изображений."
+            f"✅ Изображение {len(remix_images)} загружено. Нужно минимум {min_needed} изображений."
             f" Загрузите ещё или отмените операцию.",
             reply_markup=get_cancel_keyboard(),
         )
-    elif len(images) < max_images:
+    elif len(remix_images) < max_images:
         await message.answer(
-            f"✅ Изображение {len(images)} загружено. Можно добавить ещё {max_images - len(images)} "
+            f"✅ Изображение {len(remix_images)} загружено. Можно добавить ещё {max_images - len(remix_images)} "
             "или отправить текстовый промт.",
             reply_markup=get_cancel_keyboard(),
         )
@@ -318,7 +343,7 @@ async def select_image_mode(callback: CallbackQuery, state: FSMContext):
     provider = data.get("model_provider")
     supports_edit = provider in {"openai_image", "gemini"}
 
-    if mode in {"edit", "remix"} and (not supports_images or not supports_edit or max_images <= 0):
+    if mode in {"edit", "remix"} and (not supports_images or max_images <= 0):
         await callback.message.answer(
             "❌ Этот режим доступен только для моделей, поддерживающих загрузку изображений. Выберите «Создать из текста».",
             reply_markup=get_image_mode_keyboard(),
@@ -332,7 +357,12 @@ async def select_image_mode(callback: CallbackQuery, state: FSMContext):
         )
         return
 
-    await state.update_data(image_mode=mode, input_images=[])
+    await state.update_data(
+        image_mode=mode,
+        remix_images=[],
+        edit_base_id=None,
+        edit_mask_id=None,
+    )
 
     if mode == "text":
         await callback.message.answer(
@@ -344,7 +374,7 @@ async def select_image_mode(callback: CallbackQuery, state: FSMContext):
 
     if mode == "edit":
         await callback.message.answer(
-            "🪄 Отправьте изображение, которое нужно отредактировать, затем пришлите текстовый промт.",
+            "🪄 Режим редактирования.\n1) Сначала отправьте изображение.\n2) Затем отправьте маску (PNG/ярко выделите участки для изменения).\n3) После маски пришлите текстовый промт.",
             reply_markup=get_cancel_keyboard(),
         )
         await state.set_state(BotStates.image_wait_prompt)
@@ -352,7 +382,7 @@ async def select_image_mode(callback: CallbackQuery, state: FSMContext):
 
     if mode == "remix":
         await callback.message.answer(
-            f"🎭 Отправьте от 2 до {max_images} изображений. После этого пришлите текстовый промт.",
+            f"🎭 Режим ремикса.\nЗагрузите от 2 до {max_images} изображений (одним за другим), затем отправьте текстовый промт.",
             reply_markup=get_cancel_keyboard(),
         )
         await state.set_state(BotStates.image_wait_prompt)

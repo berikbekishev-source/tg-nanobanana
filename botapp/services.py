@@ -81,8 +81,12 @@ def vertex_edit_images(
 
     mode = image_mode or params.get("image_mode") if params else None
     reference_images = []
+    raw_entry = next((img for img in input_images if img.get("role") == "raw"), None)
+    mask_entry = next((img for img in input_images if img.get("role") == "mask"), None)
     subject_entries: List[Dict[str, Any]] = []
-    for idx, image in enumerate(input_images[:4], start=1):
+    for idx, image in enumerate(input_images, start=1):
+        if image.get("role") not in (None, "subject"):
+            continue
         content = image.get("content")
         if not content:
             continue
@@ -99,23 +103,24 @@ def vertex_edit_images(
             }
         )
 
-    if mode == "edit" and subject_entries:
-        # Первый reference используем как RAW и добавляем авто-маску
-        first = input_images[0]
-        base_b64 = base64.b64encode(first["content"]).decode()
+    if mode == "edit":
+        if not raw_entry or not mask_entry:
+            raise ValueError("Для редактирования необходимо отправить изображение и маску.")
         reference_images.append(
             {
                 "referenceType": "REFERENCE_TYPE_RAW",
                 "referenceId": 1,
-                "referenceImage": {"bytesBase64Encoded": base_b64},
+                "referenceImage": {"bytesBase64Encoded": base64.b64encode(raw_entry["content"]).decode()},
             }
         )
         reference_images.append(
             {
                 "referenceType": "REFERENCE_TYPE_MASK",
                 "referenceId": 2,
+                "referenceImage": {"bytesBase64Encoded": base64.b64encode(mask_entry["content"]).decode()},
                 "maskImageConfig": {
-                    "maskMode": "MASK_MODE_BACKGROUND",
+                    "maskMode": (params or {}).get("mask_mode", "MASK_MODE_USER_PROVIDED"),
+                    "dilation": (params or {}).get("mask_dilation", 0.01),
                 },
             }
         )
@@ -139,7 +144,8 @@ def vertex_edit_images(
             "sampleCount": max(1, min(quantity, 4)),
         },
     }
-    # Маска пока не поддерживается, используем subject customization без editMode
+    if mode == "edit":
+        request_payload["parameters"]["editMode"] = (params or {}).get("edit_mode", "EDIT_MODE_INPAINT_INSERTION")
 
     response = session.post(url, json=request_payload, timeout=120)
     if response.status_code >= 400:

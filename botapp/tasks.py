@@ -430,8 +430,10 @@ def _prepare_input_images(sources: List[Any], limit: Optional[int]) -> List[Dict
         if len(payloads) >= max_items:
             break
         file_id: Optional[str] = None
+        role: Optional[str] = None
         if isinstance(entry, dict):
             file_id = entry.get("telegram_file_id") or entry.get("file_id")
+            role = entry.get("type") or entry.get("role")
         elif isinstance(entry, str):
             file_id = entry
         if not file_id:
@@ -443,6 +445,7 @@ def _prepare_input_images(sources: List[Any], limit: Optional[int]) -> List[Dict
                 "content": png_bytes,
                 "mime_type": png_mime,
                 "filename": f"input_{idx}.png",
+                "role": role,
             }
         )
     return payloads

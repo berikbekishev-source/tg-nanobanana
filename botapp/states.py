@@ -14,7 +14,7 @@ class BotStates(StatesGroup):
     image_select_model = State()       # Выбор модели для изображений
     image_select_mode = State()        # Выбор режима генерации (text/edit/remix)
     image_wait_prompt = State()         # Ожидание промта и/или изображений
-    image_wait_images = State()         # Ожидание изображений для режима Remix
+    image_wait_images = State()         # Ожидание изображений/масок
     image_confirm_generation = State()  # Подтверждение генерации
     image_processing = State()          # Процесс генерации
 
