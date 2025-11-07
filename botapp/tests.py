@@ -15,6 +15,7 @@ from botapp.media_utils import detect_reference_mime
 from botapp.services import (
     openai_generate_images,
     gemini_vertex_generate,
+    gemini_vertex_edit,
     generate_images_for_model,
     OPENAI_IMAGE_EDIT_URL,
 )
@@ -558,3 +559,67 @@ class GeminiVertexFallbackTests(TestCase):
         self.assertEqual(session.post.call_count, 2)
         second_call_url = session.post.call_args_list[1].args[0]
         self.assertIn("generativelanguage.googleapis.com", second_call_url)
+
+
+class GeminiVertexApiKeyTests(TestCase):
+    @override_settings(NANO_BANANA_API_KEY="test-key")
+    @patch("botapp.services.httpx.post")
+    @patch("botapp.services._load_service_account_info")
+    def test_generate_uses_api_key_directly(self, load_info: MagicMock, http_post: MagicMock):
+        response = MagicMock()
+        response.status_code = 200
+        response.json.return_value = {
+            "candidates": [
+                {
+                    "content": {
+                        "parts": [
+                            {
+                                "inlineData": {"data": base64.b64encode(b"img").decode()}
+                            }
+                        ]
+                    }
+                }
+            ]
+        }
+        http_post.return_value = response
+
+        imgs = gemini_vertex_generate("prompt", 1)
+
+        self.assertEqual(imgs, [b"img"])
+        http_post.assert_called_once()
+        headers = http_post.call_args.kwargs["headers"]
+        self.assertEqual(headers["x-goog-api-key"], "test-key")
+        load_info.assert_not_called()
+
+    @override_settings(NANO_BANANA_API_KEY="test-key")
+    @patch("botapp.services.httpx.post")
+    @patch("botapp.services._load_service_account_info")
+    def test_edit_uses_api_key_directly(self, load_info: MagicMock, http_post: MagicMock):
+        response = MagicMock()
+        response.status_code = 200
+        response.json.return_value = {
+            "candidates": [
+                {
+                    "content": {
+                        "parts": [
+                            {
+                                "inlineData": {"data": base64.b64encode(b"edit").decode()}
+                            }
+                        ]
+                    }
+                }
+            ]
+        }
+        http_post.return_value = response
+
+        imgs = gemini_vertex_edit(
+            "prompt",
+            1,
+            input_images=[{"content": b"raw", "mime_type": "image/png"}],
+        )
+
+        self.assertEqual(imgs, [b"edit"])
+        http_post.assert_called_once()
+        headers = http_post.call_args.kwargs["headers"]
+        self.assertEqual(headers["x-goog-api-key"], "test-key")
+        load_info.assert_not_called()

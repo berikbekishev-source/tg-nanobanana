@@ -569,13 +569,18 @@ def _gemini_google_api_request(
     parts: List[Dict[str, Any]],
     quantity: int,
     params: Optional[Dict[str, Any]] = None,
+    api_key: Optional[str] = None,
     session: Optional[AuthorizedSession] = None,
 ) -> Dict[str, Any]:
     """Запрос в Generative Language API с авторизацией через service account."""
-    client = session or _authorized_vertex_session()
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent"
     payload = _build_gemini_payload(parts, quantity, params)
-    response = client.post(url, json=payload, timeout=120)
+    if api_key:
+        headers = {"x-goog-api-key": api_key, "Content-Type": "application/json"}
+        response = httpx.post(url, headers=headers, json=payload, timeout=120)
+    else:
+        client = session or _authorized_vertex_session()
+        response = client.post(url, json=payload, timeout=120)
     if response.status_code >= 400:
         detail = response.text
         try:
@@ -627,10 +632,8 @@ def gemini_vertex_edit(
     if not input_images:
         raise ValueError("Для режима image2image необходимо загрузить изображение.")
 
-    creds_info = _load_service_account_info()
-    project_id = getattr(settings, "GCP_PROJECT_ID", creds_info.get("project_id"))
-    location = getattr(settings, "GCP_LOCATION", "us-central1")
     model_path = _vertex_model_path(getattr(settings, "NANO_BANANA_GEMINI_MODEL", None))
+    api_key = getattr(settings, "NANO_BANANA_API_KEY", None)
 
     primary = input_images[0]
     b64_img = base64.b64encode(primary["content"]).decode()
@@ -644,14 +647,26 @@ def gemini_vertex_edit(
         },
     ]
 
-    data = _gemini_vertex_request(
-        project_id=project_id,
-        location=location,
-        model_path=model_path,
-        parts=parts,
-        quantity=quantity,
-        params=params,
-    )
+    if api_key:
+        data = _gemini_google_api_request(
+            model_name=_gemini_model_name(model_path),
+            parts=parts,
+            quantity=quantity,
+            params=params,
+            api_key=api_key,
+        )
+    else:
+        creds_info = _load_service_account_info()
+        project_id = getattr(settings, "GCP_PROJECT_ID", creds_info.get("project_id"))
+        location = getattr(settings, "GCP_LOCATION", "us-central1")
+        data = _gemini_vertex_request(
+            project_id=project_id,
+            location=location,
+            model_path=model_path,
+            parts=parts,
+            quantity=quantity,
+            params=params,
+        )
     outputs = data.get("candidates") or []
     results: List[bytes] = []
     for candidate in outputs:
@@ -668,19 +683,29 @@ def gemini_vertex_generate(
     quantity: int,
     params: Optional[Dict[str, Any]] = None,
 ) -> List[bytes]:
-    creds_info = _load_service_account_info()
-    project_id = getattr(settings, "GCP_PROJECT_ID", creds_info.get("project_id"))
-    location = getattr(settings, "GCP_LOCATION", "us-central1")
     model_path = _vertex_model_path(getattr(settings, "NANO_BANANA_GEMINI_MODEL", None))
+    api_key = getattr(settings, "NANO_BANANA_API_KEY", None)
 
-    data = _gemini_vertex_request(
-        project_id=project_id,
-        location=location,
-        model_path=model_path,
-        parts=[{"text": prompt}],
-        quantity=quantity,
-        params=params,
-    )
+    if api_key:
+        data = _gemini_google_api_request(
+            model_name=_gemini_model_name(model_path),
+            parts=[{"text": prompt}],
+            quantity=quantity,
+            params=params,
+            api_key=api_key,
+        )
+    else:
+        creds_info = _load_service_account_info()
+        project_id = getattr(settings, "GCP_PROJECT_ID", creds_info.get("project_id"))
+        location = getattr(settings, "GCP_LOCATION", "us-central1")
+        data = _gemini_vertex_request(
+            project_id=project_id,
+            location=location,
+            model_path=model_path,
+            parts=[{"text": prompt}],
+            quantity=quantity,
+            params=params,
+        )
     outputs = data.get("candidates") or []
     results: List[bytes] = []
     for candidate in outputs:
