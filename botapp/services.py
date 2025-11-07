@@ -63,6 +63,8 @@ def vertex_edit_images(
     quantity: int,
     input_images: List[Dict[str, Any]],
     params: Optional[Dict[str, Any]] = None,
+    *,
+    image_mode: Optional[str] = None,
 ) -> List[bytes]:
     if not input_images:
         raise ValueError("Для режима image2image необходимо загрузить изображения.")
@@ -82,23 +84,33 @@ def vertex_edit_images(
     model_name = getattr(settings, "VERTEX_IMAGE_EDIT_MODEL", "imagen-3.0-capability-001")
     url = f"https://{location}-aiplatform.googleapis.com/v1/projects/{project_id}/locations/{location}/publishers/google/models/{model_name}:predict"
 
+    mode = image_mode or params.get("image_mode") if params else None
     reference_images = []
-    for image in input_images[:4]:
+    for idx, image in enumerate(input_images[:4], start=1):
         content = image.get("content")
         if not content:
             continue
         b64 = base64.b64encode(content).decode()
-        reference_images.append(
-            {
-                "referenceType": "REFERENCE_TYPE_SUBJECT",
-                "referenceId": 1,
-                "referenceImage": {"bytesBase64Encoded": b64},
-                "subjectImageConfig": {
-                    "subjectDescription": params.get("subject_description", "reference subject") if params else "reference subject",
-                    "subjectType": params.get("subject_type", "SUBJECT_TYPE_DEFAULT") if params else "SUBJECT_TYPE_DEFAULT",
-                },
-            }
-        )
+        if mode == "edit" and idx == 1:
+            reference_images.append(
+                {
+                    "referenceType": "REFERENCE_TYPE_RAW",
+                    "referenceId": idx,
+                    "referenceImage": {"bytesBase64Encoded": b64},
+                }
+            )
+        else:
+            reference_images.append(
+                {
+                    "referenceType": "REFERENCE_TYPE_SUBJECT",
+                    "referenceId": idx,
+                    "referenceImage": {"bytesBase64Encoded": b64},
+                    "subjectImageConfig": {
+                        "subjectDescription": (params or {}).get("subject_description", f"reference {idx}"),
+                        "subjectType": (params or {}).get("subject_type", "SUBJECT_TYPE_DEFAULT"),
+                    },
+                }
+            )
 
     if not reference_images:
         raise ValueError("Не удалось подготовить изображения для Vertex edit.")
@@ -114,10 +126,15 @@ def vertex_edit_images(
             "sampleCount": max(1, min(quantity, 4)),
         },
     }
+    if mode == "edit":
+        request_payload["parameters"]["editMode"] = (params or {}).get("edit_mode", "EDIT_MODE_INPAINT_INSERTION")
 
     response = session.post(url, json=request_payload, timeout=120)
     response.raise_for_status()
-    data = response.json()
+    try:
+        data = response.json()
+    except ValueError as exc:
+        raise ValueError(f"Vertex Imagen возвращает неожиданный ответ: {response.text}") from exc
     predictions = data.get("predictions") or []
     results: List[bytes] = []
     for prediction in predictions:
@@ -170,6 +187,7 @@ def openai_generate_images(
     model_name: Optional[str] = None,
     generation_type: str = "text2image",
     input_images: Optional[List[Dict[str, Any]]] = None,
+    image_mode: Optional[str] = None,
 ) -> List[bytes]:
     """Генерация изображений через OpenAI GPT-Image API."""
     if not settings.OPENAI_API_KEY:
@@ -359,6 +377,7 @@ def generate_images_for_model(
     *,
     generation_type: str = "text2image",
     input_images: Optional[List[Dict[str, Any]]] = None,
+    image_mode: Optional[str] = None,
 ) -> List[bytes]:
     """Вызывает подходящего провайдера генерации на основе модели."""
     provider = getattr(model, "provider", None)
@@ -376,20 +395,21 @@ def generate_images_for_model(
             model_name=model.api_model_name,
             generation_type=generation_type,
             input_images=input_images,
+            image_mode=image_mode,
         )
     elif provider == "vertex":
         if generation_type == "image2image":
-            return vertex_edit_images(prompt, quantity, input_images or [], merged_params)
+            return vertex_edit_images(prompt, quantity, input_images or [], merged_params, image_mode=image_mode)
         return vertex_generate_images(prompt, quantity, params=merged_params)
     elif provider == "gemini":
         if generation_type == "image2image":
-            return vertex_edit_images(prompt, quantity, input_images or [], merged_params)
+            return vertex_edit_images(prompt, quantity, input_images or [], merged_params, image_mode=image_mode)
         return gemini_generate_images(prompt, quantity, params=merged_params)
 
     use_vertex = getattr(settings, 'USE_VERTEX_AI', False)
     if use_vertex:
         if generation_type == "image2image":
-            return vertex_edit_images(prompt, quantity, input_images or [], merged_params)
+            return vertex_edit_images(prompt, quantity, input_images or [], merged_params, image_mode=image_mode)
         return vertex_generate_images(prompt, quantity, params=merged_params)
 
     if generation_type == "image2image":

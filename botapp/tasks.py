@@ -464,6 +464,7 @@ def generate_image_task(self, request_id: int):
 
         params = dict(model.default_params or {})
         params.update(req.generation_params or {})
+        image_mode = params.get("image_mode")
 
         input_images_payload: List[Dict[str, Any]] = []
         if generation_type == 'image2image':
@@ -483,6 +484,7 @@ def generate_image_task(self, request_id: int):
             params,
             generation_type=generation_type,
             input_images=input_images_payload,
+            image_mode=image_mode,
         )
 
         urls = []

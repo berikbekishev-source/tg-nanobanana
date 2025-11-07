@@ -177,6 +177,7 @@ async def receive_image_prompt(message: Message, state: FSMContext):
             quantity=1,  # По умолчанию 1 изображение
             generation_type=generation_type,
             input_images=input_images,
+            generation_params={"image_mode": mode},
         )
 
         # Отправляем системное сообщение о начале генерации
