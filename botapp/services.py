@@ -19,6 +19,7 @@ except ImportError:  # pragma: no cover
 GEMINI_URL_TMPL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 OPENAI_IMAGE_URL = "https://api.openai.com/v1/images/generations"
 OPENAI_IMAGE_EDIT_URL = "https://api.openai.com/v1/images/edits"
+KIE_DEFAULT_BASE_URL = "https://api.kie.ai"
 
 def vertex_generate_images(prompt: str, quantity: int, params: Optional[Dict[str, Any]] = None) -> List[bytes]:
     """Генерация изображений через Vertex AI Imagen."""
@@ -955,4 +956,3 @@ def gemini_vertex_generate(
             if inline and inline.get("data"):
                 results.append(base64.b64decode(inline["data"]))
     return results
-KIE_DEFAULT_BASE_URL = "https://api.kie.ai"
