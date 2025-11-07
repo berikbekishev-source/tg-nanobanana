@@ -324,7 +324,7 @@ def openai_generate_images(
                 continue
             filename = image.get("filename") or f"image_{idx}.png"
             mime = image.get("mime_type") or "image/png"
-            files.append(("image", (filename, content, mime)))
+            files.append(("image[]", (filename, content, mime)))
         if not files:
             raise ValueError("Не удалось подготовить изображения для режима image2image.")
 
