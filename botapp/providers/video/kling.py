@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import base64
 import json
+import threading
 import time
 from typing import Any, Dict, Iterable, Optional
 
 import httpx
+import jwt
 from django.conf import settings
 
 from . import register_video_provider
@@ -44,6 +46,11 @@ class KlingVideoProvider(BaseVideoProvider):
 
         self._api_secret: Optional[str] = getattr(settings, "KLING_API_SECRET", None)
         self._organization_id: Optional[str] = getattr(settings, "KLING_ORGANIZATION_ID", None)
+        if self._api_secret:
+            self._api_secret = str(self._api_secret)
+        self._token_lock = threading.Lock()
+        self._cached_token: Optional[str] = None
+        self._token_exp: float = 0.0
 
         base = getattr(settings, "KLING_API_BASE_URL", self._DEFAULT_BASE_URL) or self._DEFAULT_BASE_URL
         self._api_base = base.rstrip("/")
@@ -179,6 +186,26 @@ class KlingVideoProvider(BaseVideoProvider):
             "status": self._image2video_status_endpoint,
         }
 
+    def _generate_jwt(self) -> str:
+        if not self._api_secret:
+            return self._api_key
+        now = time.time()
+        with self._token_lock:
+            if self._cached_token and now < self._token_exp - 5:
+                return self._cached_token
+            headers = {"alg": "HS256", "typ": "JWT"}
+            payload = {
+                "iss": self._api_key,
+                "exp": int(now) + 1800,
+                "nbf": int(now) - 5,
+            }
+            token = jwt.encode(payload, self._api_secret, headers=headers)
+            if isinstance(token, bytes):
+                token = token.decode("utf-8")
+            self._cached_token = token
+            self._token_exp = payload["exp"]
+            return token
+
     def _build_payload(
         self,
         *,
@@ -284,8 +311,9 @@ class KlingVideoProvider(BaseVideoProvider):
             raise VideoGenerationError(f"Кинг вернул некорректный JSON: {response.text}") from exc
 
     def _build_headers(self) -> Dict[str, str]:
+        token = self._generate_jwt() if self._api_secret else self._api_key
         headers = {
-            "Authorization": f"Bearer {self._api_key}",
+            "Authorization": f"Bearer {token}",
             "Content-Type": "application/json",
             "X-API-Key": self._api_key,
         }
