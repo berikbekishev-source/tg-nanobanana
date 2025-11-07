@@ -513,11 +513,17 @@ def _load_service_account_info() -> Dict[str, Any]:
         "GOOGLE_APPLICATION_CREDENTIALS_JSON не содержит валидный JSON. Передайте содержимое файла, "
         "base64 или путь к файлу через GOOGLE_APPLICATION_CREDENTIALS."
     )
+_VERTEX_SCOPES = [
+    "https://www.googleapis.com/auth/cloud-platform",
+    "https://www.googleapis.com/auth/generative.language",
+]
+
+
 def _authorized_vertex_session() -> AuthorizedSession:
     creds_info = _load_service_account_info()
     credentials = service_account.Credentials.from_service_account_info(
         creds_info,
-        scopes=["https://www.googleapis.com/auth/cloud-platform"],
+        scopes=_VERTEX_SCOPES,
     )
     return AuthorizedSession(credentials)
 
