@@ -164,15 +164,19 @@ async def receive_image_prompt(message: Message, state: FSMContext):
             {"telegram_file_id": edit_base_id},
         ]
     elif mode == "remix":
-        min_images = max(2, min(data.get("max_images", 4), 4))
-        if len(remix_images) < min_images:
+        min_required = 2
+        max_allowed = max(min_required, min(data.get("max_images", 4), 4))
+        if len(remix_images) < min_required:
             await message.answer(
-                f"Для режима «Ремикс» нужно минимум {min_images} изображений. Загрузите ещё и повторите попытку.",
+                f"Для режима «Ремикс» нужно минимум {min_required} изображений. Загрузите ещё и повторите попытку.",
                 reply_markup=get_cancel_keyboard(),
             )
             return
         generation_type = 'image2image'
-        input_entries = [{"telegram_file_id": file_id, "type": "subject"} for file_id in remix_images[:4]]
+        input_entries = [
+            {"telegram_file_id": file_id, "type": "subject"}
+            for file_id in remix_images[:max_allowed]
+        ]
     else:
         input_entries = []
 
