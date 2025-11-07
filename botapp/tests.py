@@ -8,6 +8,7 @@ from botapp.business.generation import GenerationService
 from botapp.models import AIModel, TgUser, Transaction, UserBalance
 from botapp.providers.video.base import VideoGenerationError
 from botapp.providers.video.openai_sora import OpenAISoraProvider
+from botapp.media_utils import detect_reference_mime
 
 
 class BalanceServiceTests(TestCase):
@@ -282,3 +283,15 @@ class OpenAISoraProviderTests(TestCase):
     def test_missing_api_key_raises(self):
         with self.assertRaises(VideoGenerationError):
             OpenAISoraProvider()
+
+
+class ReferenceMimeDetectionTests(TestCase):
+    def test_detect_png_signature_when_header_generic(self):
+        png_bytes = b"\x89PNG\r\n\x1a\n" + b"\x00" * 10
+        mime = detect_reference_mime(png_bytes, "test.png", "application/octet-stream")
+        self.assertEqual(mime, "image/png")
+
+    def test_detect_mp4_signature(self):
+        mp4_bytes = b"\x00\x00\x00\x18ftypmp42" + b"\x00" * 20
+        mime = detect_reference_mime(mp4_bytes, "clip.bin", "application/octet-stream")
+        self.assertEqual(mime, "video/mp4")

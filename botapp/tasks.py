@@ -19,6 +19,7 @@ from .services import generate_images, supabase_upload_png, supabase_upload_vide
 from .keyboards import get_generation_complete_message, get_main_menu_inline_keyboard
 from .providers import get_video_provider, VideoGenerationError
 from .business.generation import GenerationService
+from .media_utils import detect_reference_mime
 
 
 def send_telegram_photo(chat_id: int, photo_bytes: bytes, caption: str, reply_markup: Optional[Dict] = None):
@@ -108,6 +109,8 @@ def fetch_remote_file(url: str) -> bytes:
         resp = client.get(url)
         resp.raise_for_status()
         return resp.content
+
+
 
 
 @lru_cache()
@@ -411,8 +414,10 @@ def download_telegram_file(file_id: str) -> Tuple[bytes, str]:
         file_path = result["file_path"]
         file_resp = client.get(f"https://api.telegram.org/file/bot{settings.TELEGRAM_BOT_TOKEN}/{file_path}")
         file_resp.raise_for_status()
-        mime_type = file_resp.headers.get("Content-Type", "application/octet-stream")
-        return file_resp.content, mime_type
+        file_bytes = file_resp.content
+        header_mime = file_resp.headers.get("Content-Type", "application/octet-stream")
+        mime_type = detect_reference_mime(file_bytes, file_path, header_mime)
+        return file_bytes, mime_type
 
 
 @shared_task(bind=True, autoretry_for=(Exception,), retry_backoff=True, max_retries=3)
