@@ -12,7 +12,7 @@ from botapp.models import AIModel, TgUser, Transaction, UserBalance
 from botapp.providers.video.base import VideoGenerationError
 from botapp.providers.video.openai_sora import OpenAISoraProvider
 from botapp.media_utils import detect_reference_mime
-from botapp.services import openai_generate_images, generate_images_for_model
+from botapp.services import openai_generate_images, generate_images_for_model, OPENAI_IMAGE_EDIT_URL
 
 
 class BalanceServiceTests(TestCase):
@@ -381,7 +381,13 @@ class OpenAIImageGenerationTests(TestCase):
         )
         openai_mock.return_value = [b"img"]
 
-        imgs = generate_images_for_model(model, "city skyline", 2, {"size": "512x512"})
+        imgs = generate_images_for_model(
+            model,
+            "city skyline",
+            2,
+            {"size": "512x512"},
+            generation_type="text2image",
+        )
 
         self.assertEqual(imgs, [b"img"])
         self.assertTrue(openai_mock.called)
@@ -434,10 +440,69 @@ class OpenAIImageGenerationTests(TestCase):
             params={"format": "jpeg", "output_compression": 50},
             model_name="gpt-image-1",
         )
-
         payload = client_instance.post.call_args.kwargs["json"]
         self.assertEqual(payload["format"], "jpeg")
         self.assertEqual(payload["output_compression"], 50)
+
+    @override_settings(OPENAI_API_KEY="test-key")
+    @patch("botapp.services.httpx.Client")
+    def test_openai_generate_images_image2image_calls_edit_endpoint(self, client_cls: MagicMock):
+        client_instance = MagicMock()
+        ctx = MagicMock()
+        ctx.__enter__.return_value = client_instance
+        ctx.__exit__.return_value = False
+        client_cls.return_value = ctx
+
+        response = MagicMock()
+        response.json.return_value = {"data": [{"b64_json": base64.b64encode(b"img").decode()}]}
+        response.raise_for_status.return_value = None
+        client_instance.post.return_value = response
+
+        imgs = openai_generate_images(
+            "prompt",
+            1,
+            params={"size": "1024x1024"},
+            model_name="gpt-image-1",
+            generation_type="image2image",
+            input_images=[{"content": b"raw", "mime_type": "image/png", "filename": "input.png"}],
+        )
+
+        self.assertEqual(imgs, [b"img"])
+        call_args = client_instance.post.call_args
+        self.assertEqual(call_args.args[0], OPENAI_IMAGE_EDIT_URL)
+        self.assertIn("files", call_args.kwargs)
+
+    def test_generate_images_for_model_image2image_not_supported_provider(self):
+        model = AIModel.objects.create(
+            slug="gemini-image",
+            name="Gemini Image",
+            display_name="Gemini Image",
+            type="image",
+            provider="gemini",
+            description="",
+            short_description="",
+            price=Decimal("1.00"),
+            api_endpoint="https://example.com",
+            api_model_name="gemini-image",
+            max_prompt_length=1000,
+            supports_image_input=False,
+            max_input_images=0,
+            default_params={},
+            allowed_params={},
+            max_quantity=4,
+            cooldown_seconds=0,
+        )
+
+        with self.assertRaises(ValueError):
+            generate_images_for_model(
+                model,
+                "prompt",
+                1,
+                {},
+                generation_type="image2image",
+                input_images=[{"content": b"x"}],
+            )
+
 class ReferenceMimeDetectionTests(TestCase):
     def test_detect_png_signature_when_header_generic(self):
         png_bytes = b"\x89PNG\r\n\x1a\n" + b"\x00" * 10

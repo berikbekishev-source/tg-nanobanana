@@ -13,6 +13,7 @@ except ImportError:  # pragma: no cover
 
 GEMINI_URL_TMPL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 OPENAI_IMAGE_URL = "https://api.openai.com/v1/images/generations"
+OPENAI_IMAGE_EDIT_URL = "https://api.openai.com/v1/images/edits"
 
 def vertex_generate_images(prompt: str, quantity: int, params: Optional[Dict[str, Any]] = None) -> List[bytes]:
     """Генерация изображений через Vertex AI Imagen."""
@@ -96,6 +97,8 @@ def openai_generate_images(
     *,
     params: Optional[Dict[str, Any]] = None,
     model_name: Optional[str] = None,
+    generation_type: str = "text2image",
+    input_images: Optional[List[Dict[str, Any]]] = None,
 ) -> List[bytes]:
     """Генерация изображений через OpenAI GPT-Image API."""
     if not settings.OPENAI_API_KEY:
@@ -109,13 +112,23 @@ def openai_generate_images(
     }
 
     def _normalize_size(value: Any) -> Optional[str]:
+        allowed_sizes = {
+            "512x512",
+            "768x1024",
+            "1024x768",
+            "1024x1024",
+            "1024x1536",
+            "1536x1024",
+        }
         if not value:
             return "1024x1024"
         text = str(value).lower()
         if text == "auto":
             return "auto"
-        if re.fullmatch(r"\d+x\d+", text):
+        if text in allowed_sizes:
             return text
+        if re.fullmatch(r"\d+x\d+", text):
+            return "1024x1024"
         return "1024x1024"
 
     size_value = _normalize_size(effective_params.get("size"))
@@ -181,8 +194,69 @@ def openai_generate_images(
         except Exception:  # pragma: no cover - fallback path
             return resp.text
 
+
+    def _call_openai_image_edit(
+        client: httpx.Client,
+        headers: Dict[str, str],
+        payload: Dict[str, Any],
+        prompt: str,
+        input_images: List[Dict[str, Any]],
+    ) -> List[bytes]:
+        if not input_images:
+            raise ValueError("Для режима image2image необходимо добавить изображение.")
+        files = []
+        for idx, image in enumerate(input_images):
+            content = image.get("content")
+            if not content:
+                continue
+            filename = image.get("filename") or f"image_{idx}.png"
+            mime = image.get("mime_type") or "image/png"
+            files.append(("image", (filename, content, mime)))
+        if not files:
+            raise ValueError("Не удалось подготовить изображения для режима image2image.")
+
+        data_fields: Dict[str, str] = {
+            "prompt": prompt,
+            "model": payload.get("model", "gpt-image-1"),
+            "n": str(payload.get("n", 1)),
+        }
+        for key in ("size", "quality", "background", "format", "output_compression", "moderation", "seed"):
+            if key in payload:
+                data_fields[key] = str(payload[key])
+
+        response = client.post(
+            OPENAI_IMAGE_EDIT_URL,
+            headers=headers,
+            data=data_fields,
+            files=files,
+        )
+        try:
+            response.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            detail = _format_openai_error(exc.response)
+            raise ValueError(f"OpenAI image generation failed: {detail}") from exc
+
+        data = response.json()
+        entries = data.get("data") or []
+        results: List[bytes] = []
+        for entry in entries:
+            if entry.get("b64_json"):
+                results.append(base64.b64decode(entry["b64_json"]))
+        return results
+
     imgs: List[bytes] = []
     with httpx.Client(timeout=120) as client:
+        if generation_type == "image2image":
+            edit_payload = payload_base.copy()
+            edit_payload["n"] = quantity
+            return _call_openai_image_edit(
+                client=client,
+                headers=headers,
+                payload=edit_payload,
+                prompt=prompt,
+                input_images=input_images or [],
+            )
+
         for _ in range(quantity):
             response = client.post(OPENAI_IMAGE_URL, headers=headers, json=payload_base)
             try:
@@ -211,6 +285,9 @@ def generate_images_for_model(
     prompt: str,
     quantity: int,
     params: Optional[Dict[str, Any]] = None,
+    *,
+    generation_type: str = "text2image",
+    input_images: Optional[List[Dict[str, Any]]] = None,
 ) -> List[bytes]:
     """Вызывает подходящего провайдера генерации на основе модели."""
     provider = getattr(model, "provider", None)
@@ -221,7 +298,16 @@ def generate_images_for_model(
         merged_params.update(params)
 
     if provider == "openai_image":
-        return openai_generate_images(prompt, quantity, params=merged_params, model_name=model.api_model_name)
+        return openai_generate_images(
+            prompt,
+            quantity,
+            params=merged_params,
+            model_name=model.api_model_name,
+            generation_type=generation_type,
+            input_images=input_images,
+        )
+    if generation_type == "image2image":
+        raise ValueError("Выбранная модель не поддерживает режим image2image.")
     if provider == "vertex":
         return vertex_generate_images(prompt, quantity, params=merged_params)
     if provider == "gemini":

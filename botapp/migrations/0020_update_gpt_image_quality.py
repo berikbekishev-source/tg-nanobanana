@@ -17,7 +17,9 @@ def update_gpt_image_defaults(apps, schema_editor):
         allowed['output_compression'] = {'min': 0, 'max': 100}
         model.default_params = defaults
         model.allowed_params = allowed
-        model.save(update_fields=['default_params', 'allowed_params'])
+        model.supports_image_input = True
+        model.max_input_images = 4
+        model.save(update_fields=['default_params', 'allowed_params', 'supports_image_input', 'max_input_images'])
 
 
 def noop(apps, schema_editor):

@@ -254,6 +254,16 @@ def get_model_info_message(model: AIModel) -> str:
     return message
 
 
+def get_image_mode_keyboard() -> InlineKeyboardMarkup:
+    """Клавиатура выбора режима генерации изображений."""
+    builder = InlineKeyboardBuilder()
+    builder.button(text="✍️ Создать из текста", callback_data="image_mode:text")
+    builder.button(text="🪄 Отредактировать", callback_data="image_mode:edit")
+    builder.button(text="🎭 Ремикс", callback_data="image_mode:remix")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
 def get_prices_info() -> str:
     """Информация о ценах для раздела баланса"""
     return (

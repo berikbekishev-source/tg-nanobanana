@@ -19,6 +19,7 @@ from .services import generate_images_for_model, supabase_upload_png, supabase_u
 from .keyboards import get_generation_complete_message, get_main_menu_inline_keyboard
 from .providers import get_video_provider, VideoGenerationError
 from .business.generation import GenerationService
+from .media_utils import detect_reference_mime, ensure_png_format
 from .media_utils import detect_reference_mime
 
 
@@ -420,6 +421,33 @@ def download_telegram_file(file_id: str) -> Tuple[bytes, str]:
         return file_bytes, mime_type
 
 
+def _prepare_input_images(sources: List[Any], limit: Optional[int]) -> List[Dict[str, Any]]:
+    payloads: List[Dict[str, Any]] = []
+    if not sources:
+        return payloads
+    max_items = limit or len(sources)
+    for idx, entry in enumerate(sources):
+        if len(payloads) >= max_items:
+            break
+        file_id: Optional[str] = None
+        if isinstance(entry, dict):
+            file_id = entry.get("telegram_file_id") or entry.get("file_id")
+        elif isinstance(entry, str):
+            file_id = entry
+        if not file_id:
+            continue
+        image_bytes, mime_type = download_telegram_file(file_id)
+        png_bytes, png_mime = ensure_png_format(image_bytes, mime_type)
+        payloads.append(
+            {
+                "content": png_bytes,
+                "mime_type": png_mime,
+                "filename": f"input_{idx}.png",
+            }
+        )
+    return payloads
+
+
 @shared_task(bind=True, autoretry_for=(Exception,), retry_backoff=True, max_retries=3)
 def generate_image_task(self, request_id: int):
     """
@@ -437,8 +465,25 @@ def generate_image_task(self, request_id: int):
         params = dict(model.default_params or {})
         params.update(req.generation_params or {})
 
+        input_images_payload: List[Dict[str, Any]] = []
+        if generation_type == 'image2image':
+            max_inputs = model.max_input_images or None
+            input_sources = req.input_images or []
+            input_images_payload = _prepare_input_images(input_sources, max_inputs)
+            if not input_images_payload:
+                generation_type = 'text2image'
+        if generation_type != 'image2image':
+            input_images_payload = []
+
         # Вызываем сервис генерации изображений
-        imgs = generate_images_for_model(model, prompt, quantity, params)
+        imgs = generate_images_for_model(
+            model,
+            prompt,
+            quantity,
+            params,
+            generation_type=generation_type,
+            input_images=input_images_payload,
+        )
 
         urls = []
         inline_markup = get_inline_menu_markup()

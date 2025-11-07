@@ -118,3 +118,20 @@ def prepare_image_for_dimensions(
             return buffer.getvalue(), resulting_mime, True
     except (UnidentifiedImageError, OSError, ValueError):
         return data, preferred_mime or "application/octet-stream", False
+
+
+def ensure_png_format(data: bytes, mime_type: Optional[str]) -> Tuple[bytes, str]:
+    """
+    Гарантирует, что изображение в формате PNG (требуется для OpenAI image edits).
+    """
+    if (mime_type or "").lower() == "image/png":
+        return data, "image/png"
+    try:
+        with Image.open(BytesIO(data)) as img:
+            buffer = BytesIO()
+            if img.mode not in ("RGBA", "LA"):
+                img = img.convert("RGBA")
+            img.save(buffer, format="PNG")
+            return buffer.getvalue(), "image/png"
+    except (UnidentifiedImageError, OSError, ValueError):
+        return data, mime_type or "application/octet-stream"
