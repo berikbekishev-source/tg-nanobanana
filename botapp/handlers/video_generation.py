@@ -436,6 +436,49 @@ async def receive_image_for_video(message: Message, state: FSMContext):
     await state.update_data(generation_type='image2video')
 
 
+@router.message(BotStates.video_wait_prompt, F.document)
+async def receive_document_for_video(message: Message, state: FSMContext):
+    """Обрабатываем документ (изображение/видео) как источник для image2video."""
+    data = await state.get_data()
+    if not data.get('supports_images'):
+        await message.answer(
+            "❌ Эта модель не поддерживает входные файлы.\n"
+            "Отправьте текстовое описание.",
+            reply_markup=get_main_menu_inline_keyboard()
+        )
+        return
+
+    document = message.document
+    if not document:
+        await message.answer(
+            "Не удалось получить файл. Попробуйте снова.",
+            reply_markup=get_cancel_keyboard()
+        )
+        return
+
+    allowed_types = {"image/jpeg", "image/png", "image/webp", "video/mp4"}
+    mime_type = (document.mime_type or "").lower()
+    if mime_type not in allowed_types:
+        await message.answer(
+            "⚠️ Поддерживаются только файлы JPG, PNG, WEBP или MP4.\n"
+            "Отправьте другое изображение или фото.",
+            reply_markup=get_cancel_keyboard()
+        )
+        return
+
+    await state.update_data(
+        input_image_file_id=document.file_id,
+        input_image_mime_type=mime_type,
+        generation_type='image2video',
+    )
+
+    await message.answer(
+        "✅ Файл загружен!\n\n"
+        "Теперь отправьте текстовое описание, чтобы запустить генерацию.",
+        reply_markup=get_cancel_keyboard()
+    )
+
+
 @router.message(BotStates.video_wait_prompt, F.text)
 async def handle_video_prompt(message: Message, state: FSMContext):
     """Обрабатываем текстовый промт для генерации видео (txt2video / img2video)."""

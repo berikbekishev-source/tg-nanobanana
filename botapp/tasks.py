@@ -511,6 +511,9 @@ def generate_video_task(self, request_id: int):
         telegram_file_id = params.get("input_image_file_id") or source_media.get("telegram_file_id")
         if generation_type == 'image2video' and telegram_file_id:
             input_media, input_mime_type = download_telegram_file(telegram_file_id)
+            preferred_mime = params.get("input_image_mime_type") or source_media.get("mime_type")
+            if preferred_mime:
+                input_mime_type = preferred_mime
 
         result = provider.generate(
             prompt=prompt,
