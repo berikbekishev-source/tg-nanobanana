@@ -81,12 +81,13 @@ def vertex_edit_images(
 
     mode = image_mode or params.get("image_mode") if params else None
     reference_images = []
+    subject_entries: List[Dict[str, Any]] = []
     for idx, image in enumerate(input_images[:4], start=1):
         content = image.get("content")
         if not content:
             continue
         b64 = base64.b64encode(content).decode()
-        reference_images.append(
+        subject_entries.append(
             {
                 "referenceType": "REFERENCE_TYPE_SUBJECT",
                 "referenceId": idx,
@@ -97,6 +98,32 @@ def vertex_edit_images(
                 },
             }
         )
+
+    if mode == "edit" and subject_entries:
+        # Первый reference используем как RAW и добавляем авто-маску
+        first = input_images[0]
+        base_b64 = base64.b64encode(first["content"]).decode()
+        reference_images.append(
+            {
+                "referenceType": "REFERENCE_TYPE_RAW",
+                "referenceId": 1,
+                "referenceImage": {"bytesBase64Encoded": base_b64},
+            }
+        )
+        reference_images.append(
+            {
+                "referenceType": "REFERENCE_TYPE_MASK",
+                "referenceId": 2,
+                "maskImageConfig": {
+                    "maskMode": "MASK_MODE_BACKGROUND",
+                },
+            }
+        )
+        for idx, entry in enumerate(subject_entries, start=3):
+            entry["referenceId"] = idx
+            reference_images.append(entry)
+    else:
+        reference_images.extend(subject_entries)
 
     if not reference_images:
         raise ValueError("Не удалось подготовить изображения для Vertex edit.")
