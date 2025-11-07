@@ -115,13 +115,17 @@ async def select_image_model(callback: CallbackQuery, state: FSMContext):
         image_mode=None,
     )
 
-    # Предлагаем выбрать режим генерации
+    info_message = (
+        get_model_info_message(model)
+        + "\n\nРежимы:\n"
+        "• Создать из текста — промт без изображений\n"
+        "• Отредактировать — одно изображение + промт\n"
+        "• Ремикс — 2-4 изображения + промт"
+    )
+
     await state.set_state(BotStates.image_select_mode)
     await callback.message.answer(
-        "Выберите режим генерации:\n"
-        "• Создать из текста — классический text2image\n"
-        "• Отредактировать — одно изображение + промт\n"
-        "• Ремикс — от 2 до 4 изображений + промт",
+        info_message,
         reply_markup=get_image_mode_keyboard(),
     )
 
@@ -318,11 +322,11 @@ async def select_image_mode(callback: CallbackQuery, state: FSMContext):
     supports_images = data.get("supports_images", False)
     max_images = data.get("max_images", 0)
     provider = data.get("model_provider")
-    supports_edit = provider == "openai_image"
+    supports_edit = provider in {"openai_image", "gemini"}
 
     if mode in {"edit", "remix"} and (not supports_images or not supports_edit or max_images <= 0):
         await callback.message.answer(
-            "❌ Этот режим доступен только для моделей GPT Image. Выберите «Создать из текста».",
+            "❌ Этот режим доступен только для моделей, поддерживающих загрузку изображений. Выберите «Создать из текста».",
             reply_markup=get_image_mode_keyboard(),
         )
         return

@@ -6,6 +6,8 @@ import io
 import re
 from typing import Any, Dict, List, Optional
 from django.conf import settings
+from google.oauth2 import service_account
+from google.auth.transport.requests import AuthorizedSession
 try:
     from supabase import create_client
 except ImportError:  # pragma: no cover
@@ -54,6 +56,75 @@ def vertex_generate_images(prompt: str, quantity: int, params: Optional[Dict[str
             images_bytes.append(buffer.getvalue())
 
     return images_bytes
+
+
+def vertex_edit_images(
+    prompt: str,
+    quantity: int,
+    input_images: List[Dict[str, Any]],
+    params: Optional[Dict[str, Any]] = None,
+) -> List[bytes]:
+    if not input_images:
+        raise ValueError("Для режима image2image необходимо загрузить изображения.")
+
+    creds_json = settings.GOOGLE_APPLICATION_CREDENTIALS_JSON
+    if not creds_json:
+        raise ValueError("GOOGLE_APPLICATION_CREDENTIALS_JSON not set")
+    creds_info = json.loads(creds_json)
+    credentials = service_account.Credentials.from_service_account_info(
+        creds_info,
+        scopes=["https://www.googleapis.com/auth/cloud-platform"],
+    )
+    session = AuthorizedSession(credentials)
+
+    project_id = getattr(settings, "GCP_PROJECT_ID", creds_info.get("project_id"))
+    location = getattr(settings, "GCP_LOCATION", "us-central1")
+    model_name = getattr(settings, "VERTEX_IMAGE_EDIT_MODEL", "imagen-3.0-capability-001")
+    url = f"https://{location}-aiplatform.googleapis.com/v1/projects/{project_id}/locations/{location}/publishers/google/models/{model_name}:predict"
+
+    reference_images = []
+    for image in input_images[:4]:
+        content = image.get("content")
+        if not content:
+            continue
+        b64 = base64.b64encode(content).decode()
+        reference_images.append(
+            {
+                "referenceType": "REFERENCE_TYPE_SUBJECT",
+                "referenceId": 1,
+                "referenceImage": {"bytesBase64Encoded": b64},
+                "subjectImageConfig": {
+                    "subjectDescription": params.get("subject_description", "reference subject") if params else "reference subject",
+                    "subjectType": params.get("subject_type", "SUBJECT_TYPE_DEFAULT") if params else "SUBJECT_TYPE_DEFAULT",
+                },
+            }
+        )
+
+    if not reference_images:
+        raise ValueError("Не удалось подготовить изображения для Vertex edit.")
+
+    request_payload = {
+        "instances": [
+            {
+                "prompt": prompt,
+                "referenceImages": reference_images,
+            }
+        ],
+        "parameters": {
+            "sampleCount": max(1, min(quantity, 4)),
+        },
+    }
+
+    response = session.post(url, json=request_payload, timeout=120)
+    response.raise_for_status()
+    data = response.json()
+    predictions = data.get("predictions") or []
+    results: List[bytes] = []
+    for prediction in predictions:
+        b64_data = prediction.get("bytesBase64Encoded")
+        if b64_data:
+            results.append(base64.b64decode(b64_data))
+    return results
 
 def gemini_generate_images(prompt: str, quantity: int, params: Optional[Dict[str, Any]] = None) -> List[bytes]:
     """Возвращает список байтов изображений (разбираем inlineData или fileUri)."""
@@ -311,6 +382,8 @@ def generate_images_for_model(
     if provider == "vertex":
         return vertex_generate_images(prompt, quantity, params=merged_params)
     if provider == "gemini":
+        if generation_type == "image2image":
+            return vertex_edit_images(prompt, quantity, input_images or [], merged_params)
         return gemini_generate_images(prompt, quantity, params=merged_params)
 
     use_vertex = getattr(settings, 'USE_VERTEX_AI', False)
