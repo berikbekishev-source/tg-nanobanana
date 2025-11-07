@@ -586,6 +586,7 @@ def generate_video_task(self, request_id: int):
             req.chat_id,
             f"❌ Ошибка генерации видео: {str(e)}",
             reply_markup=get_inline_menu_markup(),
+            parse_mode=None,
         )
         raise
 
