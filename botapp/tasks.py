@@ -480,7 +480,8 @@ def generate_image_task(self, request_id: int):
         send_telegram_message(
             req.chat_id,
             f"❌ Ошибка генерации изображения: {str(e)}",
-            reply_markup=get_inline_menu_markup()
+            reply_markup=get_inline_menu_markup(),
+            parse_mode=None,
         )
         raise
 
