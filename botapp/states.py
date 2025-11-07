@@ -21,6 +21,7 @@ class BotStates(StatesGroup):
     video_select_model = State()        # Выбор модели для видео
     video_select_format = State()       # Выбор формата (соотношение сторон)
     video_select_duration = State()     # Выбор длительности ролика
+    video_select_resolution = State()   # Выбор качества/разрешения
     video_wait_prompt = State()         # Ожидание промта или изображения
     video_confirm_generation = State()  # Подтверждение генерации
     video_processing = State()          # Процесс генерации видео

@@ -128,6 +128,18 @@ def get_video_duration_keyboard(durations: Sequence[int]) -> InlineKeyboardMarku
     return builder.as_markup()
 
 
+def get_video_resolution_keyboard(resolutions: Sequence[str]) -> InlineKeyboardMarkup:
+    """Клавиатура выбора качества видео."""
+    builder = InlineKeyboardBuilder()
+    for value in resolutions:
+        label = value.upper().replace("P", "p")
+        builder.button(text=label, callback_data=f"video_resolution:{value.lower()}")
+    if builder.buttons:
+        builder.adjust(len(resolutions) if len(resolutions) <= 3 else 3)
+    builder.row(InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu"))
+    return builder.as_markup()
+
+
 # === ПРОМТ ПО РЕФФЕРЕНСУ ===
 
 def get_reference_prompt_models_keyboard(models: Sequence[Tuple[str, str]]) -> InlineKeyboardMarkup:

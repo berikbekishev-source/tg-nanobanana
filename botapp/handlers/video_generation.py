@@ -12,6 +12,7 @@ from botapp.keyboards import (
     get_video_models_keyboard,
     get_video_format_keyboard,
     get_video_duration_keyboard,
+    get_video_resolution_keyboard,
     get_cancel_keyboard,
     get_main_menu_inline_keyboard,
     get_generation_start_message
@@ -68,11 +69,14 @@ async def _prompt_user_for_description(
     supports_images: bool,
     aspect_ratio: str,
     duration: Optional[int],
+    resolution: Optional[str] = None,
 ) -> None:
     """Отправить пользователю инструкции по вводу промта."""
     intro = [f"Формат выбран: {aspect_ratio}"]
     if duration:
         intro.append(f"Длительность: {duration} сек.")
+    if resolution:
+        intro.append(f"Качество: {resolution.upper()}")
     intro.append("Отправьте текстовое описание для генерации видео.")
     if supports_images:
         intro.append("Либо загрузите изображение и добавьте описание, чтобы использовать режим img2video.")
@@ -81,6 +85,29 @@ async def _prompt_user_for_description(
         "\n".join(intro),
         reply_markup=get_cancel_keyboard()
     )
+
+
+async def _maybe_prompt_resolution(message: Message, state: FSMContext) -> bool:
+    """
+    Попросить выбрать разрешение, если требуется (Sora).
+    Возвращает True, если показали клавиатуру выбора разрешения.
+    """
+    data = await state.get_data()
+    if not data.get('is_sora'):
+        return False
+    options = data.get('resolution_options') or []
+    selected_resolution = data.get('selected_resolution')
+    if not options or selected_resolution:
+        return False
+
+    await state.set_state(BotStates.video_select_resolution)
+    await message.answer(
+        "Выберите качество видео:\n"
+        "• 720p — быстрее и дешевле\n"
+        "• 1080p — выше детализация",
+        reply_markup=get_video_resolution_keyboard(options),
+    )
+    return True
 
 
 @router.message(F.text == "🎬 Создать видео")
@@ -163,8 +190,11 @@ async def select_video_model(callback: CallbackQuery, state: FSMContext):
     if is_sora_model:
         duration_options = duration_options or [4, 8, 12]
         default_duration = 8
-        default_resolution = "720p"
         default_aspect_ratio = "9:16"
+        default_resolution = "720p"
+
+    resolution_options = ["720p", "1080p"] if is_sora_model else [default_resolution]
+    selected_resolution = None if is_sora_model else default_resolution
 
     info_message = (
         f"Модель: {model.name}.\n"
@@ -176,6 +206,8 @@ async def select_video_model(callback: CallbackQuery, state: FSMContext):
     if duration_options:
         options_text = ", ".join(f"{value} сек" for value in duration_options)
         info_message += f"\nДоступная длительность: {options_text}."
+    if is_sora_model:
+        info_message += "\nДоступные качества: 720p или 1080p."
 
     await callback.message.answer(
         info_message,
@@ -199,7 +231,8 @@ async def select_video_model(callback: CallbackQuery, state: FSMContext):
         default_resolution=default_resolution,
         default_aspect_ratio=default_aspect_ratio,
         duration_options=duration_options,
-        selected_resolution=default_resolution,
+        resolution_options=resolution_options,
+        selected_resolution=selected_resolution,
         generation_type='text2video'
     )
 
@@ -223,6 +256,17 @@ async def wait_duration_selection(message: Message, state: FSMContext):
     await message.answer(
         "Выберите длительность ролика, используя кнопки ниже.",
         reply_markup=get_video_duration_keyboard(duration_options),
+    )
+
+
+@router.message(BotStates.video_select_resolution)
+async def wait_resolution_selection(message: Message, state: FSMContext):
+    """Напоминаем выбрать качество, если пользователь пишет вместо кнопок."""
+    data = await state.get_data()
+    options = data.get('resolution_options') or ["720p", "1080p"]
+    await message.answer(
+        "Выберите качество видео с помощью кнопок ниже.",
+        reply_markup=get_video_resolution_keyboard(options),
     )
 
 
@@ -258,11 +302,15 @@ async def set_video_format(callback: CallbackQuery, state: FSMContext):
     selected_duration = data.get('selected_duration') or default_duration
     await state.update_data(selected_duration=selected_duration)
 
+    if await _maybe_prompt_resolution(callback.message, state):
+        return
+
     await _prompt_user_for_description(
         callback.message,
         supports_images=supports_images,
         aspect_ratio=aspect_ratio,
         duration=selected_duration,
+        resolution=data.get('selected_resolution') or data.get('default_resolution'),
     )
     await state.set_state(BotStates.video_wait_prompt)
 
@@ -297,13 +345,57 @@ async def set_video_duration(callback: CallbackQuery, state: FSMContext):
 
     await state.update_data(selected_duration=duration_value)
 
+    if await _maybe_prompt_resolution(callback.message, state):
+        return
+
     await _prompt_user_for_description(
         callback.message,
         supports_images=supports_images,
         aspect_ratio=aspect_ratio,
         duration=duration_value,
+        resolution=data.get('selected_resolution') or data.get('default_resolution'),
     )
 
+    await state.set_state(BotStates.video_wait_prompt)
+
+
+@router.callback_query(BotStates.video_select_resolution, F.data.startswith("video_resolution:"))
+async def set_video_resolution(callback: CallbackQuery, state: FSMContext):
+    """Сохраняем выбранное качество и переходим к сбору промта."""
+    await callback.answer()
+
+    data = await state.get_data()
+    options = [opt.lower() for opt in (data.get('resolution_options') or [])]
+
+    try:
+        value = callback.data.split(":", maxsplit=1)[1].lower()
+    except (ValueError, IndexError):
+        await callback.message.answer(
+            "Не удалось распознать выбранное качество. Попробуйте снова.",
+            reply_markup=get_video_resolution_keyboard(data.get('resolution_options') or ["720p", "1080p"]),
+        )
+        return
+
+    if options and value not in options:
+        await callback.message.answer(
+            "Это качество недоступно. Выберите вариант из списка.",
+            reply_markup=get_video_resolution_keyboard(data.get('resolution_options') or ["720p", "1080p"]),
+        )
+        return
+
+    await state.update_data(selected_resolution=value)
+
+    supports_images = data.get('supports_images', False)
+    aspect_ratio = data.get('selected_aspect_ratio', '16:9')
+    duration = data.get('selected_duration') or data.get('default_duration')
+
+    await _prompt_user_for_description(
+        callback.message,
+        supports_images=supports_images,
+        aspect_ratio=aspect_ratio,
+        duration=duration,
+        resolution=value,
+    )
     await state.set_state(BotStates.video_wait_prompt)
 
 
@@ -376,11 +468,6 @@ async def handle_video_prompt(message: Message, state: FSMContext):
     default_aspect_ratio = data.get('default_aspect_ratio') or model.default_params.get('aspect_ratio') or '16:9'
     selected_aspect_ratio = data.get('selected_aspect_ratio') or default_aspect_ratio
     selected_resolution = data.get('selected_resolution') or default_resolution
-
-    is_sora = data.get('is_sora') or model.provider == "openai"
-    if is_sora:
-        selected_resolution = "720p"
-        default_resolution = "720p"
 
     generation_params = {
         'duration': selected_duration,
