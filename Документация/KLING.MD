@@ -24,6 +24,8 @@
 
 > **Важно:** реальные значения ключей берите из кабинета Kling; в репозиторий их не коммитим.
 
+⚠️ Если в окружении остались старые переменные `KLING_CREATE_ENDPOINT=/v1/video/generations` или `KLING_STATUS_ENDPOINT=/v1/video/generations/{job_id}`, они автоматически игнорируются и вместо них используются новые URL `/v1/videos/text2video` и `/v1/videos/text2video/{task_id}`. Чтобы явно задать другой путь, используйте переменные `KLING_TEXT2VIDEO_ENDPOINT`/`KLING_TEXT2VIDEO_STATUS_ENDPOINT`.
+
 ## Поддерживаемые режимы
 
 - `text2video` — требуется только текстовый промт.
