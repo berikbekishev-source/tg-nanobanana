@@ -388,6 +388,56 @@ class OpenAIImageGenerationTests(TestCase):
         call_kwargs = openai_mock.call_args.kwargs
         self.assertEqual(call_kwargs["model_name"], "gpt-image-1")
         self.assertEqual(call_kwargs["params"]["size"], "512x512")
+
+    @override_settings(OPENAI_API_KEY="test-key")
+    @patch("botapp.services.httpx.Client")
+    def test_openai_generate_images_falls_back_to_auto_quality(self, client_cls: MagicMock):
+        client_instance = MagicMock()
+        ctx = MagicMock()
+        ctx.__enter__.return_value = client_instance
+        ctx.__exit__.return_value = False
+        client_cls.return_value = ctx
+
+        response = MagicMock()
+        response.json.return_value = {"data": [{"b64_json": base64.b64encode(b"img").decode()}]}
+        response.raise_for_status.return_value = None
+        client_instance.post.return_value = response
+
+        openai_generate_images(
+            "prompt",
+            1,
+            params={"quality": "standard", "size": "auto"},
+            model_name="gpt-image-1",
+        )
+
+        payload = client_instance.post.call_args.kwargs["json"]
+        self.assertEqual(payload["quality"], "auto")
+        self.assertEqual(payload["size"], "auto")
+
+    @override_settings(OPENAI_API_KEY="test-key")
+    @patch("botapp.services.httpx.Client")
+    def test_openai_generate_images_accepts_format_and_compression(self, client_cls: MagicMock):
+        client_instance = MagicMock()
+        ctx = MagicMock()
+        ctx.__enter__.return_value = client_instance
+        ctx.__exit__.return_value = False
+        client_cls.return_value = ctx
+
+        response = MagicMock()
+        response.json.return_value = {"data": [{"b64_json": base64.b64encode(b"img").decode()}]}
+        response.raise_for_status.return_value = None
+        client_instance.post.return_value = response
+
+        openai_generate_images(
+            "prompt",
+            1,
+            params={"format": "jpeg", "output_compression": 50},
+            model_name="gpt-image-1",
+        )
+
+        payload = client_instance.post.call_args.kwargs["json"]
+        self.assertEqual(payload["format"], "jpeg")
+        self.assertEqual(payload["output_compression"], 50)
 class ReferenceMimeDetectionTests(TestCase):
     def test_detect_png_signature_when_header_generic(self):
         png_bytes = b"\x89PNG\r\n\x1a\n" + b"\x00" * 10

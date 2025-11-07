@@ -3,6 +3,7 @@ import httpx
 import uuid
 import json
 import io
+import re
 from typing import Any, Dict, List, Optional
 from django.conf import settings
 try:
@@ -101,17 +102,59 @@ def openai_generate_images(
         raise ValueError("OPENAI_API_KEY is not configured for OpenAI image generation")
 
     effective_params = dict(params or {})
-    payload_base = {
+    payload_base: Dict[str, Any] = {
         "model": effective_params.get("model") or model_name or getattr(settings, "OPENAI_IMAGE_MODEL", "gpt-image-1"),
         "prompt": prompt,
-        "size": effective_params.get("size", "1024x1024"),
-        "quality": effective_params.get("quality", "standard"),
         "n": 1,
     }
+
+    def _normalize_size(value: Any) -> Optional[str]:
+        if not value:
+            return "1024x1024"
+        text = str(value).lower()
+        if text == "auto":
+            return "auto"
+        if re.fullmatch(r"\d+x\d+", text):
+            return text
+        return "1024x1024"
+
+    size_value = _normalize_size(effective_params.get("size"))
+    if size_value:
+        payload_base["size"] = size_value
+
+    allowed_quality = {"low", "medium", "high", "auto"}
+    quality_value = str(effective_params.get("quality", "auto")).lower()
+    if quality_value not in allowed_quality:
+        quality_value = "auto"
+    payload_base["quality"] = quality_value
+
     if effective_params.get("background") == "transparent":
         payload_base["background"] = "transparent"
 
-    response_format = effective_params.get("response_format", "b64_json")
+    image_format = effective_params.get("format") or effective_params.get("output_format")
+    if image_format:
+        fmt = str(image_format).lower()
+        if fmt == "jpg":
+            fmt = "jpeg"
+        if fmt in {"png", "jpeg", "webp"}:
+            payload_base["format"] = fmt
+
+            compression = effective_params.get("output_compression")
+            if compression is not None and fmt in {"jpeg", "webp"}:
+                try:
+                    comp_value = int(compression)
+                except (TypeError, ValueError):
+                    comp_value = None
+                if comp_value is not None:
+                    comp_value = max(0, min(100, comp_value))
+                    payload_base["output_compression"] = comp_value
+
+    moderation_value = effective_params.get("moderation")
+    if moderation_value:
+        moderation_value = str(moderation_value).lower()
+        if moderation_value in {"auto", "low"}:
+            payload_base["moderation"] = moderation_value
+
     if effective_params.get("seed") is not None:
         payload_base["seed"] = effective_params["seed"]
 
@@ -152,7 +195,7 @@ def openai_generate_images(
             if not entries:
                 continue
             entry = entries[0]
-            if response_format == "b64_json" and entry.get("b64_json"):
+            if entry.get("b64_json"):
                 imgs.append(base64.b64decode(entry["b64_json"]))
                 continue
             if entry.get("url"):
