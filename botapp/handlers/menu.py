@@ -90,10 +90,12 @@ async def show_balance(message: Message, state: FSMContext):
     balance = await sync_to_async(BalanceService.get_balance)(user)
 
     # Формируем сообщение с балансом и ценами
+    prices_info = await sync_to_async(get_prices_info)()
+
     balance_message = (
         f"💰 **Ваш текущий баланс:**\n"
         f"{format_balance(balance)}\n\n"
-        f"{get_prices_info()}"
+        f"{prices_info}"
     )
 
     # Отправляем сообщение с балансом + inline кнопка "Пополнить баланс"
