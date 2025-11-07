@@ -65,11 +65,28 @@ class VertexVeoProvider(BaseVideoProvider):
 
     @staticmethod
     def _load_credentials(raw: str) -> Dict[str, Any]:
+        """
+        Принимает либо путь до JSON, либо сам JSON-blob.
+        На Railway переменная часто задаётся многострочной строкой, поэтому
+        пробуем распарсить как JSON с ослабленной проверкой и только затем fallback на файл.
+        """
+        candidate = raw.strip()
+        if candidate.startswith("{") or candidate.startswith("["):
+            try:
+                return json.loads(candidate, strict=False)
+            except json.JSONDecodeError as exc:
+                raise VideoGenerationError(
+                    f"GOOGLE_APPLICATION_CREDENTIALS_JSON содержит некорректный JSON: {exc}"
+                ) from exc
+
         try:
-            return json.loads(raw)
-        except json.JSONDecodeError:
             with open(raw, "r", encoding="utf-8") as fh:
                 return json.load(fh)
+        except OSError as exc:
+            raise VideoGenerationError(
+                "Не удалось прочитать GOOGLE_APPLICATION_CREDENTIALS_JSON как файл. "
+                "Укажите путь до файла или сам JSON."
+            ) from exc
 
     def _get_scoped_credentials(self):
         scopes = ["https://www.googleapis.com/auth/cloud-platform"]
