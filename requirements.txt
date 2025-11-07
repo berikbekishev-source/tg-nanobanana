@@ -9,6 +9,7 @@ sentry-sdk>=2.0
 psycopg2-binary>=2.9
 dj-database-url>=2.2
 supabase>=2.5
+PyJWT>=2.8
 uvicorn[standard]>=0.30
 gunicorn>=21.2
 python-dotenv>=1.0

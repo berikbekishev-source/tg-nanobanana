@@ -186,6 +186,15 @@ KLING_POLL_TIMEOUT = int(os.getenv("KLING_POLL_TIMEOUT", str(12 * 60)))
 KLING_REQUEST_TIMEOUT = os.getenv("KLING_REQUEST_TIMEOUT")
 KLING_EXTRA_HEADERS = os.getenv("KLING_EXTRA_HEADERS")
 
+# --- KIE AI proxy for Kling ---
+KIE_API_KEY = os.getenv("KIE_API_KEY")
+KIE_API_BASE_URL = os.getenv("KIE_API_BASE_URL", "https://api.kie.ai")
+KIE_TEXT2VIDEO_MODEL = os.getenv("KIE_TEXT2VIDEO_MODEL", "kling/v2-5-turbo-text-to-video-pro")
+KIE_IMAGE2VIDEO_MODEL = os.getenv("KIE_IMAGE2VIDEO_MODEL", "kling/v2-5-turbo-image-to-video-pro")
+KIE_POLL_INTERVAL = int(os.getenv("KIE_POLL_INTERVAL", str(KLING_POLL_INTERVAL)))
+KIE_POLL_TIMEOUT = int(os.getenv("KIE_POLL_TIMEOUT", str(KLING_POLL_TIMEOUT)))
+KIE_REQUEST_TIMEOUT = os.getenv("KIE_REQUEST_TIMEOUT")
+
 # --- Lava.top Payment ---
 LAVA_WEBHOOK_SECRET = os.getenv("LAVA_WEBHOOK_SECRET")
 LAVA_API_KEY = os.getenv("LAVA_API_KEY")

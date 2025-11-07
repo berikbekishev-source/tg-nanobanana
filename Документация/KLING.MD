@@ -21,10 +21,16 @@
 | `KLING_POLL_TIMEOUT` | Таймаут ожидания результата (секунды, по умолчанию 720). |
 | `KLING_REQUEST_TIMEOUT` | Таймаут HTTP-запросов (секунды, опционально). |
 | `KLING_EXTRA_HEADERS` | JSON-словарь с дополнительными заголовками (например, `{"X-Client":"nanobanana"}`). |
+| `KIE_API_KEY` | (Опционально) ключ посредника [KIE.AI](https://api.kie.ai). Если заполнен, все Kling-запросы идут через него. |
+| `KIE_TEXT2VIDEO_MODEL` | Модель в KIE для text2video (по умолчанию `kling/v2-5-turbo-text-to-video-pro`). |
+| `KIE_IMAGE2VIDEO_MODEL` | Модель в KIE для image2video (по умолчанию `kling/v2-5-turbo-image-to-video-pro`). |
+| `KIE_API_BASE_URL`, `KIE_POLL_INTERVAL`, `KIE_POLL_TIMEOUT` | Доп. настройки KIE. |
 
 > **Важно:** реальные значения ключей берите из кабинета Kling; в репозиторий их не коммитим.
 
 ⚠️ Если в окружении остались старые переменные `KLING_CREATE_ENDPOINT=/v1/video/generations` или `KLING_STATUS_ENDPOINT=/v1/video/generations/{job_id}`, они автоматически игнорируются и вместо них используются новые URL `/v1/videos/text2video` и `/v1/videos/text2video/{task_id}`. Чтобы явно задать другой путь, используйте переменные `KLING_TEXT2VIDEO_ENDPOINT`/`KLING_TEXT2VIDEO_STATUS_ENDPOINT`.
+
+⚠️ Если прямой доступ к Kling недоступен (например, закончились кредиты), можно заполнить `KIE_API_KEY` — в этом случае провайдер прозрачно обращается к `https://api.kie.ai/api/v1/jobs/...`, создаёт задачи (`createTask`) и опрашивает их (`recordInfo`). KIE требует только Bearer-токен (ваш API key), поэтому никаких JWT больше не нужно.
 
 ## Поддерживаемые режимы
 
@@ -62,6 +68,16 @@
 3. В успешном ответе `data.task_result.videos` содержит массив роликов. Берём первый объект, скачиваем `url` и передаём пользователю. Если API вернул Base64 (`video_base64`), сохраняем его напрямую.
 
 В `VideoGenerationResult.metadata` сохраняются исходный ответ и ID задания.
+
+### Посредник KIE.AI
+
+Если задан `KIE_API_KEY`, провайдер автоматически создаёт задачи в `https://api.kie.ai/api/v1/jobs/createTask`, передавая:
+
+- `model` — по умолчанию `kling/v2-5-turbo-text-to-video-pro` или `kling/v2-5-turbo-image-to-video-pro` (можно переопределить переменными).
+- `input.prompt`, `input.duration`, `input.negative_prompt`, `input.cfg_scale`.
+- Для режима img2video мы загружаем исходное изображение в Supabase (`supabase_upload_png`) и передаём полученный публичный URL в `input.image_url`.
+
+После получения `taskId` опрашиваем `/api/v1/jobs/recordInfo?taskId=...` до статуса `success` или `fail`. В случае успеха поле `resultJson` содержит `resultUrls` — скачиваем первое видео и отдаём пользователю. При ошибках (`state=fail`) текст из `failMsg` попадает напрямую в уведомление.
 
 ## Модель в каталоге
 

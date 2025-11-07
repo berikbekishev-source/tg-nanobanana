@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+from io import BytesIO
 import json
 import threading
 import time
@@ -9,6 +10,8 @@ from typing import Any, Dict, Iterable, Optional
 import httpx
 import jwt
 from django.conf import settings
+
+from botapp.services import supabase_upload_png
 
 from . import register_video_provider
 from .base import BaseVideoProvider, VideoGenerationError, VideoGenerationResult
@@ -51,6 +54,9 @@ class KlingVideoProvider(BaseVideoProvider):
         self._token_lock = threading.Lock()
         self._cached_token: Optional[str] = None
         self._token_exp: float = 0.0
+
+        self._kie_api_key: Optional[str] = getattr(settings, "KIE_API_KEY", None)
+        self._use_kie = bool(self._kie_api_key)
 
         base = getattr(settings, "KLING_API_BASE_URL", self._DEFAULT_BASE_URL) or self._DEFAULT_BASE_URL
         self._api_base = base.rstrip("/")
@@ -104,6 +110,16 @@ class KlingVideoProvider(BaseVideoProvider):
             if isinstance(parsed, dict):
                 self._extra_headers = {str(k): str(v) for k, v in parsed.items()}
 
+        if self._use_kie:
+            base_url = getattr(settings, "KIE_API_BASE_URL", "https://api.kie.ai") or "https://api.kie.ai"
+            self._kie_base_url = base_url.rstrip("/")
+            self._kie_text2video_model: Optional[str] = getattr(settings, "KIE_TEXT2VIDEO_MODEL", None)
+            self._kie_image2video_model: Optional[str] = getattr(settings, "KIE_IMAGE2VIDEO_MODEL", None)
+            self._kie_poll_interval: int = int(getattr(settings, "KIE_POLL_INTERVAL", self._poll_interval))
+            self._kie_poll_timeout: int = int(getattr(settings, "KIE_POLL_TIMEOUT", str(self._poll_timeout)))
+            kie_timeout_raw = getattr(settings, "KIE_REQUEST_TIMEOUT", None)
+            self._kie_request_timeout = httpx.Timeout(float(kie_timeout_raw), connect=10.0) if kie_timeout_raw else httpx.Timeout(120.0, connect=10.0)
+
     def generate(
         self,
         *,
@@ -114,12 +130,49 @@ class KlingVideoProvider(BaseVideoProvider):
         input_media: Optional[bytes] = None,
         input_mime_type: Optional[str] = None,
     ) -> VideoGenerationResult:
-        generation_type = generation_type.lower()
+        generation_type = (generation_type or "").lower()
         if generation_type not in {"text2video", "image2video"}:
             raise VideoGenerationError(f"Режим '{generation_type}' не поддерживается Kling.")
+
+        if self._use_kie:
+            return self._generate_via_kie(
+                prompt=prompt,
+                model_name=model_name,
+                generation_type=generation_type,
+                params=params,
+                input_media=input_media,
+                input_mime_type=input_mime_type,
+            )
+
         if generation_type == "image2video" and not (input_media or params.get("image")):
             raise VideoGenerationError("Для режима image2video необходимо загрузить изображение или ссылку на него.")
 
+        return self._generate_via_native_kling(
+            prompt=prompt,
+            model_name=model_name,
+            generation_type=generation_type,
+            params=params,
+            input_media=input_media,
+            input_mime_type=input_mime_type,
+        )
+
+    @staticmethod
+    def _clean_endpoint(value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return None
+        stripped = str(value).strip()
+        return stripped or None
+
+    def _generate_via_native_kling(
+        self,
+        *,
+        prompt: str,
+        model_name: str,
+        generation_type: str,
+        params: Dict[str, Any],
+        input_media: Optional[bytes],
+        input_mime_type: Optional[str],
+    ) -> VideoGenerationResult:
         endpoints = self._resolve_endpoints(generation_type)
 
         payload = self._build_payload(
@@ -168,12 +221,215 @@ class KlingVideoProvider(BaseVideoProvider):
             metadata=metadata,
         )
 
+    def _generate_via_kie(
+        self,
+        *,
+        prompt: str,
+        model_name: str,
+        generation_type: str,
+        params: Dict[str, Any],
+        input_media: Optional[bytes],
+        input_mime_type: Optional[str],
+    ) -> VideoGenerationResult:
+        model_override = (
+            self._kie_text2video_model if generation_type == "text2video" else self._kie_image2video_model
+        )
+        target_model = model_override or model_name
+        if not target_model:
+            raise VideoGenerationError("Не удалось определить модель для KIE.AI.")
+
+        input_payload = self._build_kie_input(
+            generation_type=generation_type,
+            prompt=prompt,
+            params=params,
+            input_media=input_media,
+            input_mime_type=input_mime_type,
+        )
+
+        request_payload = {
+            "model": target_model,
+            "input": input_payload,
+        }
+
+        create_resp = self._kie_request("POST", "/api/v1/jobs/createTask", json_payload=request_payload)
+        if create_resp.get("code") != 200:
+            raise VideoGenerationError(f"KIE.AI createTask error: {create_resp}")
+        data = create_resp.get("data") or {}
+        task_id = data.get("taskId")
+        if not task_id:
+            raise VideoGenerationError("KIE.AI не вернул идентификатор задания.")
+
+        job_payload = self._kie_poll_task(task_id)
+        result_url = self._extract_kie_result_url(job_payload)
+        if not result_url:
+            raise VideoGenerationError("KIE.AI не вернул ссылку на результат.")
+
+        video_bytes, mime_type = self._download_file(result_url)
+        duration_value = input_payload.get("duration")
+        metadata = {
+            "job": job_payload,
+            "initialResponse": create_resp,
+            "prompt": prompt,
+            "generationType": generation_type,
+            "provider": "kie.ai",
+        }
+
+        return VideoGenerationResult(
+            content=video_bytes,
+            mime_type=mime_type or "video/mp4",
+            duration=int(duration_value) if duration_value and str(duration_value).isdigit() else None,
+            resolution=None,
+            aspect_ratio=None,
+            provider_job_id=task_id,
+            metadata=metadata,
+        )
+
+    def _build_kie_input(
+        self,
+        *,
+        generation_type: str,
+        prompt: str,
+        params: Dict[str, Any],
+        input_media: Optional[bytes],
+        input_mime_type: Optional[str],
+    ) -> Dict[str, Any]:
+        effective_params = dict(params or {})
+        payload: Dict[str, Any] = {
+            "prompt": prompt,
+        }
+
+        duration_value = effective_params.get("duration")
+        if duration_value is not None:
+            payload["duration"] = str(duration_value)
+
+        negative_prompt = effective_params.get("negative_prompt") or effective_params.get("negativePrompt")
+        if negative_prompt:
+            payload["negative_prompt"] = negative_prompt
+
+        cfg_scale = effective_params.get("cfg_scale")
+        if cfg_scale is not None:
+            try:
+                payload["cfg_scale"] = float(cfg_scale)
+            except (TypeError, ValueError):
+                pass
+
+        kling_opts = effective_params.get("kling_options")
+        if isinstance(kling_opts, dict):
+            payload.update(kling_opts)
+
+        if generation_type == "image2video":
+            image_url = (
+                effective_params.get("image_url")
+                or effective_params.get("imageUrl")
+                or effective_params.get("reference_image")
+            )
+            if not image_url:
+                image_url = self._ensure_image_url(input_media, input_mime_type)
+            payload["image_url"] = image_url
+
+        return payload
+
+    def _ensure_image_url(self, input_media: Optional[bytes], input_mime_type: Optional[str]) -> str:
+        if not input_media:
+            raise VideoGenerationError("Для режима image2video необходимо загрузить изображение.")
+
+        png_bytes = self._convert_to_png(input_media, input_mime_type)
+        upload_obj = supabase_upload_png(png_bytes)
+        if isinstance(upload_obj, dict):
+            url = upload_obj.get("public_url") or upload_obj.get("publicUrl") or upload_obj.get("publicURL")
+        else:
+            url = upload_obj
+
+        if not url:
+            raise VideoGenerationError("Не удалось загрузить изображение в хранилище для KIE.AI.")
+        return url
+
     @staticmethod
-    def _clean_endpoint(value: Optional[str]) -> Optional[str]:
-        if value is None:
-            return None
-        stripped = str(value).strip()
-        return stripped or None
+    def _convert_to_png(content: bytes, input_mime_type: Optional[str]) -> bytes:
+        mime = (input_mime_type or "").lower()
+        if mime == "image/png":
+            return content
+        try:
+            from PIL import Image
+        except ImportError:  # pragma: no cover - Pillow всегда в зависимостях, но на всякий случай
+            return content
+        try:
+            with Image.open(BytesIO(content)) as img:
+                buffer = BytesIO()
+                img.save(buffer, format="PNG")
+                return buffer.getvalue()
+        except Exception:
+            return content
+
+    def _kie_request(
+        self,
+        method: str,
+        endpoint: str,
+        *,
+        json_payload: Optional[Dict[str, Any]] = None,
+        params: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        if not self._kie_api_key:
+            raise VideoGenerationError("KIE.AI API ключ не задан.")
+        url = endpoint
+        if not endpoint.startswith("http"):
+            url = f"{self._kie_base_url}{endpoint}"
+        headers = {
+            "Authorization": f"Bearer {self._kie_api_key}",
+            "Content-Type": "application/json",
+        }
+        try:
+            with httpx.Client(timeout=self._kie_request_timeout, follow_redirects=True) as client:
+                response = client.request(method, url, headers=headers, json=json_payload, params=params)
+                response.raise_for_status()
+        except httpx.HTTPStatusError as exc:  # type: ignore[attr-defined]
+            detail = self._safe_extract_error(exc.response)
+            raise VideoGenerationError(f"KIE.AI error: {exc}\nDetails: {detail}") from exc
+        except httpx.HTTPError as exc:  # type: ignore[attr-defined]
+            raise VideoGenerationError(f"Ошибка обращения к KIE.AI API: {exc}") from exc
+
+        try:
+            return response.json()
+        except ValueError as exc:  # pragma: no cover
+            raise VideoGenerationError(f"KIE.AI вернул некорректный JSON: {response.text}") from exc
+
+    def _kie_poll_task(self, task_id: str) -> Dict[str, Any]:
+        started = time.monotonic()
+        while True:
+            response = self._kie_request(
+                "GET",
+                "/api/v1/jobs/recordInfo",
+                params={"taskId": task_id},
+            )
+            if response.get("code") != 200:
+                raise VideoGenerationError(f"KIE.AI recordInfo error: {response}")
+            data = response.get("data") or {}
+            state = (data.get("state") or "").lower()
+            if state == "success":
+                return data
+            if state == "fail":
+                fail_msg = data.get("failMsg") or data.get("msg") or "KIE.AI task failed."
+                raise VideoGenerationError(f"Задача KIE.AI завершилась с ошибкой: {fail_msg}")
+            if time.monotonic() - started > self._kie_poll_timeout:
+                raise VideoGenerationError("Ожидание результата KIE.AI превысило установленный таймаут.")
+            time.sleep(self._kie_poll_interval)
+
+    @staticmethod
+    def _extract_kie_result_url(payload: Dict[str, Any]) -> Optional[str]:
+        result_json = payload.get("resultJson")
+        if isinstance(result_json, dict):
+            urls = result_json.get("resultUrls")
+            if isinstance(urls, list) and urls:
+                return urls[0]
+        if isinstance(result_json, str):
+            try:
+                parsed = json.loads(result_json)
+                urls = parsed.get("resultUrls")
+                if isinstance(urls, list) and urls:
+                    return urls[0]
+            except json.JSONDecodeError:
+                pass
+        return None
 
     def _resolve_endpoints(self, generation_type: str) -> Dict[str, str]:
         if generation_type == "text2video":
