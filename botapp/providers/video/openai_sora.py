@@ -7,8 +7,60 @@ from typing import Any, Dict, Optional, Tuple
 import httpx
 from django.conf import settings
 
+from botapp.media_utils import prepare_image_for_dimensions
+
 from . import register_video_provider
 from .base import BaseVideoProvider, VideoGenerationError, VideoGenerationResult
+
+
+def resolve_sora_size(resolution: Optional[Any], aspect_ratio: Optional[Any]) -> Optional[str]:
+    """Возвращает строку с размерами (например, 1280x720) для заданного качества/соотношения."""
+    if not resolution and not aspect_ratio:
+        return None
+
+    resolution_str = str(resolution).lower() if resolution else ""
+    aspect_ratio_str = str(aspect_ratio).replace(" ", "") if aspect_ratio else ""
+
+    if "x" in resolution_str:
+        return resolution_str
+
+    presets = {
+        ("720p", "16:9"): "1280x720",
+        ("720p", "9:16"): "720x1280",
+        ("720p", "1:1"): "720x720",
+        # Sora Video API для 1080p фактически принимает 720p-глубину (1792/1024 не поддерживаются)
+        ("1080p", "16:9"): "1280x720",
+        ("1080p", "9:16"): "720x1280",
+        ("1080p", "1:1"): "1024x1024",
+    }
+
+    if not aspect_ratio_str:
+        aspect_ratio_str = "16:9"
+
+    if not resolution_str:
+        resolution_str = "720p"
+
+    return presets.get((resolution_str, aspect_ratio_str))
+
+
+def parse_size_value(size: Optional[str]) -> Optional[Tuple[int, int]]:
+    if not size:
+        return None
+    try:
+        width_str, height_str = size.lower().split("x", maxsplit=1)
+        width = int(width_str.strip())
+        height = int(height_str.strip())
+        if width > 0 and height > 0:
+            return width, height
+    except (ValueError, AttributeError):
+        return None
+    return None
+
+
+def resolve_sora_dimensions(resolution: Optional[Any], aspect_ratio: Optional[Any]) -> Optional[Tuple[int, int]]:
+    """Помогает внешнему коду узнать требуемые размеры входного изображения."""
+    size = resolve_sora_size(resolution, aspect_ratio)
+    return parse_size_value(size)
 
 
 class OpenAISoraProvider(BaseVideoProvider):
@@ -136,9 +188,19 @@ class OpenAISoraProvider(BaseVideoProvider):
         if generation_type == "image2video":
             if not input_media:
                 raise VideoGenerationError("Для режима image2video требуется входное изображение.")
-            mime = input_mime_type or "image/png"
+            mime = (input_mime_type or "image/png").lower()
+            processed_media = input_media
+            size_value = base_payload.get("size")
+            target_dims = self._parse_size(size_value) if size_value else None
+            if target_dims and mime.startswith("image/"):
+                processed_media, mime, _ = prepare_image_for_dimensions(
+                    input_media,
+                    target_dims[0],
+                    target_dims[1],
+                    preferred_mime=mime,
+                )
             form_payload = {key: str(value) for key, value in base_payload.items()}
-            files = {"input_reference": ("reference_image", input_media, mime)}
+            files = {"input_reference": ("reference_image", processed_media, mime)}
             json_payload = None
 
         return json_payload, form_payload, files
@@ -214,8 +276,8 @@ class OpenAISoraProvider(BaseVideoProvider):
         if not size_value:
             size_value = self._map_size_from_resolution(params.get("resolution"), params.get("aspect_ratio"))
 
-        resolution: Optional[str] = self._normalize_resolution(job_details.get("resolution") or params.get("resolution"))
-        aspect_ratio: Optional[str] = params.get("aspect_ratio")
+        resolution: Optional[str] = self._normalize_resolution(job_details.get("resolution"))
+        aspect_ratio: Optional[str] = job_details.get("aspect_ratio")
 
         dimensions = self._parse_size(size_value) if size_value else None
         if dimensions:
@@ -224,6 +286,12 @@ class OpenAISoraProvider(BaseVideoProvider):
                 resolution = self._resolution_from_dimensions(width, height)
             if not aspect_ratio:
                 aspect_ratio = self._format_aspect_ratio(width, height)
+
+        if not resolution:
+            resolution = self._normalize_resolution(params.get("resolution"))
+        if not aspect_ratio:
+            aspect_ratio = params.get("aspect_ratio")
+
         return resolution, aspect_ratio
 
     def _resolve_seconds(self, params: Dict[str, Any]) -> Optional[int]:
@@ -250,44 +318,11 @@ class OpenAISoraProvider(BaseVideoProvider):
         resolution: Optional[Any],
         aspect_ratio: Optional[Any],
     ) -> Optional[str]:
-        if not resolution and not aspect_ratio:
-            return None
-
-        resolution_str = str(resolution).lower() if resolution else ""
-        aspect_ratio_str = str(aspect_ratio).replace(" ", "") if aspect_ratio else ""
-
-        if "x" in resolution_str:
-            return resolution_str
-
-        presets = {
-            ("720p", "16:9"): "1280x720",
-            ("720p", "9:16"): "720x1280",
-            ("720p", "1:1"): "720x720",
-            # Sora Video API поддерживает только 1024/1792 размеры для "1080p"-уровня
-            ("1080p", "16:9"): "1792x1024",
-            ("1080p", "9:16"): "1024x1792",
-            ("1080p", "1:1"): "1024x1024",
-        }
-
-        if not aspect_ratio_str:
-            aspect_ratio_str = "16:9"
-
-        if not resolution_str:
-            resolution_str = "720p"
-
-        return presets.get((resolution_str, aspect_ratio_str))
+        return resolve_sora_size(resolution, aspect_ratio)
 
     @staticmethod
     def _parse_size(size: str) -> Optional[Tuple[int, int]]:
-        try:
-            width_str, height_str = size.lower().split("x", maxsplit=1)
-            width = int(width_str.strip())
-            height = int(height_str.strip())
-            if width > 0 and height > 0:
-                return width, height
-        except (ValueError, AttributeError):
-            return None
-        return None
+        return parse_size_value(size)
 
     @staticmethod
     def _resolution_from_dimensions(width: int, height: int) -> Optional[str]:

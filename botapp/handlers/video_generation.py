@@ -1,7 +1,7 @@
 """
 Обработчики генерации видео
 """
-from typing import List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery
@@ -21,6 +21,7 @@ from botapp.models import TgUser, AIModel, GenRequest
 from botapp.business.generation import GenerationService
 from botapp.business.balance import BalanceService, InsufficientBalanceError
 from botapp.tasks import generate_video_task, extend_video_task
+from botapp.providers.video.openai_sora import resolve_sora_dimensions
 from asgiref.sync import sync_to_async
 
 router = Router()
@@ -63,6 +64,28 @@ def _extract_duration_options(model: AIModel) -> Optional[List[int]]:
     return cleaned
 
 
+def _calculate_image_size_hint(
+    *,
+    supports_images: bool,
+    is_sora: bool,
+    resolution: Optional[str],
+    aspect_ratio: Optional[str],
+) -> Optional[Tuple[int, int]]:
+    if not (supports_images and is_sora and resolution and aspect_ratio):
+        return None
+    return resolve_sora_dimensions(resolution, aspect_ratio)
+
+
+def _format_image_hint_text(dimensions: Optional[Tuple[int, int]]) -> Optional[str]:
+    if not dimensions:
+        return None
+    width, height = dimensions
+    return (
+        f"Для режима img2video используйте изображение {width}x{height}. "
+        "Если размер будет другим, мы автоматически обрежем центр под нужный формат."
+    )
+
+
 async def _prompt_user_for_description(
     message: Message,
     *,
@@ -70,6 +93,7 @@ async def _prompt_user_for_description(
     aspect_ratio: str,
     duration: Optional[int],
     resolution: Optional[str] = None,
+    is_sora: bool = False,
 ) -> None:
     """Отправить пользователю инструкции по вводу промта."""
     intro = [f"Формат выбран: {aspect_ratio}"]
@@ -78,8 +102,17 @@ async def _prompt_user_for_description(
     if resolution:
         intro.append(f"Качество: {resolution.upper()}")
     intro.append("Отправьте текстовое описание для генерации видео.")
+    image_hint = _calculate_image_size_hint(
+        supports_images=supports_images,
+        is_sora=is_sora,
+        resolution=resolution,
+        aspect_ratio=aspect_ratio,
+    )
     if supports_images:
         intro.append("Либо загрузите изображение и добавьте описание, чтобы использовать режим img2video.")
+        hint_text = _format_image_hint_text(image_hint)
+        if hint_text:
+            intro.append(hint_text)
 
     await message.answer(
         "\n".join(intro),
@@ -305,12 +338,14 @@ async def set_video_format(callback: CallbackQuery, state: FSMContext):
     if await _maybe_prompt_resolution(callback.message, state):
         return
 
+    resolution_value = data.get('selected_resolution') or data.get('default_resolution')
     await _prompt_user_for_description(
         callback.message,
         supports_images=supports_images,
         aspect_ratio=aspect_ratio,
         duration=selected_duration,
-        resolution=data.get('selected_resolution') or data.get('default_resolution'),
+        resolution=resolution_value,
+        is_sora=data.get('is_sora', False),
     )
     await state.set_state(BotStates.video_wait_prompt)
 
@@ -348,12 +383,14 @@ async def set_video_duration(callback: CallbackQuery, state: FSMContext):
     if await _maybe_prompt_resolution(callback.message, state):
         return
 
+    resolution_value = data.get('selected_resolution') or data.get('default_resolution')
     await _prompt_user_for_description(
         callback.message,
         supports_images=supports_images,
         aspect_ratio=aspect_ratio,
         duration=duration_value,
-        resolution=data.get('selected_resolution') or data.get('default_resolution'),
+        resolution=resolution_value,
+        is_sora=data.get('is_sora', False),
     )
 
     await state.set_state(BotStates.video_wait_prompt)
@@ -388,13 +425,15 @@ async def set_video_resolution(callback: CallbackQuery, state: FSMContext):
     supports_images = data.get('supports_images', False)
     aspect_ratio = data.get('selected_aspect_ratio', '16:9')
     duration = data.get('selected_duration') or data.get('default_duration')
+    resolution_value = value
 
     await _prompt_user_for_description(
         callback.message,
         supports_images=supports_images,
         aspect_ratio=aspect_ratio,
         duration=duration,
-        resolution=value,
+        resolution=resolution_value,
+        is_sora=data.get('is_sora', False),
     )
     await state.set_state(BotStates.video_wait_prompt)
 
@@ -418,6 +457,17 @@ async def receive_image_for_video(message: Message, state: FSMContext):
     # Получаем file_id самого большого размера фото
     photo = message.photo[-1]
 
+    resolution_value = data.get('selected_resolution') or data.get('default_resolution')
+    aspect_ratio = data.get('selected_aspect_ratio') or data.get('default_aspect_ratio')
+    hint_text = _format_image_hint_text(
+        _calculate_image_size_hint(
+            supports_images=True,
+            is_sora=data.get('is_sora', False),
+            resolution=resolution_value,
+            aspect_ratio=aspect_ratio,
+        )
+    )
+
     # Сохраняем изображение в состоянии
     await state.update_data(
         input_image_file_id=photo.file_id,
@@ -425,11 +475,14 @@ async def receive_image_for_video(message: Message, state: FSMContext):
     )
 
     # Запрашиваем текстовое описание
-    await message.answer(
+    text = (
         "✅ Изображение загружено!\n\n"
-        "Теперь отправьте текстовое описание для генерации видео на основе этого изображения.",
-        reply_markup=get_cancel_keyboard()
+        "Теперь отправьте текстовое описание для генерации видео на основе этого изображения."
     )
+    if hint_text:
+        text += f"\n\nℹ️ {hint_text}"
+
+    await message.answer(text, reply_markup=get_cancel_keyboard())
 
     # Переходим в состояние ожидания промта для image2video
     await state.set_state(BotStates.video_wait_prompt)
@@ -472,11 +525,25 @@ async def receive_document_for_video(message: Message, state: FSMContext):
         generation_type='image2video',
     )
 
-    await message.answer(
-        "✅ Файл загружен!\n\n"
-        "Теперь отправьте текстовое описание, чтобы запустить генерацию.",
-        reply_markup=get_cancel_keyboard()
+    resolution_value = data.get('selected_resolution') or data.get('default_resolution')
+    aspect_ratio = data.get('selected_aspect_ratio') or data.get('default_aspect_ratio')
+    hint_text = _format_image_hint_text(
+        _calculate_image_size_hint(
+            supports_images=True,
+            is_sora=data.get('is_sora', False),
+            resolution=resolution_value,
+            aspect_ratio=aspect_ratio,
+        )
     )
+
+    text = (
+        "✅ Файл загружен!\n\n"
+        "Теперь отправьте текстовое описание, чтобы запустить генерацию."
+    )
+    if hint_text:
+        text += f"\n\nℹ️ {hint_text}"
+
+    await message.answer(text, reply_markup=get_cancel_keyboard())
 
 
 @router.message(BotStates.video_wait_prompt, F.text)

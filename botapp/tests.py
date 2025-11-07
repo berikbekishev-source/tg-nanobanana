@@ -1,7 +1,9 @@
 from decimal import Decimal
+from io import BytesIO
 from unittest.mock import MagicMock, patch
 
 from django.test import TestCase, override_settings
+from PIL import Image
 
 from botapp.business.balance import BalanceService, InsufficientBalanceError
 from botapp.business.generation import GenerationService
@@ -283,6 +285,44 @@ class OpenAISoraProviderTests(TestCase):
     def test_missing_api_key_raises(self):
         with self.assertRaises(VideoGenerationError):
             OpenAISoraProvider()
+
+    @override_settings(OPENAI_API_KEY="test-key")
+    def test_1080p_resolution_maps_to_supported_size(self):
+        provider = OpenAISoraProvider()
+        json_payload, _, _ = provider._build_create_payload(
+            prompt="Test",
+            model_name="sora-2",
+            generation_type="text2video",
+            params={"resolution": "1080p", "aspect_ratio": "16:9"},
+            input_media=None,
+            input_mime_type=None,
+        )
+        self.assertIsNotNone(json_payload)
+        self.assertEqual(json_payload.get("size"), "1280x720")
+
+    @override_settings(OPENAI_API_KEY="test-key")
+    def test_image2video_reference_resized_to_required_dimensions(self):
+        provider = OpenAISoraProvider()
+        img = Image.new("RGB", (800, 600), color=(255, 0, 0))
+        buffer = BytesIO()
+        img.save(buffer, format="PNG")
+        buffer.seek(0)
+
+        json_payload, form_payload, files = provider._build_create_payload(
+            prompt="Test",
+            model_name="sora-2",
+            generation_type="image2video",
+            params={"resolution": "1080p", "aspect_ratio": "9:16"},
+            input_media=buffer.getvalue(),
+            input_mime_type="image/png",
+        )
+
+        self.assertIsNone(json_payload)
+        self.assertIsNotNone(form_payload)
+        self.assertIsNotNone(files)
+        media_bytes = files["input_reference"][1]
+        with Image.open(BytesIO(media_bytes)) as processed:
+            self.assertEqual(processed.size, (720, 1280))
 
 
 class ReferenceMimeDetectionTests(TestCase):
