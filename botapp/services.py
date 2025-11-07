@@ -67,12 +67,7 @@ def vertex_edit_images(
     if not input_images:
         raise ValueError("Для режима image2image необходимо загрузить изображения.")
 
-    creds_info = _load_service_account_info()
-    credentials = service_account.Credentials.from_service_account_info(
-        creds_info,
-        scopes=["https://www.googleapis.com/auth/cloud-platform"],
-    )
-    session = AuthorizedSession(credentials)
+    session = _authorized_vertex_session()
 
     project_id = getattr(settings, "GCP_PROJECT_ID", creds_info.get("project_id"))
     location = getattr(settings, "GCP_LOCATION", "us-central1")
@@ -434,6 +429,10 @@ def generate_images_for_model(
         if generation_type == "image2image":
             return vertex_edit_images(prompt, quantity, input_images or [], merged_params, image_mode=image_mode)
         return gemini_generate_images(prompt, quantity, params=merged_params)
+    elif provider == "gemini_vertex":
+        if generation_type == "image2image":
+            return gemini_vertex_edit(prompt, quantity, input_images or [], merged_params)
+        return gemini_vertex_generate(prompt, quantity, params=merged_params)
 
     use_vertex = getattr(settings, 'USE_VERTEX_AI', False)
     if use_vertex:
@@ -514,3 +513,126 @@ def _load_service_account_info() -> Dict[str, Any]:
         "GOOGLE_APPLICATION_CREDENTIALS_JSON не содержит валидный JSON. Передайте содержимое файла, "
         "base64 или путь к файлу через GOOGLE_APPLICATION_CREDENTIALS."
     )
+def _authorized_vertex_session() -> AuthorizedSession:
+    creds_info = _load_service_account_info()
+    credentials = service_account.Credentials.from_service_account_info(
+        creds_info,
+        scopes=["https://www.googleapis.com/auth/cloud-platform"],
+    )
+    return AuthorizedSession(credentials)
+
+
+def _vertex_model_path(model_name: Optional[str]) -> str:
+    if not model_name:
+        return "publishers/google/models/gemini-2.5-flash-image-preview"
+    return model_name.lstrip('/')
+
+
+def _gemini_vertex_request(
+    *,
+    project_id: str,
+    location: str,
+    model_path: str,
+    parts: List[Dict[str, Any]],
+    quantity: int,
+    params: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    session = _authorized_vertex_session()
+    url = f"https://{location}-aiplatform.googleapis.com/v1/projects/{project_id}/locations/{location}/{model_path}:generateContent"
+    payload: Dict[str, Any] = {
+        "contents": [
+            {
+                "parts": parts,
+            }
+        ],
+        "generationConfig": {
+            "candidateCount": max(1, min(quantity, 4)),
+        },
+    }
+    if params:
+        generation_config = payload["generationConfig"]
+        for key in ("temperature", "top_p", "top_k"):
+            if key in params:
+                generation_config[key] = params[key]
+    response = session.post(url, json=payload, timeout=120)
+    if response.status_code >= 400:
+        detail = response.text
+        try:
+            detail = response.json()
+        except ValueError:
+            pass
+        raise ValueError(f"Gemini Vertex error ({response.status_code}): {detail}")
+    return response.json()
+
+def gemini_vertex_edit(
+    prompt: str,
+    quantity: int,
+    input_images: List[Dict[str, Any]],
+    params: Optional[Dict[str, Any]] = None,
+) -> List[bytes]:
+    if not input_images:
+        raise ValueError("Для режима image2image необходимо загрузить изображение.")
+
+    creds_info = _load_service_account_info()
+    project_id = getattr(settings, "GCP_PROJECT_ID", creds_info.get("project_id"))
+    location = getattr(settings, "GCP_LOCATION", "us-central1")
+    model_path = _vertex_model_path(getattr(settings, "NANO_BANANA_GEMINI_MODEL", None))
+
+    primary = input_images[0]
+    b64_img = base64.b64encode(primary["content"]).decode()
+    parts = [
+        {"text": prompt},
+        {
+            "inlineData": {
+                "mimeType": primary.get("mime_type", "image/png"),
+                "data": b64_img,
+            }
+        },
+    ]
+
+    data = _gemini_vertex_request(
+        project_id=project_id,
+        location=location,
+        model_path=model_path,
+        parts=parts,
+        quantity=quantity,
+        params=params,
+    )
+    outputs = data.get("candidates") or []
+    results: List[bytes] = []
+    for candidate in outputs:
+        parts = candidate.get("content", {}).get("parts", [])
+        for part in parts:
+            inline = part.get("inlineData")
+            if inline and inline.get("data"):
+                results.append(base64.b64decode(inline["data"]))
+    return results
+
+
+def gemini_vertex_generate(
+    prompt: str,
+    quantity: int,
+    params: Optional[Dict[str, Any]] = None,
+) -> List[bytes]:
+    creds_info = _load_service_account_info()
+    project_id = getattr(settings, "GCP_PROJECT_ID", creds_info.get("project_id"))
+    location = getattr(settings, "GCP_LOCATION", "us-central1")
+    model_path = _vertex_model_path(getattr(settings, "NANO_BANANA_GEMINI_MODEL", None))
+
+    data = _gemini_vertex_request(
+        project_id=project_id,
+        location=location,
+        model_path=model_path,
+        parts=[{"text": prompt}],
+        quantity=quantity,
+        params=params,
+    )
+    outputs = data.get("candidates") or []
+    results: List[bytes] = []
+    for candidate in outputs:
+        parts = candidate.get("content", {}).get("parts", [])
+        for part in parts:
+            inline = part.get("inlineData")
+            if inline and inline.get("data"):
+                results.append(base64.b64decode(inline["data"]))
+    return results

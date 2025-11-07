@@ -107,7 +107,6 @@ async def select_image_model(callback: CallbackQuery, state: FSMContext):
         image_mode=None,
         remix_images=[],
         edit_base_id=None,
-        edit_mask_id=None,
     )
 
     info_message = (
@@ -135,7 +134,6 @@ async def receive_image_prompt(message: Message, state: FSMContext):
     mode = data.get("image_mode") or "text"
     remix_images = data.get("remix_images") or []
     edit_base_id = data.get("edit_base_id")
-    edit_mask_id = data.get("edit_mask_id")
 
     # Проверяем длину промта
     model = await sync_to_async(AIModel.objects.get)(id=data['model_id'])
@@ -155,16 +153,15 @@ async def receive_image_prompt(message: Message, state: FSMContext):
     generation_type = 'text2image'
     input_entries: List[Dict[str, Any]] = []
     if mode == "edit":
-        if not edit_base_id or not edit_mask_id:
+        if not edit_base_id:
             await message.answer(
-                "Сначала отправьте и изображение, и маску. После этого пришлите текстовый промт.",
+                "Отправьте изображение для редактирования, затем текстовый промт.",
                 reply_markup=get_cancel_keyboard(),
             )
             return
         generation_type = 'image2image'
         input_entries = [
-            {"telegram_file_id": edit_base_id, "type": "raw"},
-            {"telegram_file_id": edit_mask_id, "type": "mask"},
+            {"telegram_file_id": edit_base_id},
         ]
     elif mode == "remix":
         min_images = max(2, min(data.get("max_images", 4), 4))
@@ -255,25 +252,9 @@ async def receive_image_for_prompt(message: Message, state: FSMContext):
     max_images = max(1, data.get('max_images', 4))
 
     if mode == "edit":
-        edit_base_id = data.get("edit_base_id")
-        edit_mask_id = data.get("edit_mask_id")
-        if not edit_base_id:
-            await state.update_data(edit_base_id=photo.file_id)
-            await message.answer(
-                "🖼️ Изображение получено. Теперь отправьте маску (PNG/фото, где выделены участки для правки).",
-                reply_markup=get_cancel_keyboard(),
-            )
-            return
-        if not edit_mask_id:
-            await state.update_data(edit_mask_id=photo.file_id)
-            await message.answer(
-                "✅ Маска получена! Теперь пришлите текстовое описание изменений.",
-                reply_markup=get_cancel_keyboard(),
-            )
-            return
-        await state.update_data(edit_base_id=photo.file_id, edit_mask_id=None)
+        await state.update_data(edit_base_id=photo.file_id)
         await message.answer(
-            "Базовое изображение обновлено. Отправьте маску для нового редактирования.",
+            "🖼️ Изображение получено. Теперь отправьте текстовый промт.",
             reply_markup=get_cancel_keyboard(),
         )
         return
@@ -361,7 +342,6 @@ async def select_image_mode(callback: CallbackQuery, state: FSMContext):
         image_mode=mode,
         remix_images=[],
         edit_base_id=None,
-        edit_mask_id=None,
     )
 
     if mode == "text":
@@ -374,7 +354,7 @@ async def select_image_mode(callback: CallbackQuery, state: FSMContext):
 
     if mode == "edit":
         await callback.message.answer(
-            "🪄 Режим редактирования.\n1) Сначала отправьте изображение.\n2) Затем отправьте маску (PNG/ярко выделите участки для изменения).\n3) После маски пришлите текстовый промт.",
+            "🪄 Режим редактирования.\nОтправьте изображение, затем текстовый промт. Маска не требуется.",
             reply_markup=get_cancel_keyboard(),
         )
         await state.set_state(BotStates.image_wait_prompt)
