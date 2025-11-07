@@ -528,17 +528,17 @@ def _vertex_model_path(model_name: Optional[str]) -> str:
     return model_name.lstrip('/')
 
 
-def _gemini_vertex_request(
-    *,
-    project_id: str,
-    location: str,
-    model_path: str,
-    parts: List[Dict[str, Any]],
-    quantity: int,
-    params: Optional[Dict[str, Any]] = None,
-) -> Dict[str, Any]:
-    session = _authorized_vertex_session()
-    url = f"https://{location}-aiplatform.googleapis.com/v1/projects/{project_id}/locations/{location}/{model_path}:generateContent"
+def _gemini_model_name(model_path: Optional[str]) -> str:
+    """Возвращает короткое имя модели для Generative Language API."""
+    if not model_path:
+        return "gemini-2.5-flash-image-preview"
+    trimmed = model_path.strip("/")
+    if "/" in trimmed:
+        return trimmed.rsplit("/", 1)[-1]
+    return trimmed
+
+
+def _build_gemini_payload(parts: List[Dict[str, Any]], quantity: int, params: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     payload: Dict[str, Any] = {
         "contents": [
             {
@@ -554,7 +554,55 @@ def _gemini_vertex_request(
         for key in ("temperature", "top_p", "top_k"):
             if key in params:
                 generation_config[key] = params[key]
+    return payload
+
+
+def _gemini_google_api_request(
+    *,
+    model_name: str,
+    parts: List[Dict[str, Any]],
+    quantity: int,
+    params: Optional[Dict[str, Any]] = None,
+    session: Optional[AuthorizedSession] = None,
+) -> Dict[str, Any]:
+    """Запрос в Generative Language API с авторизацией через service account."""
+    client = session or _authorized_vertex_session()
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent"
+    payload = _build_gemini_payload(parts, quantity, params)
+    response = client.post(url, json=payload, timeout=120)
+    if response.status_code >= 400:
+        detail = response.text
+        try:
+            detail = response.json()
+        except ValueError:
+            pass
+        raise ValueError(f"Gemini Image API error ({response.status_code}): {detail}")
+    return response.json()
+
+
+def _gemini_vertex_request(
+    *,
+    project_id: str,
+    location: str,
+    model_path: str,
+    parts: List[Dict[str, Any]],
+    quantity: int,
+    params: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    session = _authorized_vertex_session()
+    url = f"https://{location}-aiplatform.googleapis.com/v1/projects/{project_id}/locations/{location}/{model_path}:generateContent"
+    payload = _build_gemini_payload(parts, quantity, params)
     response = session.post(url, json=payload, timeout=120)
+    if response.status_code in (403, 404):
+        # Vertex недоступен или не выдаёт модель — пробуем публичный Generative Language API.
+        model_name = _gemini_model_name(model_path)
+        return _gemini_google_api_request(
+            model_name=model_name,
+            parts=parts,
+            quantity=quantity,
+            params=params,
+            session=session,
+        )
     if response.status_code >= 400:
         detail = response.text
         try:

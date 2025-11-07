@@ -12,7 +12,12 @@ from botapp.models import AIModel, TgUser, Transaction, UserBalance
 from botapp.providers.video.base import VideoGenerationError
 from botapp.providers.video.openai_sora import OpenAISoraProvider
 from botapp.media_utils import detect_reference_mime
-from botapp.services import openai_generate_images, generate_images_for_model, OPENAI_IMAGE_EDIT_URL
+from botapp.services import (
+    openai_generate_images,
+    gemini_vertex_generate,
+    generate_images_for_model,
+    OPENAI_IMAGE_EDIT_URL,
+)
 
 
 class BalanceServiceTests(TestCase):
@@ -513,3 +518,43 @@ class ReferenceMimeDetectionTests(TestCase):
         mp4_bytes = b"\x00\x00\x00\x18ftypmp42" + b"\x00" * 20
         mime = detect_reference_mime(mp4_bytes, "clip.bin", "application/octet-stream")
         self.assertEqual(mime, "video/mp4")
+
+
+class GeminiVertexFallbackTests(TestCase):
+    @patch("botapp.services._authorized_vertex_session")
+    @patch("botapp.services._load_service_account_info")
+    def test_generate_falls_back_to_generative_language_api(self, load_info: MagicMock, auth_session: MagicMock):
+        load_info.return_value = {"project_id": "demo-project"}
+        session = MagicMock()
+        auth_session.return_value = session
+
+        vertex_response = MagicMock()
+        vertex_response.status_code = 404
+        vertex_response.text = "Publisher Model not found"
+        vertex_response.json.return_value = {"error": {"message": "not found"}}
+
+        gl_response = MagicMock()
+        gl_response.status_code = 200
+        gl_response.json.return_value = {
+            "candidates": [
+                {
+                    "content": {
+                        "parts": [
+                            {
+                                "inlineData": {
+                                    "data": base64.b64encode(b"ok").decode(),
+                                }
+                            }
+                        ]
+                    }
+                }
+            ]
+        }
+
+        session.post.side_effect = [vertex_response, gl_response]
+
+        images = gemini_vertex_generate("test prompt", 1)
+        self.assertEqual(images, [b"ok"])
+        self.assertEqual(session.post.call_count, 2)
+        second_call_url = session.post.call_args_list[1].args[0]
+        self.assertIn("generativelanguage.googleapis.com", second_call_url)
