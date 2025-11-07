@@ -955,3 +955,4 @@ def gemini_vertex_generate(
             if inline and inline.get("data"):
                 results.append(base64.b64decode(inline["data"]))
     return results
+KIE_DEFAULT_BASE_URL = "https://api.kie.ai"
