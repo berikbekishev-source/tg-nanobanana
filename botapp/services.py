@@ -86,26 +86,17 @@ def vertex_edit_images(
         if not content:
             continue
         b64 = base64.b64encode(content).decode()
-        if mode == "edit" and idx == 1:
-            reference_images.append(
-                {
-                    "referenceType": "REFERENCE_TYPE_RAW",
-                    "referenceId": idx,
-                    "referenceImage": {"bytesBase64Encoded": b64},
-                }
-            )
-        else:
-            reference_images.append(
-                {
-                    "referenceType": "REFERENCE_TYPE_SUBJECT",
-                    "referenceId": idx,
-                    "referenceImage": {"bytesBase64Encoded": b64},
-                    "subjectImageConfig": {
-                        "subjectDescription": (params or {}).get("subject_description", f"reference {idx}"),
-                        "subjectType": (params or {}).get("subject_type", "SUBJECT_TYPE_DEFAULT"),
-                    },
-                }
-            )
+        reference_images.append(
+            {
+                "referenceType": "REFERENCE_TYPE_SUBJECT",
+                "referenceId": idx,
+                "referenceImage": {"bytesBase64Encoded": b64},
+                "subjectImageConfig": {
+                    "subjectDescription": (params or {}).get("subject_description", f"reference {idx}"),
+                    "subjectType": (params or {}).get("subject_type", "SUBJECT_TYPE_DEFAULT"),
+                },
+            }
+        )
 
     if not reference_images:
         raise ValueError("Не удалось подготовить изображения для Vertex edit.")
@@ -121,8 +112,7 @@ def vertex_edit_images(
             "sampleCount": max(1, min(quantity, 4)),
         },
     }
-    if mode == "edit":
-        request_payload["parameters"]["editMode"] = (params or {}).get("edit_mode", "EDIT_MODE_INPAINT_INSERTION")
+    # Маска пока не поддерживается, используем subject customization без editMode
 
     response = session.post(url, json=request_payload, timeout=120)
     if response.status_code >= 400:
