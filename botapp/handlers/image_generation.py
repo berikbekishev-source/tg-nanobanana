@@ -95,13 +95,6 @@ async def select_image_model(callback: CallbackQuery, state: FSMContext):
         await state.clear()
         return
 
-    # Отправляем информацию о модели (Шаг 2 по ТЗ)
-    info_message = get_model_info_message(model)
-    await callback.message.answer(
-        info_message,
-        parse_mode="Markdown"
-    )
-
     # Сохраняем данные для генерации
     await state.update_data(
         model_slug=model_slug,

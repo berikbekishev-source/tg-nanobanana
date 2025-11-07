@@ -377,18 +377,23 @@ def generate_images_for_model(
             generation_type=generation_type,
             input_images=input_images,
         )
-    if generation_type == "image2image":
-        raise ValueError("Выбранная модель не поддерживает режим image2image.")
-    if provider == "vertex":
+    elif provider == "vertex":
+        if generation_type == "image2image":
+            return vertex_edit_images(prompt, quantity, input_images or [], merged_params)
         return vertex_generate_images(prompt, quantity, params=merged_params)
-    if provider == "gemini":
+    elif provider == "gemini":
         if generation_type == "image2image":
             return vertex_edit_images(prompt, quantity, input_images or [], merged_params)
         return gemini_generate_images(prompt, quantity, params=merged_params)
 
     use_vertex = getattr(settings, 'USE_VERTEX_AI', False)
     if use_vertex:
+        if generation_type == "image2image":
+            return vertex_edit_images(prompt, quantity, input_images or [], merged_params)
         return vertex_generate_images(prompt, quantity, params=merged_params)
+
+    if generation_type == "image2image":
+        raise ValueError("Выбранная модель не поддерживает режим image2image.")
     return gemini_generate_images(prompt, quantity, params=merged_params)
 
 
