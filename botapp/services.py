@@ -110,24 +110,43 @@ def openai_generate_images(
         "n": 1,
         "response_format": effective_params.get("response_format", "b64_json"),
     }
-    if effective_params.get("background"):
-        payload_base["background"] = effective_params["background"]
+    if effective_params.get("background") == "transparent":
+        payload_base["background"] = "transparent"
     if effective_params.get("seed") is not None:
         payload_base["seed"] = effective_params["seed"]
 
     headers = {
         "Authorization": f"Bearer {settings.OPENAI_API_KEY}",
+        "Content-Type": "application/json",
     }
     if getattr(settings, "OPENAI_ORGANIZATION", None):
         headers["OpenAI-Organization"] = settings.OPENAI_ORGANIZATION
     if getattr(settings, "OPENAI_PROJECT_ID", None):
         headers["OpenAI-Project"] = settings.OPENAI_PROJECT_ID
 
+    def _format_openai_error(resp: httpx.Response) -> str:
+        try:
+            payload = resp.json()
+            if isinstance(payload, dict):
+                err = payload.get("error")
+                if isinstance(err, dict):
+                    return err.get("message") or str(err)
+                if isinstance(err, str):
+                    return err
+                return json.dumps(payload)
+            return resp.text
+        except Exception:  # pragma: no cover - fallback path
+            return resp.text
+
     imgs: List[bytes] = []
     with httpx.Client(timeout=120) as client:
         for _ in range(quantity):
             response = client.post(OPENAI_IMAGE_URL, headers=headers, json=payload_base)
-            response.raise_for_status()
+            try:
+                response.raise_for_status()
+            except httpx.HTTPStatusError as exc:
+                detail = _format_openai_error(exc.response)
+                raise ValueError(f"OpenAI image generation failed: {detail}") from exc
             data = response.json()
             entries = data.get("data") or []
             if not entries:
