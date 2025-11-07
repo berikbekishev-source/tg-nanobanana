@@ -106,7 +106,6 @@ def openai_generate_images(
         "prompt": prompt,
         "size": effective_params.get("size", "1024x1024"),
         "quality": effective_params.get("quality", "standard"),
-        "style": effective_params.get("style", "vivid"),
         "n": 1,
         "response_format": effective_params.get("response_format", "b64_json"),
     }
