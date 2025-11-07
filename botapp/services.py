@@ -4,6 +4,8 @@ import uuid
 import json
 import io
 import re
+import os
+from json import JSONDecoder
 from typing import Any, Dict, List, Optional
 from django.conf import settings
 from google.oauth2 import service_account
@@ -24,11 +26,7 @@ def vertex_generate_images(prompt: str, quantity: int, params: Optional[Dict[str
     from vertexai.preview.vision_models import ImageGenerationModel
 
     # Parse credentials from environment
-    creds_json = settings.GOOGLE_APPLICATION_CREDENTIALS_JSON
-    if not creds_json:
-        raise ValueError("GOOGLE_APPLICATION_CREDENTIALS_JSON not set")
-
-    creds_dict = json.loads(creds_json)
+    creds_dict = _load_service_account_info()
     credentials = service_account.Credentials.from_service_account_info(creds_dict)
 
     # Initialize Vertex AI
@@ -69,10 +67,7 @@ def vertex_edit_images(
     if not input_images:
         raise ValueError("Для режима image2image необходимо загрузить изображения.")
 
-    creds_json = settings.GOOGLE_APPLICATION_CREDENTIALS_JSON
-    if not creds_json:
-        raise ValueError("GOOGLE_APPLICATION_CREDENTIALS_JSON not set")
-    creds_info = json.loads(creds_json)
+    creds_info = _load_service_account_info()
     credentials = service_account.Credentials.from_service_account_info(
         creds_info,
         scopes=["https://www.googleapis.com/auth/cloud-platform"],
@@ -453,3 +448,35 @@ def supabase_upload_video(content: bytes, mime_type: str = "video/mp4") -> str:
     )
     public = supabase.storage.from_(settings.SUPABASE_VIDEO_BUCKET).get_public_url(key)
     return public
+def _load_service_account_info() -> Dict[str, Any]:
+    raw = getattr(settings, "GOOGLE_APPLICATION_CREDENTIALS_JSON", "") or ""
+    if raw:
+        for candidate in (raw, raw.strip()):
+            try:
+                return json.loads(candidate)
+            except json.JSONDecodeError:
+                try:
+                    decoder = JSONDecoder(strict=False)
+                    return decoder.decode(candidate)
+                except json.JSONDecodeError:
+                    pass
+        # base64 encoded JSON
+        try:
+            decoded = base64.b64decode(raw).decode()
+            return json.loads(decoded)
+        except Exception:
+            pass
+        # treat as path
+        if os.path.exists(raw):
+            with open(raw, "r", encoding="utf-8") as f:
+                return json.load(f)
+
+    path = getattr(settings, "GOOGLE_APPLICATION_CREDENTIALS", None)
+    if path and os.path.exists(path):
+        with open(path, "r", encoding="utf-8") as f:
+            return json.load(f)
+
+    raise ValueError(
+        "GOOGLE_APPLICATION_CREDENTIALS_JSON не содержит валидный JSON. Передайте содержимое файла, "
+        "base64 или путь к файлу через GOOGLE_APPLICATION_CREDENTIALS."
+    )
