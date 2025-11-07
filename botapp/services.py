@@ -425,21 +425,26 @@ def midjourney_generate_images(
 
     results: List[bytes] = []
     for _ in range(quantity):
-        input_payload = _build_midjourney_input(
+        payload = _build_midjourney_input(
             prompt=prompt,
             params=params or {},
             generation_type=generation_type,
             input_images=input_images or [],
         )
 
-        create_payload = {"model": model_name, "input": input_payload}
+        payload["version"] = payload.get("version") or params.get("version") or "7"
+        payload["taskType"] = payload.get("taskType") or (
+            "mj_img2img" if generation_type == "image2image" else "mj_txt2img"
+        )
+        payload["speed"] = payload.get("speed") or params.get("speed") or "relaxed"
+        payload["model"] = model_name
 
         create_resp = _kie_api_request(
             base_url=base_url,
             api_key=api_key,
             method="POST",
-            endpoint="/api/v1/jobs/createTask",
-            json_payload=create_payload,
+            endpoint="/api/v1/mj/generate",
+            json_payload=payload,
             timeout=request_timeout,
         )
         if create_resp.get("code") != 200:
@@ -456,6 +461,7 @@ def midjourney_generate_images(
             timeout=request_timeout,
             poll_interval=poll_interval,
             poll_timeout=poll_timeout,
+            endpoint="/api/v1/mj/record-info",
         )
         urls = _kie_extract_result_urls(job_data)
         if not urls:
@@ -572,52 +578,64 @@ def _build_midjourney_input(
     generation_type: str,
     input_images: List[Dict[str, Any]],
 ) -> Dict[str, Any]:
-    payload: Dict[str, Any] = {"prompt": prompt}
+    payload: Dict[str, Any] = {
+        "prompt": prompt,
+    }
+
+    task_type = "mj_img2img" if generation_type == "image2image" else "mj_txt2img"
+    payload["taskType"] = task_type
+
+    aspect_ratio = params.get("aspect_ratio") or params.get("aspectRatio")
+    if aspect_ratio:
+        payload["aspectRatio"] = str(aspect_ratio)
+
+    for key, field in (
+        ("speed", "speed"),
+        ("version", "version"),
+        ("variety", "variety"),
+        ("stylization", "stylization"),
+        ("weirdness", "weirdness"),
+        ("watermark", "waterMark"),
+        ("waterMark", "waterMark"),
+        ("enableTranslation", "enableTranslation"),
+        ("callBackUrl", "callBackUrl"),
+        ("ow", "ow"),
+        ("videoBatchSize", "videoBatchSize"),
+        ("motion", "motion"),
+    ):
+        value = params.get(key)
+        if value is not None:
+            payload[field] = value
+
+    if params.get("negative_prompt") or params.get("negativePrompt"):
+        payload["negativePrompt"] = params.get("negative_prompt") or params.get("negativePrompt")
+
+    if generation_type == "image2image":
+        payload["fileUrls"] = _upload_reference_images_for_midjourney(input_images)
+
     mj_opts = params.get("midjourney_options")
     if isinstance(mj_opts, dict):
         payload.update(mj_opts)
 
-    negative_prompt = params.get("negative_prompt") or params.get("negativePrompt")
-    if negative_prompt:
-        payload["negative_prompt"] = negative_prompt
-
-    aspect_ratio = params.get("aspect_ratio") or params.get("aspectRatio")
-    if aspect_ratio:
-        payload["aspect_ratio"] = str(aspect_ratio)
-
-    cfg_scale = params.get("cfg_scale")
-    if cfg_scale is not None:
-        try:
-            payload["cfg_scale"] = float(cfg_scale)
-        except (TypeError, ValueError):
-            pass
-
-    for key in ("quality", "style", "mode", "chaos", "seed"):
-        value = params.get(key)
-        if value is not None:
-            payload[key] = value
-
-    if generation_type == "image2image":
-        payload["image_url"] = _upload_reference_image_for_midjourney(input_images)
-
     return payload
 
 
-def _upload_reference_image_for_midjourney(input_images: List[Dict[str, Any]]) -> str:
-    if not input_images:
-        raise ValueError("Не передано изображение для режима image2image.")
-    first = input_images[0]
-    content = first.get("content")
-    if not content:
-        raise ValueError("Не удалось получить содержимое изображения для Midjourney.")
-    upload_obj = supabase_upload_png(content)
-    if isinstance(upload_obj, dict):
-        url = upload_obj.get("public_url") or upload_obj.get("publicUrl") or upload_obj.get("publicURL")
-    else:
-        url = upload_obj
-    if not url:
-        raise ValueError("Не удалось загрузить изображение в Supabase для Midjourney.")
-    return url
+def _upload_reference_images_for_midjourney(input_images: List[Dict[str, Any]]) -> List[str]:
+    urls: List[str] = []
+    for entry in input_images:
+        content = entry.get("content")
+        if not content:
+            continue
+        upload_obj = supabase_upload_png(content)
+        if isinstance(upload_obj, dict):
+            url = upload_obj.get("public_url") or upload_obj.get("publicUrl") or upload_obj.get("publicURL")
+        else:
+            url = upload_obj
+        if url:
+            urls.append(url)
+    if not urls:
+        raise ValueError("Не удалось загрузить изображения для Midjourney.")
+    return urls
 
 
 def _kie_api_request(
@@ -659,6 +677,7 @@ def _kie_poll_task(
     timeout: httpx.Timeout,
     poll_interval: int,
     poll_timeout: int,
+    endpoint: str = "/api/v1/jobs/recordInfo",
 ) -> Dict[str, Any]:
     started = time.monotonic()
     while True:
@@ -666,19 +685,27 @@ def _kie_poll_task(
             base_url=base_url,
             api_key=api_key,
             method="GET",
-            endpoint="/api/v1/jobs/recordInfo",
+            endpoint=endpoint,
             params={"taskId": task_id},
             timeout=timeout,
         )
         if response.get("code") != 200:
             raise ValueError(f"KIE.AI recordInfo error: {response}")
         data = response.get("data") or {}
-        state = (data.get("state") or "").lower()
-        if state == "success":
-            return data
-        if state == "fail":
-            fail_msg = data.get("failMsg") or data.get("msg") or "KIE.AI task failed."
-            raise ValueError(f"Задача KIE.AI завершилась с ошибкой: {fail_msg}")
+        if "state" in data:
+            state = (data.get("state") or "").lower()
+            if state == "success":
+                return data
+            if state == "fail":
+                fail_msg = data.get("failMsg") or data.get("msg") or "KIE.AI task failed."
+                raise ValueError(f"Задача KIE.AI завершилась с ошибкой: {fail_msg}")
+        elif "successFlag" in data:
+            flag = data.get("successFlag")
+            if flag == 1:
+                return data
+            if flag in (2, 3):
+                fail_msg = data.get("errorMessage") or data.get("msg") or "KIE.AI task failed."
+                raise ValueError(f"Задача KIE.AI завершилась с ошибкой: {fail_msg}")
         if time.monotonic() - started > poll_timeout:
             raise ValueError("Ожидание результата KIE.AI превысило установленный таймаут.")
         time.sleep(max(1, poll_interval))
@@ -699,6 +726,17 @@ def _kie_extract_result_urls(payload: Dict[str, Any]) -> List[str]:
                 urls.extend(maybe_urls)
         except json.JSONDecodeError:
             pass
+    result_info = payload.get("resultInfoJson")
+    if isinstance(result_info, dict):
+        maybe_urls = result_info.get("resultUrls")
+        if isinstance(maybe_urls, list):
+            for item in maybe_urls:
+                if isinstance(item, str):
+                    urls.append(item)
+                elif isinstance(item, dict):
+                    maybe_url = item.get("resultUrl") or item.get("url")
+                    if maybe_url:
+                        urls.append(maybe_url)
     return urls
 
 
