@@ -506,6 +506,14 @@ def generate_images_for_model(
         if generation_type == "image2image":
             return gemini_vertex_edit(prompt, quantity, input_images or [], merged_params)
         return gemini_vertex_generate(prompt, quantity, params=merged_params)
+    elif provider == "midjourney":
+        return midjourney_generate_images(
+            prompt,
+            quantity,
+            params=merged_params,
+            generation_type=generation_type,
+            input_images=input_images or [],
+        )
 
     use_vertex = getattr(settings, 'USE_VERTEX_AI', False)
     if use_vertex:

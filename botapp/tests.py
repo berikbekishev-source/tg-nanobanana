@@ -509,6 +509,43 @@ class OpenAIImageGenerationTests(TestCase):
                 input_images=[{"content": b"x"}],
             )
 
+    @patch("botapp.services.midjourney_generate_images", return_value=[b"ok"])
+    def test_generate_images_for_model_midjourney_provider(self, midjourney_mock: MagicMock):
+        model = AIModel.objects.create(
+            slug="midjourney-test",
+            name="Midjourney",
+            display_name="Midjourney",
+            type="image",
+            provider="midjourney",
+            description="",
+            short_description="",
+            price=Decimal("5.00"),
+            api_endpoint="https://api.kie.ai",
+            api_model_name="midjourney/v6-text-to-image",
+            max_prompt_length=2500,
+            supports_image_input=True,
+            max_input_images=1,
+            default_params={"quality": "standard"},
+            allowed_params={},
+            max_quantity=4,
+            cooldown_seconds=0,
+        )
+
+        result = generate_images_for_model(
+            model,
+            "prompt",
+            1,
+        )
+
+        self.assertEqual(result, [b"ok"])
+        midjourney_mock.assert_called_once_with(
+            "prompt",
+            1,
+            params={"quality": "standard"},
+            generation_type="text2image",
+            input_images=[],
+        )
+
 class ReferenceMimeDetectionTests(TestCase):
     def test_detect_png_signature_when_header_generic(self):
         png_bytes = b"\x89PNG\r\n\x1a\n" + b"\x00" * 10
