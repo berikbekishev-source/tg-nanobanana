@@ -107,10 +107,11 @@ def openai_generate_images(
         "size": effective_params.get("size", "1024x1024"),
         "quality": effective_params.get("quality", "standard"),
         "n": 1,
-        "response_format": effective_params.get("response_format", "b64_json"),
     }
     if effective_params.get("background") == "transparent":
         payload_base["background"] = "transparent"
+
+    response_format = effective_params.get("response_format", "b64_json")
     if effective_params.get("seed") is not None:
         payload_base["seed"] = effective_params["seed"]
 
@@ -151,7 +152,7 @@ def openai_generate_images(
             if not entries:
                 continue
             entry = entries[0]
-            if entry.get("b64_json"):
+            if response_format == "b64_json" and entry.get("b64_json"):
                 imgs.append(base64.b64decode(entry["b64_json"]))
                 continue
             if entry.get("url"):
