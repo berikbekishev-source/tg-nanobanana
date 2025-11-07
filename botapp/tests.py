@@ -1,3 +1,4 @@
+import base64
 from decimal import Decimal
 from io import BytesIO
 from unittest.mock import MagicMock, patch
@@ -11,6 +12,7 @@ from botapp.models import AIModel, TgUser, Transaction, UserBalance
 from botapp.providers.video.base import VideoGenerationError
 from botapp.providers.video.openai_sora import OpenAISoraProvider
 from botapp.media_utils import detect_reference_mime
+from botapp.services import openai_generate_images, generate_images_for_model
 
 
 class BalanceServiceTests(TestCase):
@@ -325,6 +327,67 @@ class OpenAISoraProviderTests(TestCase):
             self.assertEqual(processed.size, (720, 1280))
 
 
+class OpenAIImageGenerationTests(TestCase):
+    @override_settings(OPENAI_API_KEY="test-key")
+    @patch("botapp.services.httpx.Client")
+    def test_openai_generate_images_decodes_base64(self, client_cls: MagicMock):
+        client_instance = MagicMock()
+        client_ctx = MagicMock()
+        client_ctx.__enter__.return_value = client_instance
+        client_ctx.__exit__.return_value = False
+        client_cls.return_value = client_ctx
+
+        payload_bytes = base64.b64encode(b"openai-image-bytes").decode("utf-8")
+        response = MagicMock()
+        response.json.return_value = {"data": [{"b64_json": payload_bytes}]}
+        response.raise_for_status.return_value = None
+        client_instance.post.return_value = response
+
+        imgs = openai_generate_images(
+            "robot illustration",
+            1,
+            params={"size": "512x512", "quality": "high"},
+            model_name="gpt-image-1",
+        )
+
+        self.assertEqual(len(imgs), 1)
+        self.assertEqual(imgs[0], b"openai-image-bytes")
+        post_kwargs = client_instance.post.call_args.kwargs
+        self.assertEqual(post_kwargs["json"]["size"], "512x512")
+        self.assertEqual(post_kwargs["json"]["model"], "gpt-image-1")
+        self.assertEqual(post_kwargs["json"]["quality"], "high")
+
+    @override_settings(OPENAI_API_KEY="test-key")
+    @patch("botapp.services.openai_generate_images")
+    def test_generate_images_for_model_routes_to_openai(self, openai_mock: MagicMock):
+        model = AIModel.objects.create(
+            slug="test-openai-image",
+            name="GPT Image 1",
+            display_name="GPT Image 1",
+            type="image",
+            provider="openai_image",
+            description="",
+            short_description="",
+            price=Decimal("2.50"),
+            api_endpoint="https://api.openai.com/v1/images",
+            api_model_name="gpt-image-1",
+            max_prompt_length=1000,
+            supports_image_input=False,
+            max_input_images=0,
+            default_params={"size": "1024x1024", "quality": "standard"},
+            allowed_params={},
+            max_quantity=4,
+            cooldown_seconds=0,
+        )
+        openai_mock.return_value = [b"img"]
+
+        imgs = generate_images_for_model(model, "city skyline", 2, {"size": "512x512"})
+
+        self.assertEqual(imgs, [b"img"])
+        self.assertTrue(openai_mock.called)
+        call_kwargs = openai_mock.call_args.kwargs
+        self.assertEqual(call_kwargs["model_name"], "gpt-image-1")
+        self.assertEqual(call_kwargs["params"]["size"], "512x512")
 class ReferenceMimeDetectionTests(TestCase):
     def test_detect_png_signature_when_header_generic(self):
         png_bytes = b"\x89PNG\r\n\x1a\n" + b"\x00" * 10

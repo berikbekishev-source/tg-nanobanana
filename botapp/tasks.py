@@ -15,7 +15,7 @@ import subprocess
 from imageio_ffmpeg import get_ffmpeg_exe
 
 from .models import GenRequest, TgUser, AIModel
-from .services import generate_images, supabase_upload_png, supabase_upload_video
+from .services import generate_images_for_model, supabase_upload_png, supabase_upload_video
 from .keyboards import get_generation_complete_message, get_main_menu_inline_keyboard
 from .providers import get_video_provider, VideoGenerationError
 from .business.generation import GenerationService
@@ -434,13 +434,11 @@ def generate_image_task(self, request_id: int):
         quantity = req.quantity or 1
         generation_type = req.generation_type or 'text2image'
 
+        params = dict(model.default_params or {})
+        params.update(req.generation_params or {})
+
         # Вызываем сервис генерации изображений
-        if generation_type == 'text2image':
-            imgs = generate_images(prompt, quantity)
-        else:
-            # Для image2image нужно получить входное изображение
-            # TODO: Реализовать загрузку и обработку входного изображения
-            imgs = generate_images(prompt, quantity)
+        imgs = generate_images_for_model(model, prompt, quantity, params)
 
         urls = []
         inline_markup = get_inline_menu_markup()
