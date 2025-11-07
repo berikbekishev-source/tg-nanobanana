@@ -107,6 +107,7 @@ async def select_image_model(callback: CallbackQuery, state: FSMContext):
         model_slug=model_slug,
         model_id=model.id,
         model_name=model.display_name,
+        model_provider=model.provider,
         model_price=float(model.price),
         max_images=model.max_input_images,
         supports_images=model.supports_image_input,
@@ -316,10 +317,12 @@ async def select_image_mode(callback: CallbackQuery, state: FSMContext):
     data = await state.get_data()
     supports_images = data.get("supports_images", False)
     max_images = data.get("max_images", 0)
+    provider = data.get("model_provider")
+    supports_edit = provider == "openai_image"
 
-    if mode in {"edit", "remix"} and (not supports_images or max_images <= 0):
+    if mode in {"edit", "remix"} and (not supports_images or not supports_edit or max_images <= 0):
         await callback.message.answer(
-            "❌ Эта модель не поддерживает загрузку изображений. Выберите режим «Создать из текста».",
+            "❌ Этот режим доступен только для моделей GPT Image. Выберите «Создать из текста».",
             reply_markup=get_image_mode_keyboard(),
         )
         return
