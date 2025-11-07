@@ -145,13 +145,14 @@ class OpenAISoraProvider(BaseVideoProvider):
 
     def _poll_job(self, job_id: str) -> Dict[str, Any]:
         start_time = time.monotonic()
+        in_progress_statuses = {"queued", "processing", "running", "in_progress", "in-progress"}
         while True:
             if time.monotonic() - start_time > self._poll_timeout:
                 raise VideoGenerationError("Превышено время ожидания результата от Sora.")
 
             job_details = self._request_json("GET", f"/videos/{job_id}")
             status = job_details.get("status")
-            if status in {"queued", "processing", "running"}:
+            if status in in_progress_statuses:
                 time.sleep(self._poll_interval)
                 continue
             if status == "succeeded":
