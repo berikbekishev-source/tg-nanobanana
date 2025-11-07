@@ -220,14 +220,16 @@ async def select_video_model(callback: CallbackQuery, state: FSMContext):
     default_resolution = default_params.get('resolution', '720p')
     default_aspect_ratio = default_params.get('aspect_ratio', '16:9')
 
+    sora_resolutions: List[str] = [default_resolution]
     if is_sora_model:
         duration_options = duration_options or [4, 8, 12]
         default_duration = 8
         default_aspect_ratio = "9:16"
         default_resolution = "720p"
+        sora_resolutions = ["720p"]
 
-    resolution_options = ["720p", "1080p"] if is_sora_model else [default_resolution]
-    selected_resolution = None if is_sora_model else default_resolution
+    resolution_options = sora_resolutions if is_sora_model else [default_resolution]
+    selected_resolution = sora_resolutions[0] if is_sora_model else default_resolution
 
     info_message = (
         f"Модель: {model.name}.\n"
@@ -240,7 +242,7 @@ async def select_video_model(callback: CallbackQuery, state: FSMContext):
         options_text = ", ".join(f"{value} сек" for value in duration_options)
         info_message += f"\nДоступная длительность: {options_text}."
     if is_sora_model:
-        info_message += "\nДоступные качества: 720p или 1080p."
+        info_message += "\nМаксимально доступное качество: 720p (ограничение OpenAI Sora)."
 
     await callback.message.answer(
         info_message,
