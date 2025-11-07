@@ -67,6 +67,7 @@ class AIModel(models.Model):
         ('veo', 'Google Veo'),
         ('openai', 'OpenAI Sora'),
         ('kling', 'Kling AI'),
+        ('midjourney', 'Midjourney (KIE)'),
         ('openai_image', 'OpenAI GPT Image'),
         ('imagen', 'Google Imagen'),
     ]

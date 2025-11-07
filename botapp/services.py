@@ -5,6 +5,7 @@ import json
 import io
 import re
 import os
+import time
 from json import JSONDecoder
 from typing import Any, Dict, List, Optional
 from django.conf import settings
@@ -393,6 +394,78 @@ def openai_generate_images(
     return imgs
 
 
+def midjourney_generate_images(
+    prompt: str,
+    quantity: int,
+    params: Optional[Dict[str, Any]] = None,
+    *,
+    generation_type: str = "text2image",
+    input_images: Optional[List[Dict[str, Any]]] = None,
+) -> List[bytes]:
+    api_key = getattr(settings, "MIDJOURNEY_KIE_API_KEY", None)
+    if not api_key:
+        raise ValueError("MIDJOURNEY_KIE_API_KEY не задан.")
+
+    base_url = getattr(settings, "MIDJOURNEY_KIE_BASE_URL", KIE_DEFAULT_BASE_URL) or KIE_DEFAULT_BASE_URL
+    base_url = base_url.rstrip("/")
+    text_model = getattr(settings, "MIDJOURNEY_KIE_TEXT_MODEL", "midjourney/v6-text-to-image")
+    image_model = getattr(settings, "MIDJOURNEY_KIE_IMAGE_MODEL", "midjourney/v6-image-to-image")
+    poll_interval = int(getattr(settings, "MIDJOURNEY_KIE_POLL_INTERVAL", 5))
+    poll_timeout = int(getattr(settings, "MIDJOURNEY_KIE_POLL_TIMEOUT", 12 * 60))
+    timeout_raw = getattr(settings, "MIDJOURNEY_KIE_REQUEST_TIMEOUT", None)
+    request_timeout = httpx.Timeout(float(timeout_raw), connect=10.0) if timeout_raw else httpx.Timeout(120.0, connect=10.0)
+
+    if generation_type == "image2image" and not input_images:
+        raise ValueError("Для режима image2image необходимо загрузить хотя бы одно изображение.")
+
+    model_name = text_model if generation_type != "image2image" else image_model
+    if not model_name:
+        raise ValueError("Не задана модель Midjourney (MIDJOURNEY_KIE_TEXT_MODEL/MIDJOURNEY_KIE_IMAGE_MODEL).")
+
+    results: List[bytes] = []
+    for _ in range(quantity):
+        input_payload = _build_midjourney_input(
+            prompt=prompt,
+            params=params or {},
+            generation_type=generation_type,
+            input_images=input_images or [],
+        )
+
+        create_payload = {"model": model_name, "input": input_payload}
+
+        create_resp = _kie_api_request(
+            base_url=base_url,
+            api_key=api_key,
+            method="POST",
+            endpoint="/api/v1/jobs/createTask",
+            json_payload=create_payload,
+            timeout=request_timeout,
+        )
+        if create_resp.get("code") != 200:
+            raise ValueError(f"Midjourney (KIE) createTask error: {create_resp}")
+        data = create_resp.get("data") or {}
+        task_id = data.get("taskId")
+        if not task_id:
+            raise ValueError("Midjourney (KIE) не вернул идентификатор задачи.")
+
+        job_data = _kie_poll_task(
+            base_url=base_url,
+            api_key=api_key,
+            task_id=task_id,
+            timeout=request_timeout,
+            poll_interval=poll_interval,
+            poll_timeout=poll_timeout,
+        )
+        urls = _kie_extract_result_urls(job_data)
+        if not urls:
+            raise ValueError("Midjourney (KIE) не вернул ссылки на изображения.")
+
+        image_bytes = _download_binary_file(urls[0])
+        results.append(image_bytes)
+
+    return results
+
+
 def generate_images_for_model(
     model,
     prompt: str,
@@ -481,6 +554,165 @@ def supabase_upload_video(content: bytes, mime_type: str = "video/mp4") -> str:
     )
     public = supabase.storage.from_(settings.SUPABASE_VIDEO_BUCKET).get_public_url(key)
     return public
+
+
+def _build_midjourney_input(
+    *,
+    prompt: str,
+    params: Dict[str, Any],
+    generation_type: str,
+    input_images: List[Dict[str, Any]],
+) -> Dict[str, Any]:
+    payload: Dict[str, Any] = {"prompt": prompt}
+    mj_opts = params.get("midjourney_options")
+    if isinstance(mj_opts, dict):
+        payload.update(mj_opts)
+
+    negative_prompt = params.get("negative_prompt") or params.get("negativePrompt")
+    if negative_prompt:
+        payload["negative_prompt"] = negative_prompt
+
+    aspect_ratio = params.get("aspect_ratio") or params.get("aspectRatio")
+    if aspect_ratio:
+        payload["aspect_ratio"] = str(aspect_ratio)
+
+    cfg_scale = params.get("cfg_scale")
+    if cfg_scale is not None:
+        try:
+            payload["cfg_scale"] = float(cfg_scale)
+        except (TypeError, ValueError):
+            pass
+
+    for key in ("quality", "style", "mode", "chaos", "seed"):
+        value = params.get(key)
+        if value is not None:
+            payload[key] = value
+
+    if generation_type == "image2image":
+        payload["image_url"] = _upload_reference_image_for_midjourney(input_images)
+
+    return payload
+
+
+def _upload_reference_image_for_midjourney(input_images: List[Dict[str, Any]]) -> str:
+    if not input_images:
+        raise ValueError("Не передано изображение для режима image2image.")
+    first = input_images[0]
+    content = first.get("content")
+    if not content:
+        raise ValueError("Не удалось получить содержимое изображения для Midjourney.")
+    upload_obj = supabase_upload_png(content)
+    if isinstance(upload_obj, dict):
+        url = upload_obj.get("public_url") or upload_obj.get("publicUrl") or upload_obj.get("publicURL")
+    else:
+        url = upload_obj
+    if not url:
+        raise ValueError("Не удалось загрузить изображение в Supabase для Midjourney.")
+    return url
+
+
+def _kie_api_request(
+    *,
+    base_url: str,
+    api_key: str,
+    method: str,
+    endpoint: str,
+    json_payload: Optional[Dict[str, Any]] = None,
+    params: Optional[Dict[str, Any]] = None,
+    timeout: httpx.Timeout,
+) -> Dict[str, Any]:
+    url = endpoint if endpoint.startswith("http") else f"{base_url}{endpoint}"
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+    try:
+        with httpx.Client(timeout=timeout, follow_redirects=True) as client:
+            response = client.request(method, url, headers=headers, json=json_payload, params=params)
+            response.raise_for_status()
+    except httpx.HTTPStatusError as exc:  # type: ignore[attr-defined]
+        detail = _format_kie_error(exc.response)
+        raise ValueError(f"KIE.AI error: {detail}") from exc
+    except httpx.HTTPError as exc:  # type: ignore[attr-defined]
+        raise ValueError(f"Ошибка обращения к KIE.AI: {exc}") from exc
+
+    try:
+        return response.json()
+    except ValueError as exc:  # pragma: no cover
+        raise ValueError(f"KIE.AI вернул некорректный JSON: {response.text}") from exc
+
+
+def _kie_poll_task(
+    *,
+    base_url: str,
+    api_key: str,
+    task_id: str,
+    timeout: httpx.Timeout,
+    poll_interval: int,
+    poll_timeout: int,
+) -> Dict[str, Any]:
+    started = time.monotonic()
+    while True:
+        response = _kie_api_request(
+            base_url=base_url,
+            api_key=api_key,
+            method="GET",
+            endpoint="/api/v1/jobs/recordInfo",
+            params={"taskId": task_id},
+            timeout=timeout,
+        )
+        if response.get("code") != 200:
+            raise ValueError(f"KIE.AI recordInfo error: {response}")
+        data = response.get("data") or {}
+        state = (data.get("state") or "").lower()
+        if state == "success":
+            return data
+        if state == "fail":
+            fail_msg = data.get("failMsg") or data.get("msg") or "KIE.AI task failed."
+            raise ValueError(f"Задача KIE.AI завершилась с ошибкой: {fail_msg}")
+        if time.monotonic() - started > poll_timeout:
+            raise ValueError("Ожидание результата KIE.AI превысило установленный таймаут.")
+        time.sleep(max(1, poll_interval))
+
+
+def _kie_extract_result_urls(payload: Dict[str, Any]) -> List[str]:
+    urls: List[str] = []
+    result_json = payload.get("resultJson")
+    if isinstance(result_json, dict):
+        maybe_urls = result_json.get("resultUrls")
+        if isinstance(maybe_urls, list):
+            urls.extend(maybe_urls)
+    elif isinstance(result_json, str):
+        try:
+            parsed = json.loads(result_json)
+            maybe_urls = parsed.get("resultUrls")
+            if isinstance(maybe_urls, list):
+                urls.extend(maybe_urls)
+        except json.JSONDecodeError:
+            pass
+    return urls
+
+
+def _download_binary_file(url: str) -> bytes:
+    try:
+        with httpx.Client(timeout=120.0, follow_redirects=True) as client:
+            response = client.get(url)
+            response.raise_for_status()
+            return response.content
+    except httpx.HTTPError as exc:  # type: ignore[attr-defined]
+        raise ValueError(f"Не удалось скачать файл по ссылке {url}: {exc}") from exc
+
+
+def _format_kie_error(response: Optional[httpx.Response]) -> str:
+    if not response:
+        return ""
+    try:
+        data = response.json()
+        if isinstance(data, dict):
+            return json.dumps(data, ensure_ascii=False)
+    except Exception:
+        pass
+    return response.text if response else ""
 def _load_service_account_info() -> Dict[str, Any]:
     raw = getattr(settings, "GOOGLE_APPLICATION_CREDENTIALS_JSON", "") or ""
     if raw:
