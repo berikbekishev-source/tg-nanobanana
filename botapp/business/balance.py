@@ -447,7 +447,4 @@ class BalanceService:
             if today_generations >= ai_model.daily_limit:
                 return False, f"Достигнут дневной лимит для модели {ai_model.display_name}"
 
-        if hasattr(user, "settings") and user.settings.user_level < ai_model.min_user_level:
-            return False, f"Для модели {ai_model.display_name} требуется уровень {ai_model.min_user_level}"
-
         return True, "OK"
