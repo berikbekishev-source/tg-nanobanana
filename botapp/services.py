@@ -125,7 +125,18 @@ def vertex_edit_images(
         request_payload["parameters"]["editMode"] = (params or {}).get("edit_mode", "EDIT_MODE_INPAINT_INSERTION")
 
     response = session.post(url, json=request_payload, timeout=120)
-    response.raise_for_status()
+    if response.status_code >= 400:
+        detail = response.text
+        try:
+            payload = response.json()
+            error_obj = payload.get("error")
+            if isinstance(error_obj, dict):
+                detail = error_obj.get("message") or str(error_obj)
+            elif isinstance(payload, dict):
+                detail = payload.get("message") or detail
+        except ValueError:
+            pass
+        raise ValueError(f"Vertex Imagen error ({response.status_code}): {detail}")
     try:
         data = response.json()
     except ValueError as exc:
