@@ -26,6 +26,5 @@ build/
 .idea/
 .vscode/
 
-# Ignore nested git repos and temp files
+# Local nested repos
 tg-nanobanana/
-Документация/

@@ -168,6 +168,18 @@ OPENAI_VIDEO_REQUEST_TIMEOUT = float(_openai_request_timeout_raw) if _openai_req
 _openai_content_timeout_raw = os.getenv("OPENAI_VIDEO_CONTENT_TIMEOUT")
 OPENAI_VIDEO_CONTENT_TIMEOUT = float(_openai_content_timeout_raw) if _openai_content_timeout_raw else None
 
+# --- Kling Video API ---
+KLING_API_KEY = os.getenv("KLING_API_KEY")
+KLING_API_SECRET = os.getenv("KLING_API_SECRET")
+KLING_ORGANIZATION_ID = os.getenv("KLING_ORGANIZATION_ID")
+KLING_API_BASE_URL = os.getenv("KLING_API_BASE_URL", "https://api.klingai.com")
+KLING_CREATE_ENDPOINT = os.getenv("KLING_CREATE_ENDPOINT", "/v1/video/generations")
+KLING_STATUS_ENDPOINT = os.getenv("KLING_STATUS_ENDPOINT", "/v1/video/generations/{job_id}")
+KLING_POLL_INTERVAL = int(os.getenv("KLING_POLL_INTERVAL", "5"))
+KLING_POLL_TIMEOUT = int(os.getenv("KLING_POLL_TIMEOUT", str(12 * 60)))
+KLING_REQUEST_TIMEOUT = os.getenv("KLING_REQUEST_TIMEOUT")
+KLING_EXTRA_HEADERS = os.getenv("KLING_EXTRA_HEADERS")
+
 # --- Lava.top Payment ---
 LAVA_WEBHOOK_SECRET = os.getenv("LAVA_WEBHOOK_SECRET")
 LAVA_API_KEY = os.getenv("LAVA_API_KEY")
