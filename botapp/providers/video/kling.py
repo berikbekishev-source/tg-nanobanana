@@ -17,45 +17,24 @@ class KlingVideoProvider(BaseVideoProvider):
 
     slug = "kling"
 
-    _DEFAULT_BASE_URL = "https://api.klingai.com"
-    _DEFAULT_CREATE_ENDPOINT = "/v1/video/generations"
-    _DEFAULT_STATUS_ENDPOINT = "/v1/video/generations/{job_id}"
+    _DEFAULT_BASE_URL = "https://api-singapore.klingai.com"
+    _DEFAULT_TEXT2VIDEO_ENDPOINT = "/v1/videos/text2video"
+    _DEFAULT_IMAGE2VIDEO_ENDPOINT = "/v1/videos/image2video"
+    _DEFAULT_TEXT2VIDEO_STATUS_ENDPOINT = "/v1/videos/text2video/{task_id}"
+    _DEFAULT_IMAGE2VIDEO_STATUS_ENDPOINT = "/v1/videos/image2video/{task_id}"
     _DEFAULT_POLL_INTERVAL = 5  # seconds
     _DEFAULT_POLL_TIMEOUT = 12 * 60  # seconds
     _DEFAULT_TIMEOUT = httpx.Timeout(180.0, connect=30.0)
 
-    _SUCCESS_STATUSES = {"success", "succeeded", "completed", "done", "finished"}
+    _SUCCESS_STATUSES = {"success", "succeeded", "completed", "done", "finished", "succeed"}
     _FAIL_STATUSES = {"error", "failed", "canceled", "cancelled", "rejected", "timeout"}
 
-    _TOP_LEVEL_PARAM_KEYS = {
-        "duration",
-        "seconds",
-        "resolution",
-        "quality",
-        "aspect_ratio",
-        "ratio",
-        "fps",
-        "frame_rate",
-        "enable_audio",
-        "audio",
-        "soundtrack",
-        "style",
-        "style_reference",
-        "camera",
-        "camera_motion",
-        "motion",
-        "guidance_scale",
-        "cfg_scale",
-        "seed",
-        "negative_prompt",
-    }
     _EXCLUDE_PARAM_KEYS = {
         "input_image_file_id",
         "input_image_mime_type",
         "telegram_file_id",
         "parent_request_id",
         "extend_parent_request_id",
-        "mode",
     }
 
     def _validate_settings(self) -> None:
@@ -69,8 +48,27 @@ class KlingVideoProvider(BaseVideoProvider):
         base = getattr(settings, "KLING_API_BASE_URL", self._DEFAULT_BASE_URL) or self._DEFAULT_BASE_URL
         self._api_base = base.rstrip("/")
 
-        self._create_endpoint: str = getattr(settings, "KLING_CREATE_ENDPOINT", self._DEFAULT_CREATE_ENDPOINT)
-        self._status_endpoint: str = getattr(settings, "KLING_STATUS_ENDPOINT", self._DEFAULT_STATUS_ENDPOINT)
+        self._text2video_endpoint: str = getattr(
+            settings,
+            "KLING_TEXT2VIDEO_ENDPOINT",
+            getattr(settings, "KLING_CREATE_ENDPOINT", self._DEFAULT_TEXT2VIDEO_ENDPOINT),
+        )
+        self._image2video_endpoint: str = getattr(
+            settings,
+            "KLING_IMAGE2VIDEO_ENDPOINT",
+            self._DEFAULT_IMAGE2VIDEO_ENDPOINT,
+        )
+
+        self._text2video_status_endpoint: str = getattr(
+            settings,
+            "KLING_TEXT2VIDEO_STATUS_ENDPOINT",
+            getattr(settings, "KLING_STATUS_ENDPOINT", self._DEFAULT_TEXT2VIDEO_STATUS_ENDPOINT),
+        )
+        self._image2video_status_endpoint: str = getattr(
+            settings,
+            "KLING_IMAGE2VIDEO_STATUS_ENDPOINT",
+            self._DEFAULT_IMAGE2VIDEO_STATUS_ENDPOINT,
+        )
 
         self._poll_interval: int = int(getattr(settings, "KLING_POLL_INTERVAL", self._DEFAULT_POLL_INTERVAL))
         self._poll_timeout: int = int(getattr(settings, "KLING_POLL_TIMEOUT", self._DEFAULT_POLL_TIMEOUT))
@@ -106,8 +104,10 @@ class KlingVideoProvider(BaseVideoProvider):
         generation_type = generation_type.lower()
         if generation_type not in {"text2video", "image2video"}:
             raise VideoGenerationError(f"Режим '{generation_type}' не поддерживается Kling.")
-        if generation_type == "image2video" and not input_media:
-            raise VideoGenerationError("Для режима image2video необходимо загрузить изображение.")
+        if generation_type == "image2video" and not (input_media or params.get("image")):
+            raise VideoGenerationError("Для режима image2video необходимо загрузить изображение или ссылку на него.")
+
+        endpoints = self._resolve_endpoints(generation_type)
 
         payload = self._build_payload(
             prompt=prompt,
@@ -118,7 +118,7 @@ class KlingVideoProvider(BaseVideoProvider):
             input_mime_type=input_mime_type,
         )
 
-        initial_response = self._request("POST", self._create_endpoint, json_payload=payload)
+        initial_response = self._request("POST", endpoints["create"], json_payload=payload)
         job_id = self._extract_job_id(initial_response)
         if not job_id:
             raise VideoGenerationError("Kling API не вернул идентификатор задания.")
@@ -127,7 +127,7 @@ class KlingVideoProvider(BaseVideoProvider):
         job_payload = (
             initial_response
             if job_status in self._SUCCESS_STATUSES
-            else self._poll_job(job_id)
+            else self._poll_job(job_id, endpoints["status"])
         )
 
         video_bytes, mime_type = self._extract_video_content(job_payload)
@@ -155,6 +155,17 @@ class KlingVideoProvider(BaseVideoProvider):
             metadata=metadata,
         )
 
+    def _resolve_endpoints(self, generation_type: str) -> Dict[str, str]:
+        if generation_type == "text2video":
+            return {
+                "create": self._text2video_endpoint,
+                "status": self._text2video_status_endpoint,
+            }
+        return {
+            "create": self._image2video_endpoint,
+            "status": self._image2video_status_endpoint,
+        }
+
     def _build_payload(
         self,
         *,
@@ -167,44 +178,64 @@ class KlingVideoProvider(BaseVideoProvider):
     ) -> Dict[str, Any]:
         payload: Dict[str, Any] = {
             "prompt": prompt,
-            "model": model_name,
-            "mode": generation_type,
         }
 
         effective_params = dict(params or {})
         kling_specific = effective_params.pop("kling_options", None)
-        extra_parameters: Dict[str, Any] = {}
 
         for key in list(effective_params.keys()):
             if key in self._EXCLUDE_PARAM_KEYS:
                 effective_params.pop(key, None)
 
-        for key in self._TOP_LEVEL_PARAM_KEYS:
-            if key in effective_params:
-                payload[key] = effective_params.pop(key)
-
         if kling_specific and isinstance(kling_specific, dict):
-            extra_parameters.update(kling_specific)
+            effective_params.update(kling_specific)
 
-        for key, value in effective_params.items():
+        provided_model_name = effective_params.pop("model_name", None) or effective_params.pop("model", None)
+        if not provided_model_name and model_name:
+            provided_model_name = model_name
+        if provided_model_name:
+            payload["model_name"] = provided_model_name
+
+        provided_mode = effective_params.pop("mode", None)
+        if provided_mode and provided_mode not in {"text2video", "image2video"}:
+            payload["mode"] = provided_mode
+
+        if generation_type == "image2video":
+            image_value = effective_params.pop("image", None)
+            if image_value:
+                payload["image"] = image_value
+            elif input_media:
+                payload["image"] = base64.b64encode(input_media).decode("utf-8")
+            else:
+                raise VideoGenerationError("Для режима image2video необходимо загрузить изображение.")
+        else:
+            if not prompt:
+                raise VideoGenerationError("Для режима text2video требуется текстовый промт.")
+
+        duration_value = effective_params.pop("duration", None)
+        if duration_value is not None:
+            payload["duration"] = str(duration_value)
+
+        aspect_ratio = effective_params.pop("aspect_ratio", None)
+        if aspect_ratio is not None:
+            payload["aspect_ratio"] = str(aspect_ratio)
+
+        for key, value in list(effective_params.items()):
             if value is None:
-                continue
-            extra_parameters[key] = value
+                effective_params.pop(key)
 
-        if extra_parameters:
-            payload["parameters"] = extra_parameters
-
-        if generation_type == "image2video" and input_media:
-            encoded = base64.b64encode(input_media).decode("utf-8")
-            payload["reference_image"] = encoded
-            payload["reference_image_mime_type"] = input_mime_type or "image/png"
+        payload.update(effective_params)
 
         return payload
 
-    def _poll_job(self, job_id: str) -> Dict[str, Any]:
+    def _poll_job(self, job_id: str, status_endpoint: str) -> Dict[str, Any]:
         started = time.monotonic()
         while True:
-            job_response = self._request("GET", self._status_endpoint, job_id=job_id)
+            job_response = self._request(
+                "GET",
+                status_endpoint,
+                path_params={"job_id": job_id, "task_id": job_id},
+            )
             status = self._extract_status(job_response)
             if status in self._SUCCESS_STATUSES:
                 return job_response
@@ -219,10 +250,10 @@ class KlingVideoProvider(BaseVideoProvider):
         method: str,
         endpoint: str,
         *,
-        job_id: Optional[str] = None,
         json_payload: Optional[Dict[str, Any]] = None,
+        path_params: Optional[Dict[str, str]] = None,
     ) -> Dict[str, Any]:
-        url = self._resolve_url(endpoint, job_id=job_id)
+        url = self._resolve_url(endpoint, path_params=path_params)
         headers = self._build_headers()
         try:
             with httpx.Client(timeout=self._request_timeout, follow_redirects=True) as client:
@@ -253,12 +284,13 @@ class KlingVideoProvider(BaseVideoProvider):
             headers.update(self._extra_headers)
         return headers
 
-    def _resolve_url(self, endpoint: str, *, job_id: Optional[str] = None) -> str:
+    def _resolve_url(self, endpoint: str, *, path_params: Optional[Dict[str, str]] = None) -> str:
         url = endpoint
         if not endpoint.startswith("http"):
             url = f"{self._api_base}{endpoint}"
-        if job_id:
-            url = url.replace("{job_id}", job_id)
+        if path_params:
+            for key, value in path_params.items():
+                url = url.replace(f"{{{key}}}", value)
         return url
 
     def _extract_job_id(self, payload: Dict[str, Any]) -> Optional[str]:
@@ -276,7 +308,7 @@ class KlingVideoProvider(BaseVideoProvider):
 
     def _extract_status(self, payload: Dict[str, Any]) -> Optional[str]:
         job = self._unwrap_job(payload)
-        for key in ("status", "state", "job_status"):
+        for key in ("status", "state", "job_status", "task_status"):
             value = job.get(key) or payload.get(key)
             if isinstance(value, str):
                 return value.lower()
@@ -304,8 +336,23 @@ class KlingVideoProvider(BaseVideoProvider):
     def _extract_video_content(self, payload: Dict[str, Any]) -> tuple[Optional[bytes], Optional[str]]:
         job = self._unwrap_job(payload)
 
+        task_result = job.get("task_result") if isinstance(job, dict) else None
+        if isinstance(task_result, dict):
+            videos = task_result.get("videos")
+            if isinstance(videos, list) and videos:
+                first_video = videos[0]
+                if isinstance(first_video, dict):
+                    url = first_video.get("url")
+                    if url:
+                        return self._download_file(url)
+                    encoded_video = first_video.get("video_base64") or first_video.get("video_data")
+                    if isinstance(encoded_video, str):
+                        decoded = self._safe_b64decode(encoded_video)
+                        if decoded:
+                            return decoded, "video/mp4"
+
         for key in ("video_base64", "video_data", "videoBytes", "content"):
-            value = job.get(key)
+            value = job.get(key) if isinstance(job, dict) else None
             if isinstance(value, str):
                 decoded = self._safe_b64decode(value)
                 if decoded:
@@ -370,13 +417,26 @@ class KlingVideoProvider(BaseVideoProvider):
     def _extract_first_number(payload: Dict[str, Any], keys: Iterable[str]) -> Optional[float]:
         for key in keys:
             value = payload.get(key)
-            if isinstance(value, (int, float)):
-                return float(value)
+            parsed = KlingVideoProvider._maybe_number(value)
+            if parsed is not None:
+                return parsed
         job = KlingVideoProvider._unwrap_job(payload)
         for key in keys:
             value = job.get(key)
-            if isinstance(value, (int, float)):
+            parsed = KlingVideoProvider._maybe_number(value)
+            if parsed is not None:
+                return parsed
+        return None
+
+    @staticmethod
+    def _maybe_number(value: Any) -> Optional[float]:
+        if isinstance(value, (int, float)):
+            return float(value)
+        if isinstance(value, str):
+            try:
                 return float(value)
+            except ValueError:
+                return None
         return None
 
     @staticmethod

@@ -11,9 +11,12 @@
 | `KLING_API_KEY` | Основной API-ключ (используется в заголовках `Authorization` и `X-API-Key`). |
 | `KLING_API_SECRET` | Дополнительный секрет (опционально). Передаётся в `X-API-Secret`. |
 | `KLING_ORGANIZATION_ID` | Идентификатор организации/аккаунта (если выдаётся) → заголовок `X-Kling-Org`. |
-| `KLING_API_BASE_URL` | Базовый URL API. По умолчанию `https://api.klingai.com`. |
-| `KLING_CREATE_ENDPOINT` | Путь для создания задач (по умолчанию `/v1/video/generations`). |
-| `KLING_STATUS_ENDPOINT` | Путь для получения статуса (`/v1/video/generations/{job_id}`). |
+| `KLING_API_BASE_URL` | Базовый URL API. По умолчанию `https://api-singapore.klingai.com` (при необходимости указывайте региональный хост). |
+| `KLING_TEXT2VIDEO_ENDPOINT` | Необязательный override пути создания text2video задач (по умолчанию `/v1/videos/text2video`). |
+| `KLING_IMAGE2VIDEO_ENDPOINT` | Необязательный override пути создания image2video задач (по умолчанию `/v1/videos/image2video`). |
+| `KLING_TEXT2VIDEO_STATUS_ENDPOINT` | Путь получения статуса text2video (`/v1/videos/text2video/{task_id}`). |
+| `KLING_IMAGE2VIDEO_STATUS_ENDPOINT` | Путь получения статуса image2video (`/v1/videos/image2video/{task_id}`). |
+| `KLING_CREATE_ENDPOINT`, `KLING_STATUS_ENDPOINT` | Наследие старого API (`/v1/video/generations`). Используются только если вы явно задаёте их для обратной совместимости. |
 | `KLING_POLL_INTERVAL` | Интервал опроса задач (секунды, по умолчанию 5). |
 | `KLING_POLL_TIMEOUT` | Таймаут ожидания результата (секунды, по умолчанию 720). |
 | `KLING_REQUEST_TIMEOUT` | Таймаут HTTP-запросов (секунды, опционально). |
@@ -28,36 +31,33 @@
 
 ## Тело запроса
 
-Провайдер собирает JSON следующего вида:
+Провайдер собирает JSON следующего вида (text2video):
 
 ```json
 {
+  "model_name": "kling-v1",
   "prompt": "<user prompt>",
-  "model": "kling-v1",
-  "mode": "text2video",
-  "duration": 10,
-  "resolution": "1080p",
+  "mode": "std",
+  "duration": "10",
   "aspect_ratio": "16:9",
-  "enable_audio": true,
-  "parameters": {
-    "cfg_scale": 1.2,
-    "seed": 42,
-    "style": "cinematic"
+  "cfg_scale": 0.5,
+  "camera_control": {
+    "type": "simple",
+    "config": {"zoom": 2}
   }
 }
 ```
 
-- Все известные верхнеуровневые поля (`duration`, `resolution`, `aspect_ratio`, `fps`, `enable_audio`, `cfg_scale`, `seed`, `negative_prompt`, …) отправляются напрямую.
-- Остальные параметры из `generation_params` (кроме служебных `input_image_file_id`, `parent_request_id` и т.п.) попадают в `parameters`.
-- Для `image2video` добавляются поля `reference_image` (Base64) и `reference_image_mime_type`.
+- `model_name` заполняем из `AIModel.api_model_name`, но можно переопределить в `generation_params`.
+- `duration` и многие числовые значения в API ожидаются строками (`"5"`, `"10"`). Мы приводим их к строковому виду автоматически.
+- Для `image2video` вместо поля `reference_image` теперь требуется поле `image`. Если пользователь загружает фото в Telegram, мы конвертируем его в Base64 **без** префикса `data:image/...;base64,`. Допускается также указать публичный URL в `generation_params.image`.
+- Дополнительные опции (`negative_prompt`, `camera_control`, `static_mask`, `dynamic_masks`, `callback_url`, `external_task_id` и др.) передаются на верхнем уровне JSON. Исключения — сугубо сервисные поля (`input_image_file_id`, `parent_request_id`, ...), которые мы отфильтровываем автоматически.
 
 ## Ответы API
 
-1. `POST /v1/video/generations` — возвращает объект задачи: `{ "task_id": "...", "status": "queued" }`.
-2. Провайдер опрашивает `GET /v1/video/generations/{job_id}` пока статус не будет одним из `success|finished|completed`.
-3. В ответе ищется:
-   - `video_base64` или аналогичное поле с Base64 — скачиваем напрямую;
-   - либо первая ссылка `http(s)://...mp4|mov|webm|mkv` (вложенная в любом уровне) — скачиваем с теми же заголовками.
+1. `POST /v1/videos/text2video` или `/v1/videos/image2video` — возвращает `{ "code": 0, "data": { "task_id": "...", "task_status": "submitted" } }`.
+2. Для проверки статуса вызываем `GET /v1/videos/<mode>/{task_id}`. Успешные статусы: `submitted`, `processing`, `succeed`. Ошибочные — `failed` (в ответе будет `task_status_msg`).
+3. В успешном ответе `data.task_result.videos` содержит массив роликов. Берём первый объект, скачиваем `url` и передаём пользователю. Если API вернул Base64 (`video_base64`), сохраняем его напрямую.
 
 В `VideoGenerationResult.metadata` сохраняются исходный ответ и ID задания.
 
@@ -92,16 +92,17 @@
 }
 ```
 
-Поле `kling_options` попадёт в `parameters` без изменений.
+Поле `kling_options` раньше попадало во вспомогательный объект `parameters`, теперь мы мержим его содержимое прямо в корень JSON. Это позволяет пробрасывать фирменные настройки Kling (camera control, brush и т.д.) без конфликтов с нашими служебными атрибутами.
 
 ## Типичные ошибки
 
 | Сообщение | Причина / что делать |
 | --- | --- |
-| `Kling API не вернул идентификатор задания.` | Проверить, что эндпоинт `/v1/video/generations` доступен и возвращает JSON с `task_id`. |
+| `Kling API не вернул идентификатор задания.` | Проверить, что используете корректный региональный хост (например, `https://api-singapore.klingai.com`) и эндпоинт `/v1/videos/<mode>`. |
 | `Kling API error … 401` | Неверный ключ или не переданы обязательные заголовки. |
 | `Ожидание результата превысило …` | Увеличьте `KLING_POLL_TIMEOUT` или проверьте очередь задач в кабинете Kling. |
 | `Kling отклонил задачу …` | В ответе обычно есть `message` — выводим его пользователю. |
+| `404 Not Found /v1/video/generations` | Вы обращаетесь к устаревшему пути. Проверьте `KLING_API_BASE_URL` и новые эндпоинты `/v1/videos/text2video` или `/v1/videos/image2video`. |
 
 ## Чек-лист перед деплоем
 
