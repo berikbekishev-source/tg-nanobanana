@@ -48,27 +48,25 @@ class KlingVideoProvider(BaseVideoProvider):
         base = getattr(settings, "KLING_API_BASE_URL", self._DEFAULT_BASE_URL) or self._DEFAULT_BASE_URL
         self._api_base = base.rstrip("/")
 
-        self._text2video_endpoint: str = getattr(
-            settings,
-            "KLING_TEXT2VIDEO_ENDPOINT",
-            getattr(settings, "KLING_CREATE_ENDPOINT", self._DEFAULT_TEXT2VIDEO_ENDPOINT),
-        )
-        self._image2video_endpoint: str = getattr(
-            settings,
-            "KLING_IMAGE2VIDEO_ENDPOINT",
-            self._DEFAULT_IMAGE2VIDEO_ENDPOINT,
-        )
+        text2video_endpoint = getattr(settings, "KLING_TEXT2VIDEO_ENDPOINT", None)
+        if not text2video_endpoint:
+            text2video_endpoint = getattr(settings, "KLING_CREATE_ENDPOINT", self._DEFAULT_TEXT2VIDEO_ENDPOINT)
+        self._text2video_endpoint: str = text2video_endpoint
 
-        self._text2video_status_endpoint: str = getattr(
-            settings,
-            "KLING_TEXT2VIDEO_STATUS_ENDPOINT",
-            getattr(settings, "KLING_STATUS_ENDPOINT", self._DEFAULT_TEXT2VIDEO_STATUS_ENDPOINT),
-        )
-        self._image2video_status_endpoint: str = getattr(
-            settings,
-            "KLING_IMAGE2VIDEO_STATUS_ENDPOINT",
-            self._DEFAULT_IMAGE2VIDEO_STATUS_ENDPOINT,
-        )
+        image2video_endpoint = getattr(settings, "KLING_IMAGE2VIDEO_ENDPOINT", None)
+        if not image2video_endpoint:
+            image2video_endpoint = self._DEFAULT_IMAGE2VIDEO_ENDPOINT
+        self._image2video_endpoint: str = image2video_endpoint
+
+        text2video_status = getattr(settings, "KLING_TEXT2VIDEO_STATUS_ENDPOINT", None)
+        if not text2video_status:
+            text2video_status = getattr(settings, "KLING_STATUS_ENDPOINT", self._DEFAULT_TEXT2VIDEO_STATUS_ENDPOINT)
+        self._text2video_status_endpoint: str = text2video_status
+
+        image2video_status = getattr(settings, "KLING_IMAGE2VIDEO_STATUS_ENDPOINT", None)
+        if not image2video_status:
+            image2video_status = self._DEFAULT_IMAGE2VIDEO_STATUS_ENDPOINT
+        self._image2video_status_endpoint: str = image2video_status
 
         self._poll_interval: int = int(getattr(settings, "KLING_POLL_INTERVAL", self._DEFAULT_POLL_INTERVAL))
         self._poll_timeout: int = int(getattr(settings, "KLING_POLL_TIMEOUT", self._DEFAULT_POLL_TIMEOUT))
