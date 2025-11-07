@@ -286,12 +286,12 @@ def openai_generate_images(
 
     headers = {
         "Authorization": f"Bearer {settings.OPENAI_API_KEY}",
-        "Content-Type": "application/json",
     }
     if getattr(settings, "OPENAI_ORGANIZATION", None):
         headers["OpenAI-Organization"] = settings.OPENAI_ORGANIZATION
     if getattr(settings, "OPENAI_PROJECT_ID", None):
         headers["OpenAI-Project"] = settings.OPENAI_PROJECT_ID
+    json_headers = {**headers, "Content-Type": "application/json"}
 
     def _format_openai_error(resp: httpx.Response) -> str:
         try:
@@ -371,7 +371,7 @@ def openai_generate_images(
             )
 
         for _ in range(quantity):
-            response = client.post(OPENAI_IMAGE_URL, headers=headers, json=payload_base)
+            response = client.post(OPENAI_IMAGE_URL, headers=json_headers, json=payload_base)
             try:
                 response.raise_for_status()
             except httpx.HTTPStatusError as exc:
