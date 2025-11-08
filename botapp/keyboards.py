@@ -11,7 +11,11 @@ from aiogram.types import (
 )
 from aiogram.utils.keyboard import ReplyKeyboardBuilder, InlineKeyboardBuilder
 from botapp.models import AIModel
-from botapp.business.pricing import get_base_price_tokens, get_pricing_settings
+from botapp.business.pricing import (
+    get_base_price_tokens,
+    get_pricing_settings,
+    usd_to_retail_tokens,
+)
 
 
 # === ГЛАВНОЕ МЕНЮ ===
@@ -224,7 +228,7 @@ def get_main_menu_inline_keyboard() -> InlineKeyboardMarkup:
 
 def format_balance(balance: Decimal) -> str:
     """Форматирование баланса для отображения"""
-    return f"⚡ {balance:.2f} кредитов"
+    return f"⚡ {balance:.2f} токенов"
 
 
 def get_model_info_message(model: AIModel, base_price: Optional[Decimal] = None) -> str:
@@ -253,65 +257,78 @@ def get_image_mode_keyboard() -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
-_RUB_PER_USD = Decimal(os.getenv("CREDIT_RUB_RATE", "90"))
-_KZT_PER_USD = Decimal(os.getenv("CREDIT_KZT_RATE", "470"))
-
 MODEL_PRICE_PRESETS: List[Tuple[str, str]] = [
-    ("📢 Google Veo3", "veo3-fast"),
+    ("⚡ Veo 3.1 Fast", "veo3-fast"),
     ("🍌 Nano Banana", "nano-banana"),
     ("Ⓜ️ Midjourney", "midjourney-v6"),
     ("🌀 Kling v1", "kling-v1"),
-    ("🧠 GPT-Image 1", "gpt-image-1"),
-    ("🧊 Imagen 3", "imagen-3"),
-    ("🎬 Sora", "sora2"),
-    ("🚀 Veo 3 Pro", "veo3-pro"),
+    ("🖼️ GPT Image 1", "gpt-image-1"),
+    ("🎥 Sora 2", "sora2"),
 ]
+
+
+def _get_unit_price_tokens(model: AIModel) -> Decimal:
+    """
+    Возвращает стоимость базовой единицы модели (1 изображение / 1 секунда).
+    Для видео игнорируем значение duration в default_params, чтобы выводить
+    цену именно за одну секунду, а не за дефолтную длительность модели.
+    """
+    if model.cost_unit == model.CostUnit.SECOND:
+        cost_usd = model.base_cost_usd or model.unit_cost_usd or Decimal('0.0000')
+        if cost_usd <= 0:
+            return Decimal('0.00')
+        return usd_to_retail_tokens(cost_usd)
+    return get_base_price_tokens(model)
 
 
 def get_prices_info(balance: Decimal) -> str:
     """Возвращает текст для раздела баланса по заданному шаблону."""
     settings = get_pricing_settings()
-    usd_per_credit = (Decimal('1') / settings.usd_to_token_rate).quantize(Decimal('0.01'))
-    rub_per_credit = (usd_per_credit * _RUB_PER_USD).quantize(Decimal('0.1'))
-    kzt_per_credit = (usd_per_credit * _KZT_PER_USD).quantize(Decimal('1'))
+    usd_per_token = (Decimal('1') / settings.usd_to_token_rate).quantize(Decimal('0.01'))
 
     lines: List[str] = []
-    lines.append(f"💰 Ваш текущий баланс: {balance:.2f} кредитов")
+    lines.append("💰 Ваш текущий баланс:")
+    lines.append(f"⚡ {balance:.2f} токенов")
     lines.append("")
-    lines.append(
-        f"1 кредит ≈ {rub_per_credit}₽ = {kzt_per_credit}тг = ${usd_per_credit}"
-    )
-    lines.append("Кредиты — внутренняя валюта в боте, которой оплачиваете генерации.")
+    lines.append(f"1 токен ≈ ${usd_per_token}")
+    lines.append("Токены — внутренняя валюта в боте, которой оплачиваете генерации.")
     lines.append("")
-    lines.append("ПРАЙС, цены 💡 Каждая генерация видео или фото расходует кредиты:")
+    lines.append("💰 Текущие цены:")
+    lines.append("")
 
     available_models = {m.slug: m for m in AIModel.objects.filter(is_active=True)}
     for title, slug in MODEL_PRICE_PRESETS:
         model = available_models.get(slug)
         if not model:
             continue
-        base_price = get_base_price_tokens(model)
-        if model.cost_unit == model.CostUnit.SECOND:
-            suffix = "за 1 сек."
-        elif model.cost_unit == model.CostUnit.IMAGE:
-            suffix = "за 1 изображение"
+        base_price = _get_unit_price_tokens(model)
+        if model.type == 'image':
+            section = "Изображения"
         else:
-            suffix = "за генерацию"
-        lines.append(f"- {title} — {base_price:.2f} кредитов {suffix}")
+            section = "Видео"
 
-    lines.extend(
-        [
-            "- 📁 Flux Kontext — 1–2 кредита",
-            "- 🖊 Runway Aleph — 22 кредита",
-            "- 🥼 Примерка одежды — 2.5 кредита",
-            "- 🌪 Seedance — 15–25 кредитов",
-            "- 📓 Hailuo — 30 кредитов",
-        ]
-    )
+        # Вставляем заголовок секции или пустую строку в зависимости от структуры
+        if f"**{section}:**" not in lines:
+            if section == "Видео" and "**Изображения:**" not in lines:
+                lines.append("**Изображения:**")
+                lines.append("_Нет активных моделей_")
+                lines.append("")
+            lines.append(f"**{section}:**")
+
+        lines.append(f"{title} — ⚡{base_price:.2f} токенов")
+
+    # Гарантируем, что обе секции присутствуют
+    if "**Изображения:**" not in lines:
+        lines.append("**Изображения:**")
+        lines.append("_Нет активных моделей_")
+    if "**Видео:**" not in lines:
+        lines.append("")
+        lines.append("**Видео:**")
+        lines.append("_Нет активных моделей_")
 
     lines.append("")
     lines.append(
-        "Стоимость пакетов кредитов смотрите по кнопке «Пополнить баланс» или «Купить кредиты»."
+        "Стоимость пакетов токенов на кнопках «Пополнить баланс» / «Купить токены»."
     )
 
     return "\n".join(lines)
