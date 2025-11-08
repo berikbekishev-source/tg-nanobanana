@@ -1,7 +1,7 @@
 """
 Клавиатуры для навигации по боту согласно ТЗ
 """
-from typing import List, Sequence, Tuple
+from typing import List, Sequence, Tuple, Optional
 from decimal import Decimal
 from aiogram.types import (
     ReplyKeyboardMarkup, KeyboardButton,
@@ -226,16 +226,16 @@ def format_balance(balance: Decimal) -> str:
     return f"⚡ {balance:.2f} токенов"
 
 
-def get_model_info_message(model: AIModel) -> str:
+def get_model_info_message(model: AIModel, base_price: Optional[Decimal] = None) -> str:
     """
     Формирует сообщение с информацией о модели (Шаг 2)
     Теперь берет данные из модели в БД вместо if-else
     """
     description = model.short_description or model.description
-    base_price = get_base_price_tokens(model)
+    price_value = base_price if base_price is not None else get_base_price_tokens(model)
     message = (
         f"{model.display_name}\n"
-        f"Стоимость от ⚡{base_price:.2f} токенов\n"
+        f"Стоимость от ⚡{price_value:.2f} токенов\n"
         f"{description}\n\n"
         "Выберите режим генерации ниже."
     )

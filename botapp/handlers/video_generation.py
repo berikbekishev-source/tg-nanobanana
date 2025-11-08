@@ -200,7 +200,7 @@ async def select_video_model(callback: CallbackQuery, state: FSMContext):
     user = await sync_to_async(TgUser.objects.get)(chat_id=callback.from_user.id)
     balance = await sync_to_async(BalanceService.get_balance)(user)
 
-    model_cost = get_base_price_tokens(model)
+    model_cost = await sync_to_async(get_base_price_tokens)(model)
 
     if balance < model_cost:
         await callback.message.answer(
@@ -691,7 +691,7 @@ async def prompt_video_extension(callback: CallbackQuery, state: FSMContext):
         return
 
     aspect_ratio = gen_request.aspect_ratio or gen_request.generation_params.get("aspect_ratio") or "не указан"
-    base_price = get_base_price_tokens(model)
+    base_price = await sync_to_async(get_base_price_tokens)(model)
     cost_text = f"⚡ Стоимость продления: {base_price:.2f} токенов."
 
     await state.update_data(

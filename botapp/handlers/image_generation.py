@@ -112,7 +112,7 @@ async def select_image_model(callback: CallbackQuery, state: FSMContext):
     )
 
     info_message = (
-        get_model_info_message(model)
+        get_model_info_message(model, base_price=model_cost)
         + "\n\nРежимы:\n"
         "• Создать из текста — промт без изображений\n"
         "• Отредактировать — одно изображение + промт\n"
