@@ -382,6 +382,7 @@ class PricingSettings(models.Model):
     class Meta:
         verbose_name = "Pricing Settings"
         verbose_name_plural = "Pricing Settings"
+        db_table = "pricing_settings"
 
     def __str__(self):
         return f"Курс {self.usd_to_token_rate} токенов за $1 (×{self.markup_multiplier})"

@@ -70,6 +70,7 @@ class Migration(migrations.Migration):
                 ('updated_at', models.DateTimeField(auto_now=True)),
             ],
             options={
+                'db_table': 'pricing_settings',
                 'verbose_name': 'Pricing Settings',
                 'verbose_name_plural': 'Pricing Settings',
             },
