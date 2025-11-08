@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 from decimal import Decimal, ROUND_HALF_UP
-from functools import lru_cache
 from typing import Dict, Optional, Tuple, TYPE_CHECKING
 
 from django.apps import apps
@@ -13,7 +12,6 @@ if TYPE_CHECKING:  # pragma: no cover
 TOKEN_QUANT = Decimal('0.01')
 
 
-@lru_cache(maxsize=1)
 def _get_cached_settings():
     PricingSettings = apps.get_model('botapp', 'PricingSettings')
     settings = PricingSettings.objects.order_by('id').first()
@@ -28,8 +26,8 @@ def get_pricing_settings():
 
 
 def invalidate_pricing_settings_cache() -> None:
-    """Сбрасывает кэш настроек (используется сигналами/admin)."""
-    _get_cached_settings.cache_clear()
+    """Совместимость: кэша больше нет, функция оставлена для вызовов сигналов."""
+    return None
 
 
 def usd_to_tokens(amount_usd: Decimal | float | int) -> Decimal:
