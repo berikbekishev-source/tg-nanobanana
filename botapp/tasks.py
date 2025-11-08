@@ -560,16 +560,25 @@ def generate_image_task(self, request_id: int):
         req.save(update_fields=["status", "result_urls"])
 
     except Exception as e:
-        req.status = "error"
-        req.save(update_fields=["status"])
+        max_retries = getattr(self, "max_retries", 0) or 0
+        current_retry = getattr(getattr(self, "request", None), "retries", 0)
+        is_final_attempt = current_retry >= max_retries
 
-        # Отправляем сообщение об ошибке
-        send_telegram_message(
-            req.chat_id,
-            f"❌ Ошибка генерации изображения: {str(e)}",
-            reply_markup=get_inline_menu_markup(),
-            parse_mode=None,
-        )
+        if is_final_attempt:
+            req.status = "error"
+            req.error_message = str(e)
+            req.save(update_fields=["status", "error_message"])
+
+            send_telegram_message(
+                req.chat_id,
+                f"❌ Ошибка генерации изображения: {str(e)}",
+                reply_markup=get_inline_menu_markup(),
+                parse_mode=None,
+            )
+        else:
+            req.status = "processing"
+            req.save(update_fields=["status"])
+
         raise
 
 
