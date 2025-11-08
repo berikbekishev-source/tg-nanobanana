@@ -467,8 +467,17 @@ def midjourney_generate_images(
         if not urls:
             raise ValueError("Midjourney (KIE) не вернул ссылки на изображения.")
 
-        image_bytes = _download_binary_file(urls[0])
-        results.append(image_bytes)
+        added = False
+        for url in urls:
+            try:
+                image_bytes = _download_binary_file(url)
+            except Exception:
+                continue
+            results.append(image_bytes)
+            added = True
+
+        if not added:
+            raise ValueError("Midjourney (KIE) не удалось загрузить изображения по ссылкам.")
 
     return results
 
