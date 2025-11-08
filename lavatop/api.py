@@ -36,6 +36,24 @@ class PaymentResponse(Schema):
     error: str = None
 
 
+@miniapp_api.get("/pricing")
+def get_pricing(request):
+    """Возвращает список активных пакетов токенов для мини-приложения."""
+    packages = TokenPackage.objects.filter(is_active=True).order_by('sort_order', 'price_usd')
+    return {
+        "packages": [
+            {
+                "code": package.code,
+                "title": package.title,
+                "credits": int(package.credits),
+                "price_usd": float(package.price_usd),
+                "stars_amount": package.stars_amount,
+            }
+            for package in packages
+        ]
+    }
+
+
 def validate_telegram_init_data(init_data: str) -> dict:
     """
     Валидация данных из Telegram Web App

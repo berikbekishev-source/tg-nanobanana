@@ -223,12 +223,8 @@
         <!-- Количество кредитов -->
         <div class="section">
             <label class="label">Количество кредитов</label>
-            <div class="credits-grid">
-                <button class="credit-btn active" data-credits="100" data-price="5">100 кредитов</button>
-                <button class="credit-btn" data-credits="200" data-price="10" disabled title="Скоро будет доступно">200 кредитов</button>
-                <button class="credit-btn" data-credits="500" data-price="25" disabled title="Скоро будет доступно">500 кредитов</button>
-                <button class="credit-btn" data-credits="1000" data-price="50" disabled title="Скоро будет доступно">1000 кредитов</button>
-            </div>
+            <div id="packagesContainer" class="credits-grid"></div>
+            <p id="packagesStatus" class="label" style="margin-top: 12px;">Загружаем пакеты...</p>
         </div>
 
         <!-- Метод оплаты -->
@@ -248,7 +244,7 @@
         <div class="section">
             <label class="label">Сумма</label>
             <div class="total-price">
-                <span id="totalAmount">5</span> $
+                <span id="totalAmount">--</span> $
             </div>
         </div>
 
@@ -259,6 +255,8 @@
     <script>
         // Telegram Web App
         const tg = window.Telegram ? window.Telegram.WebApp : null;
+        const PACKAGES_ENDPOINT = '/api/miniapp/pricing';
+        let packagesReady = false;
 
         // Безопасная функция для показа уведомлений
         function showNotification(message) {
@@ -324,42 +322,65 @@
             }
 
             // Инициализация элементов
-            initPaymentForm();
+            loadPackagesAndInit();
         });
 
-        function initPaymentForm() {
-            const creditButtons = document.querySelectorAll('.credit-btn');
+        async function loadPackagesAndInit() {
+            const statusEl = document.getElementById('packagesStatus');
+            const payBtn = document.getElementById('payBtn');
+            payBtn.disabled = true;
+
+            try {
+                const response = await fetch(PACKAGES_ENDPOINT);
+                if (!response.ok) {
+                    throw new Error(`Ошибка загрузки пакетов (${response.status})`);
+                }
+
+                const payload = await response.json();
+                const packages = payload?.packages || [];
+
+                if (!packages.length) {
+                    statusEl.textContent = 'Пакеты временно недоступны. Попробуйте позже.';
+                    return;
+                }
+
+                statusEl.remove();
+                packagesReady = true;
+                initPaymentForm(packages);
+                validateForm();
+            } catch (error) {
+                console.error('Failed to load packages:', error);
+                statusEl.textContent = 'Не удалось загрузить пакеты. Попробуйте позже.';
+            }
+        }
+
+        function initPaymentForm(packages) {
             const emailInput = document.getElementById('email');
             const payBtn = document.getElementById('payBtn');
             const totalAmount = document.getElementById('totalAmount');
             const paymentButtons = document.querySelectorAll('.payment-btn');
 
-            let selectedCredits = 100;
-            let selectedPrice = 5;
+            renderPackageButtons(packages);
+            const creditButtons = document.querySelectorAll('.credit-btn');
+
+            let selectedCredits = 0;
+            let selectedPrice = 0;
             let selectedPaymentMethod = 'UNLIMINT';
 
-            // Обработка выбора кредитов
+            function selectPackage(button) {
+                creditButtons.forEach(b => b.classList.remove('active'));
+                button.classList.add('active');
+                selectedCredits = parseInt(button.dataset.credits, 10);
+                selectedPrice = parseFloat(button.dataset.price);
+                totalAmount.textContent = formatPrice(selectedPrice);
+            }
+
+            if (creditButtons.length) {
+                selectPackage(creditButtons[0]);
+            }
+
             creditButtons.forEach(btn => {
-                btn.addEventListener('click', () => {
-                    // Игнорировать клики на отключенные кнопки
-                    if (btn.disabled) {
-                        showNotification('Этот пакет токенов скоро будет доступен');
-                        return;
-                    }
-
-                    // Убрать активный класс со всех кнопок
-                    creditButtons.forEach(b => b.classList.remove('active'));
-
-                    // Добавить активный класс на выбранную кнопку
-                    btn.classList.add('active');
-
-                    // Получить данные
-                    selectedCredits = parseInt(btn.dataset.credits);
-                    selectedPrice = parseFloat(btn.dataset.price);
-
-                    // Обновить сумму
-                    totalAmount.textContent = selectedPrice;
-                });
+                btn.addEventListener('click', () => selectPackage(btn));
             });
 
             // Валидация email
@@ -479,6 +500,24 @@
             validateForm();
         }
 
+        function renderPackageButtons(packages) {
+            const container = document.getElementById('packagesContainer');
+            container.innerHTML = '';
+
+            packages.forEach((pkg, index) => {
+                const btn = document.createElement('button');
+                btn.className = 'credit-btn';
+                if (index === 0) {
+                    btn.classList.add('active');
+                }
+                btn.dataset.credits = pkg.credits;
+                btn.dataset.price = pkg.price_usd;
+                btn.textContent = `${formatCredits(pkg.credits)} токенов`;
+                btn.title = pkg.title || '';
+                container.appendChild(btn);
+            });
+        }
+
         function validateEmail(email) {
             const re = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
             return re.test(email);
@@ -489,11 +528,24 @@
             const payBtn = document.getElementById('payBtn');
             const email = emailInput.value.trim();
 
-            if (validateEmail(email)) {
+            if (packagesReady && validateEmail(email)) {
                 payBtn.disabled = false;
             } else {
                 payBtn.disabled = true;
             }
+        }
+
+        function formatPrice(value) {
+            const number = Number(value);
+            if (Number.isNaN(number)) {
+                return '--';
+            }
+            return Number.isInteger(number) ? number.toString() : number.toFixed(2);
+        }
+
+        function formatCredits(value) {
+            const number = Number(value);
+            return Number.isInteger(number) ? number.toString() : number.toFixed(2);
         }
 
         // Обработка закрытия Web App (если доступно)
