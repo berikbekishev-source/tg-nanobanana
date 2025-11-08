@@ -12,7 +12,6 @@ from botapp.keyboards import (
     get_main_menu_keyboard,
     get_back_to_menu_keyboard,
     get_balance_keyboard,
-    format_balance,
     get_prices_info
 )
 from botapp.models import TgUser, UserSettings
@@ -90,19 +89,13 @@ async def show_balance(message: Message, state: FSMContext):
     balance = await sync_to_async(BalanceService.get_balance)(user)
 
     # Формируем сообщение с балансом и ценами
-    prices_info = await sync_to_async(get_prices_info)()
-
-    balance_message = (
-        f"💰 **Ваш текущий баланс:**\n"
-        f"{format_balance(balance)}\n\n"
-        f"{prices_info}"
-    )
+    balance_message = await sync_to_async(get_prices_info)(balance)
 
     # Отправляем сообщение с балансом + inline кнопка "Пополнить баланс"
     await message.answer(
         balance_message,
         reply_markup=get_balance_keyboard(),
-        parse_mode="Markdown"
+        parse_mode=None
     )
 
     # Меняем клавиатуру на кнопку "Главное меню"

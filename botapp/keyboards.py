@@ -1,6 +1,7 @@
 """
 Клавиатуры для навигации по боту согласно ТЗ
 """
+import os
 from typing import List, Sequence, Tuple, Optional
 from decimal import Decimal
 from aiogram.types import (
@@ -10,7 +11,7 @@ from aiogram.types import (
 )
 from aiogram.utils.keyboard import ReplyKeyboardBuilder, InlineKeyboardBuilder
 from botapp.models import AIModel
-from botapp.business.pricing import get_base_price_tokens
+from botapp.business.pricing import get_base_price_tokens, get_pricing_settings
 
 
 # === ГЛАВНОЕ МЕНЮ ===
@@ -223,7 +224,7 @@ def get_main_menu_inline_keyboard() -> InlineKeyboardMarkup:
 
 def format_balance(balance: Decimal) -> str:
     """Форматирование баланса для отображения"""
-    return f"⚡ {balance:.2f} токенов"
+    return f"⚡ {balance:.2f} кредитов"
 
 
 def get_model_info_message(model: AIModel, base_price: Optional[Decimal] = None) -> str:
@@ -252,35 +253,68 @@ def get_image_mode_keyboard() -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
-def get_prices_info() -> str:
-    """Информация о ценах для раздела баланса (динамически из БД)."""
-    image_models = AIModel.objects.filter(is_active=True, type='image').order_by('order', 'price')
-    video_models = AIModel.objects.filter(is_active=True, type='video').order_by('order', 'price')
+_RUB_PER_USD = Decimal(os.getenv("CREDIT_RUB_RATE", "90"))
+_KZT_PER_USD = Decimal(os.getenv("CREDIT_KZT_RATE", "470"))
 
-    def _format_model(model: AIModel) -> str:
+MODEL_PRICE_PRESETS: List[Tuple[str, str]] = [
+    ("📢 Google Veo3", "veo3-fast"),
+    ("🍌 Nano Banana", "nano-banana"),
+    ("Ⓜ️ Midjourney", "midjourney-v6"),
+    ("🌀 Kling v1", "kling-v1"),
+    ("🧠 GPT-Image 1", "gpt-image-1"),
+    ("🧊 Imagen 3", "imagen-3"),
+    ("🎬 Sora", "sora2"),
+    ("🚀 Veo 3 Pro", "veo3-pro"),
+]
+
+
+def get_prices_info(balance: Decimal) -> str:
+    """Возвращает текст для раздела баланса по заданному шаблону."""
+    settings = get_pricing_settings()
+    usd_per_credit = (Decimal('1') / settings.usd_to_token_rate).quantize(Decimal('0.01'))
+    rub_per_credit = (usd_per_credit * _RUB_PER_USD).quantize(Decimal('0.1'))
+    kzt_per_credit = (usd_per_credit * _KZT_PER_USD).quantize(Decimal('1'))
+
+    lines: List[str] = []
+    lines.append(f"💰 Ваш текущий баланс: {balance:.2f} кредитов")
+    lines.append("")
+    lines.append(
+        f"1 кредит ≈ {rub_per_credit}₽ = {kzt_per_credit}тг = ${usd_per_credit}"
+    )
+    lines.append("Кредиты — внутренняя валюта в боте, которой оплачиваете генерации.")
+    lines.append("")
+    lines.append("ПРАЙС, цены 💡 Каждая генерация видео или фото расходует кредиты:")
+
+    available_models = {m.slug: m for m in AIModel.objects.filter(is_active=True)}
+    for title, slug in MODEL_PRICE_PRESETS:
+        model = available_models.get(slug)
+        if not model:
+            continue
         base_price = get_base_price_tokens(model)
-        return f"{model.display_name} — ⚡{base_price:.2f} токенов"
+        if model.cost_unit == model.CostUnit.SECOND:
+            suffix = "за 1 сек."
+        elif model.cost_unit == model.CostUnit.IMAGE:
+            suffix = "за 1 изображение"
+        else:
+            suffix = "за генерацию"
+        lines.append(f"- {title} — {base_price:.2f} кредитов {suffix}")
 
-    parts: List[str] = ["💰 **Текущие цены:**", ""]
+    lines.extend(
+        [
+            "- 📁 Flux Kontext — 1–2 кредита",
+            "- 🖊 Runway Aleph — 22 кредита",
+            "- 🥼 Примерка одежды — 2.5 кредита",
+            "- 🌪 Seedance — 15–25 кредитов",
+            "- 📓 Hailuo — 30 кредитов",
+        ]
+    )
 
-    parts.append("**Изображения:**")
-    if image_models:
-        parts.extend(_format_model(model) for model in image_models)
-    else:
-        parts.append("_Нет активных моделей_")
-    parts.append("")
+    lines.append("")
+    lines.append(
+        "Стоимость пакетов кредитов смотрите по кнопке «Пополнить баланс» или «Купить кредиты»."
+    )
 
-    parts.append("**Видео:**")
-    if video_models:
-        parts.extend(_format_model(model) for model in video_models)
-    else:
-        parts.append("_Нет активных моделей_")
-    parts.append("")
-
-    parts.append("💎 Чем выше пакет пополнения — тем ниже цена за токен.")
-    parts.append("🎁 Промокод `WELCOME2025` даст бонус к первому пополнению.")
-
-    return "\n".join(parts).strip()
+    return "\n".join(lines)
 
 
 def get_generation_start_message() -> str:
