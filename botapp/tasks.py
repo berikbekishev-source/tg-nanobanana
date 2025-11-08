@@ -490,6 +490,7 @@ def generate_image_task(self, request_id: int):
     """
     Задача генерации изображений
     """
+    req: Optional[GenRequest] = None
     try:
         req = GenRequest.objects.select_related('user', 'ai_model', 'transaction').get(id=request_id)
 
@@ -564,6 +565,9 @@ def generate_image_task(self, request_id: int):
         current_retry = getattr(getattr(self, "request", None), "retries", 0)
         is_final_attempt = current_retry >= max_retries
 
+        if req is None:
+            raise
+
         if is_final_attempt:
             req.status = "error"
             req.error_message = str(e)
@@ -587,8 +591,9 @@ def generate_video_task(self, request_id: int):
     """
     Задача генерации видео через провайдеров (Vertex Veo и др.)
     """
-    req = GenRequest.objects.select_related('user', 'ai_model', 'transaction').get(id=request_id)
+    req: Optional[GenRequest] = None
     try:
+        req = GenRequest.objects.select_related('user', 'ai_model', 'transaction').get(id=request_id)
         GenerationService.start_generation(req)
 
         model = req.ai_model
@@ -677,13 +682,14 @@ def generate_video_task(self, request_id: int):
             print(f"Failed to notify user about video error: {send_error}")
         return
     except Exception as e:
-        GenerationService.fail_generation(req, str(e), refund=True)
-        send_telegram_message(
-            req.chat_id,
-            f"❌ Ошибка генерации видео: {str(e)}",
-            reply_markup=get_inline_menu_markup(),
-            parse_mode=None,
-        )
+        if req:
+            GenerationService.fail_generation(req, str(e), refund=True)
+            send_telegram_message(
+                req.chat_id,
+                f"❌ Ошибка генерации видео: {str(e)}",
+                reply_markup=get_inline_menu_markup(),
+                parse_mode=None,
+            )
         raise
 
 
