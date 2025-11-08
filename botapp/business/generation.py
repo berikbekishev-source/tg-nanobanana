@@ -9,6 +9,7 @@ from django.utils import timezone
 
 from botapp.models import TgUser, GenRequest, AIModel, Transaction
 from botapp.business.balance import BalanceService, InsufficientBalanceError
+from botapp.business.pricing import calculate_request_cost
 
 
 class GenerationService:
@@ -60,20 +61,6 @@ class GenerationService:
         if input_images and len(input_images) > ai_model.max_input_images:
             raise ValueError(f"Максимум изображений: {ai_model.max_input_images}")
 
-        # Проверяем возможность генерации
-        can_generate, error_message = BalanceService.check_can_generate(user, ai_model, quantity=quantity)
-        if not can_generate:
-            raise ValueError(error_message)
-
-        # Рассчитываем стоимость
-        total_cost = ai_model.price * quantity
-
-        # Списываем средства
-        try:
-            transaction = BalanceService.charge_for_generation(user, ai_model, quantity)
-        except InsufficientBalanceError:
-            raise
-
         model_defaults = ai_model.default_params or {}
         params: Dict[str, Any] = dict(generation_params or {})
         params.setdefault("mode", generation_type)
@@ -104,6 +91,32 @@ class GenerationService:
         if not input_images_payload and media_source:
             input_images_payload = [media_source]
 
+        cost_usd, total_cost_tokens = calculate_request_cost(
+            ai_model,
+            quantity=quantity,
+            duration=duration,
+            params=params,
+        )
+
+        can_generate, error_message = BalanceService.check_can_generate(
+            user,
+            ai_model,
+            quantity=quantity,
+            total_cost_tokens=total_cost_tokens,
+        )
+        if not can_generate:
+            raise ValueError(error_message)
+
+        try:
+            transaction = BalanceService.charge_for_generation(
+                user,
+                ai_model,
+                quantity=quantity,
+                total_cost_tokens=total_cost_tokens,
+            )
+        except InsufficientBalanceError:
+            raise
+
         # Создаем запрос на генерацию
         gen_request = GenRequest.objects.create(
             run_code=str(uuid.uuid4()),
@@ -116,7 +129,8 @@ class GenerationService:
             quantity=quantity,
             input_images=input_images_payload,
             generation_params=params,
-            cost=total_cost,
+            cost=total_cost_tokens.quantize(Decimal('0.01')),
+            cost_usd=cost_usd,
             status='queued',
             transaction=transaction,
             parent_request=parent_request,

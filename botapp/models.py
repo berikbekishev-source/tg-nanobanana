@@ -79,12 +79,29 @@ class AIModel(models.Model):
     provider = models.CharField(max_length=20, choices=PROVIDERS)
     description = models.TextField()
     short_description = models.CharField(max_length=255)  # Краткое описание для меню
-    price = models.DecimalField(max_digits=6, decimal_places=2, validators=[MinValueValidator(Decimal('0.00'))])
+    class CostUnit(models.TextChoices):
+        IMAGE = "image", "Per image"
+        SECOND = "second", "Per second"
+        GENERATION = "generation", "Per generation"
+
+    price = models.DecimalField(max_digits=8, decimal_places=2, validators=[MinValueValidator(Decimal('0.00'))])
     unit_cost_usd = models.DecimalField(
-        max_digits=8,
+        max_digits=10,
         decimal_places=4,
         default=Decimal('0.0000'),
-        help_text="Себестоимость генерации в долларах США",
+        help_text="Себестоимость генерации (историческое поле)",
+    )
+    base_cost_usd = models.DecimalField(
+        max_digits=10,
+        decimal_places=4,
+        default=Decimal('0.0000'),
+        help_text="Себестоимость одной единицы (изображение/секунда)",
+    )
+    cost_unit = models.CharField(
+        max_length=16,
+        choices=CostUnit.choices,
+        default=CostUnit.GENERATION,
+        help_text="Базовая единица тарифа для расчёта себестоимости",
     )
 
     # Технические параметры
@@ -186,6 +203,7 @@ class GenRequest(models.Model):
 
     # Финансы
     cost = models.DecimalField(max_digits=6, decimal_places=2, default=Decimal('0.00'))
+    cost_usd = models.DecimalField(max_digits=10, decimal_places=4, default=Decimal('0.0000'))
     transaction = models.ForeignKey('Transaction', null=True, blank=True, on_delete=models.SET_NULL,
                                     related_name='generation')
 

@@ -20,6 +20,7 @@ from botapp.keyboards import (
 from botapp.models import TgUser, AIModel
 from botapp.business.generation import GenerationService
 from botapp.business.balance import BalanceService, InsufficientBalanceError
+from botapp.business.pricing import get_base_price_tokens
 from botapp.tasks import generate_image_task
 from asgiref.sync import sync_to_async
 import uuid
@@ -82,13 +83,14 @@ async def select_image_model(callback: CallbackQuery, state: FSMContext):
     # Проверяем баланс пользователя
     user = await sync_to_async(TgUser.objects.get)(chat_id=callback.from_user.id)
     balance = await sync_to_async(BalanceService.get_balance)(user)
+    model_cost = get_base_price_tokens(model)
 
-    if balance < model.price:
+    if balance < model_cost:
         await callback.message.answer(
             f"❌ **Недостаточно токенов**\n\n"
             f"Ваш баланс: ⚡ {balance:.2f} токенов\n"
-            f"Стоимость генерации: ⚡ {model.price} токенов\n\n"
-            f"Необходимо пополнить баланс на ⚡ {model.price - balance:.2f} токенов",
+            f"Стоимость генерации: ⚡ {model_cost:.2f} токенов\n\n"
+            f"Необходимо пополнить баланс на ⚡ {model_cost - balance:.2f} токенов",
             parse_mode="Markdown",
             reply_markup=get_main_menu_inline_keyboard()
         )
@@ -101,7 +103,7 @@ async def select_image_model(callback: CallbackQuery, state: FSMContext):
         model_id=model.id,
         model_name=model.display_name,
         model_provider=model.provider,
-        model_price=float(model.price),
+        model_price=float(model_cost),
         max_images=model.max_input_images,
         supports_images=model.supports_image_input,
         image_mode=None,

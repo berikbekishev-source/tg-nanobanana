@@ -3,8 +3,12 @@ from __future__ import annotations
 
 from decimal import Decimal, ROUND_HALF_UP
 from functools import lru_cache
+from typing import Dict, Optional, Tuple, TYPE_CHECKING
 
 from django.apps import apps
+
+if TYPE_CHECKING:  # pragma: no cover
+    from botapp.models import AIModel
 
 TOKEN_QUANT = Decimal('0.01')
 
@@ -34,3 +38,77 @@ def usd_to_tokens(amount_usd: Decimal | float | int) -> Decimal:
     settings = get_pricing_settings()
     tokens = amount * settings.usd_to_token_rate
     return tokens.quantize(TOKEN_QUANT, rounding=ROUND_HALF_UP)
+
+
+def usd_to_retail_tokens(amount_usd: Decimal | float | int) -> Decimal:
+    """Переводит себестоимость в USD в пользовательскую цену (с наценкой и курсом)."""
+    amount = Decimal(str(amount_usd))
+    settings = get_pricing_settings()
+    tokens = amount * settings.usd_to_token_rate * settings.markup_multiplier
+    return tokens.quantize(TOKEN_QUANT, rounding=ROUND_HALF_UP)
+
+
+def _resolve_duration(
+    ai_model: 'AIModel',
+    duration: Optional[int],
+    params: Optional[Dict[str, object]],
+) -> int:
+    if duration:
+        return int(duration)
+    if params and params.get("duration"):
+        try:
+            return int(params["duration"])
+        except (TypeError, ValueError):
+            pass
+    defaults = ai_model.default_params or {}
+    if defaults.get("duration"):
+        try:
+            return int(defaults["duration"])
+        except (TypeError, ValueError):
+            pass
+    return 1
+
+
+def compute_seb(
+    ai_model: 'AIModel',
+    *,
+    quantity: int = 1,
+    duration: Optional[int] = None,
+    params: Optional[Dict[str, object]] = None,
+) -> Decimal:
+    """Возвращает себестоимость в USD для конкретного запроса."""
+    base_cost = ai_model.base_cost_usd or ai_model.unit_cost_usd or Decimal('0.0000')
+    cost_unit = ai_model.cost_unit or ai_model.CostUnit.GENERATION
+
+    if cost_unit == ai_model.CostUnit.IMAGE:
+        units = Decimal(max(1, quantity))
+    elif cost_unit == ai_model.CostUnit.SECOND:
+        units = Decimal(max(1, _resolve_duration(ai_model, duration, params)))
+    else:
+        units = Decimal('1')
+
+    seb = (base_cost * units).quantize(Decimal('0.0001'), rounding=ROUND_HALF_UP)
+    return seb
+
+
+def calculate_request_cost(
+    ai_model: 'AIModel',
+    *,
+    quantity: int = 1,
+    duration: Optional[int] = None,
+    params: Optional[Dict[str, object]] = None,
+) -> Tuple[Decimal, Decimal]:
+    """Возвращает пару (себестоимость USD, цена в токенах) для запроса."""
+    seb = compute_seb(ai_model, quantity=quantity, duration=duration, params=params)
+    tokens = usd_to_retail_tokens(seb)
+    return seb, tokens
+
+
+def get_base_price_tokens(ai_model: 'AIModel') -> Decimal:
+    """Цена в токенах за базовую единицу (1 изображение или 1 секунду)."""
+    seb = compute_seb(ai_model, quantity=1)
+    return usd_to_retail_tokens(seb)
+
+
+def format_price_for_display(tokens: Decimal) -> str:
+    return f"⚡{tokens.quantize(TOKEN_QUANT):.2f}"

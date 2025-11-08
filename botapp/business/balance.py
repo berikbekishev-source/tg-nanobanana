@@ -228,14 +228,22 @@ class BalanceService:
 
     @staticmethod
     @db_transaction.atomic
-    def charge_for_generation(user: TgUser, ai_model: AIModel, quantity: int = 1) -> Transaction:
+    def charge_for_generation(
+        user: TgUser,
+        ai_model: AIModel,
+        quantity: int = 1,
+        total_cost_tokens: Optional[Decimal] = None,
+    ) -> Transaction:
         """
         Списывает средства за генерацию и создаёт запись транзакции.
         """
         if quantity <= 0:
             raise ValueError("quantity должен быть положительным")
 
-        total_cost = (ai_model.price * quantity).quantize(Decimal("0.01"))
+        if total_cost_tokens is not None:
+            total_cost = total_cost_tokens.quantize(Decimal("0.01"))
+        else:
+            total_cost = (ai_model.price * quantity).quantize(Decimal("0.01"))
         balance = BalanceService.ensure_balance(user, for_update=True)
 
         if balance.balance < total_cost:
@@ -419,13 +427,22 @@ class BalanceService:
     # --------------------------------------------------------------------- #
 
     @staticmethod
-    def check_can_generate(user: TgUser, ai_model: AIModel, *, quantity: int = 1) -> Tuple[bool, str]:
+    def check_can_generate(
+        user: TgUser,
+        ai_model: AIModel,
+        *,
+        quantity: int = 1,
+        total_cost_tokens: Optional[Decimal] = None,
+    ) -> Tuple[bool, str]:
         """Проверка остатка средств и лимитов модели перед генерацией."""
         if quantity <= 0:
             return False, "Количество генераций должно быть больше 0"
 
         balance = BalanceService.ensure_balance(user)
-        total_cost = (ai_model.price * quantity).quantize(Decimal("0.01"))
+        if total_cost_tokens is not None:
+            total_cost = total_cost_tokens.quantize(Decimal("0.01"))
+        else:
+            total_cost = (ai_model.price * quantity).quantize(Decimal("0.01"))
 
         if balance.balance < total_cost:
             needed = total_cost - balance.balance

@@ -20,6 +20,7 @@ from botapp.keyboards import (
 from botapp.models import TgUser, AIModel, GenRequest
 from botapp.business.generation import GenerationService
 from botapp.business.balance import BalanceService, InsufficientBalanceError
+from botapp.business.pricing import get_base_price_tokens
 from botapp.tasks import generate_video_task, extend_video_task
 from botapp.providers.video.openai_sora import resolve_sora_dimensions
 from asgiref.sync import sync_to_async
@@ -199,12 +200,14 @@ async def select_video_model(callback: CallbackQuery, state: FSMContext):
     user = await sync_to_async(TgUser.objects.get)(chat_id=callback.from_user.id)
     balance = await sync_to_async(BalanceService.get_balance)(user)
 
-    if balance < model.price:
+    model_cost = get_base_price_tokens(model)
+
+    if balance < model_cost:
         await callback.message.answer(
             f"❌ **Недостаточно токенов**\n\n"
             f"Ваш баланс: ⚡ {balance:.2f} токенов\n"
-            f"Стоимость генерации: ⚡ {model.price} токенов\n\n"
-            f"Необходимо пополнить баланс на ⚡ {model.price - balance:.2f} токенов",
+            f"Стоимость генерации: ⚡ {model_cost:.2f} токенов\n\n"
+            f"Необходимо пополнить баланс на ⚡ {model_cost - balance:.2f} токенов",
             parse_mode="Markdown",
             reply_markup=get_main_menu_inline_keyboard()
         )
@@ -233,7 +236,7 @@ async def select_video_model(callback: CallbackQuery, state: FSMContext):
 
     info_message = (
         f"Модель: {model.name}.\n"
-        f"Стоимость: ⚡{model.price:.2f} токенов.\n"
+        f"Стоимость: ⚡{model_cost:.2f} токенов.\n"
         f"Генерация видео в качестве {default_resolution} и до {default_duration} секунд.\n"
         "Для генерации в режиме txt2video отправьте текстовый промт.\n"
         "Для генерации в режиме img2video загрузите изображение и в описании напишите текстовый промт."
@@ -688,7 +691,8 @@ async def prompt_video_extension(callback: CallbackQuery, state: FSMContext):
         return
 
     aspect_ratio = gen_request.aspect_ratio or gen_request.generation_params.get("aspect_ratio") or "не указан"
-    cost_text = f"⚡ Стоимость продления: {model.price:.2f} токенов."
+    base_price = get_base_price_tokens(model)
+    cost_text = f"⚡ Стоимость продления: {base_price:.2f} токенов."
 
     await state.update_data(
         extend_parent_request_id=gen_request.id,

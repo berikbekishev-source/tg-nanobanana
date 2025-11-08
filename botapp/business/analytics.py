@@ -20,6 +20,7 @@ from ..models import (
     AIModel,
     UserBalance
 )
+from .pricing import get_base_price_tokens
 
 
 class AnalyticsService:
@@ -396,13 +397,14 @@ class AnalyticsService:
             )
 
             # Добавляем информацию о модели
+            base_price = get_base_price_tokens(model)
             stats.update({
                 'model_name': model.display_name,
                 'model_slug': model.slug,
                 'model_type': model.type,
-                'price': float(model.price),
+                'price': float(base_price),
                 'provider': model.provider,
-                'roi': float(stats['total_revenue'] or 0) / float(model.price) if model.price > 0 else 0
+                'roi': float(stats['total_revenue'] or 0) / float(base_price) if base_price > 0 else 0
             })
 
             comparison.append(stats)

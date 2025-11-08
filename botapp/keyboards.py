@@ -10,6 +10,7 @@ from aiogram.types import (
 )
 from aiogram.utils.keyboard import ReplyKeyboardBuilder, InlineKeyboardBuilder
 from botapp.models import AIModel
+from botapp.business.pricing import get_base_price_tokens
 
 
 # === ГЛАВНОЕ МЕНЮ ===
@@ -231,9 +232,10 @@ def get_model_info_message(model: AIModel) -> str:
     Теперь берет данные из модели в БД вместо if-else
     """
     description = model.short_description or model.description
+    base_price = get_base_price_tokens(model)
     message = (
         f"{model.display_name}\n"
-        f"Стоимость: ⚡{model.price} токенов\n"
+        f"Стоимость от ⚡{base_price:.2f} токенов\n"
         f"{description}\n\n"
         "Выберите режим генерации ниже."
     )
@@ -256,7 +258,8 @@ def get_prices_info() -> str:
     video_models = AIModel.objects.filter(is_active=True, type='video').order_by('order', 'price')
 
     def _format_model(model: AIModel) -> str:
-        return f"{model.display_name} — ⚡{model.price:.2f} токенов"
+        base_price = get_base_price_tokens(model)
+        return f"{model.display_name} — ⚡{base_price:.2f} токенов"
 
     parts: List[str] = ["💰 **Текущие цены:**", ""]
 

@@ -67,7 +67,7 @@ class UserBalanceAdmin(admin.ModelAdmin):
 
 @admin.register(AIModel)
 class AIModelAdmin(admin.ModelAdmin):
-    list_display = ('slug', 'display_name', 'type', 'provider', 'unit_cost_usd', 'price',
+    list_display = ('slug', 'display_name', 'type', 'provider', 'cost_unit', 'base_cost_usd', 'price',
                     'is_active', 'is_beta', 'order', 'total_generations')
     search_fields = ('slug', 'name', 'display_name', 'description')
     list_filter = ('type', 'provider', 'is_active', 'is_beta')
@@ -89,7 +89,7 @@ class AIModelAdmin(admin.ModelAdmin):
             'fields': ('description', 'short_description')
         }),
         ('Pricing', {
-            'fields': ('unit_cost_usd', 'price')
+            'fields': ('cost_unit', 'base_cost_usd', 'unit_cost_usd', 'price')
         }),
         ('Technical Settings', {
             'fields': ('api_endpoint', 'api_model_name', 'max_prompt_length',
@@ -145,7 +145,7 @@ class PricingSettingsAdmin(admin.ModelAdmin):
 @admin.register(GenRequest)
 class GenRequestAdmin(admin.ModelAdmin):
     list_display = ('id', 'user', 'chat_id', 'generation_type', 'ai_model_name',
-                    'status', 'cost', 'quantity', 'created_at')
+                    'status', 'cost', 'cost_usd', 'quantity', 'created_at')
     search_fields = ('chat_id', 'prompt', 'run_code', 'user__username')
     list_filter = ('status', 'generation_type', 'ai_model', 'created_at')
     readonly_fields = (
@@ -174,7 +174,7 @@ class GenRequestAdmin(admin.ModelAdmin):
             'fields': ('quantity', 'duration', 'video_resolution', 'aspect_ratio')
         }),
         ('Financial', {
-            'fields': ('cost', 'transaction')
+            'fields': ('cost', 'cost_usd', 'transaction')
         }),
         ('Provider', {
             'fields': ('provider_job_id', 'provider_metadata', 'source_media')
