@@ -45,6 +45,58 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
+        migrations.RunSQL(
+            sql="""
+            DROP TRIGGER IF EXISTS set_ai_model_price ON botapp_aimodel;
+            DROP FUNCTION IF EXISTS public.trg_set_ai_model_price();
+            DROP TRIGGER IF EXISTS refresh_ai_model_prices ON pricing_settings;
+            DROP FUNCTION IF EXISTS public.trg_recalc_models_on_pricing();
+            """,
+            reverse_sql="""
+            CREATE OR REPLACE FUNCTION public.trg_set_ai_model_price()
+            RETURNS trigger AS $$
+            DECLARE
+                v_rate numeric;
+                v_markup numeric;
+            BEGIN
+                SELECT usd_to_token_rate, markup_multiplier
+                INTO v_rate, v_markup
+                FROM pricing_settings
+                ORDER BY id
+                LIMIT 1;
+
+                IF v_rate IS NULL OR v_markup IS NULL THEN
+                    RAISE EXCEPTION 'Pricing settings are not configured';
+                END IF;
+
+                NEW.price = ROUND(COALESCE(NEW.unit_cost_usd, 0) * v_rate * v_markup, 2);
+                RETURN NEW;
+            END;
+            $$ LANGUAGE plpgsql;
+
+            DROP TRIGGER IF EXISTS set_ai_model_price ON botapp_aimodel;
+            CREATE TRIGGER set_ai_model_price
+            BEFORE INSERT OR UPDATE OF unit_cost_usd
+            ON botapp_aimodel
+            FOR EACH ROW
+            EXECUTE FUNCTION public.trg_set_ai_model_price();
+
+            CREATE OR REPLACE FUNCTION public.trg_recalc_models_on_pricing()
+            RETURNS trigger AS $$
+            BEGIN
+                UPDATE botapp_aimodel
+                SET price = ROUND(unit_cost_usd * NEW.usd_to_token_rate * NEW.markup_multiplier, 2);
+                RETURN NEW;
+            END;
+            $$ LANGUAGE plpgsql;
+
+            DROP TRIGGER IF EXISTS refresh_ai_model_prices ON pricing_settings;
+            CREATE TRIGGER refresh_ai_model_prices
+            AFTER UPDATE ON pricing_settings
+            FOR EACH ROW
+            EXECUTE FUNCTION public.trg_recalc_models_on_pricing();
+            """,
+        ),
         migrations.AddField(
             model_name='aimodel',
             name='base_cost_usd',
