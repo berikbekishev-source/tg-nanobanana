@@ -6,6 +6,7 @@ class BotappConfig(AppConfig):
     name = "botapp"
 
     def ready(self):
+        from . import signals  # noqa: F401
         try:
             from .telegram import dp  # noqa
             from .handlers import main_router  # noqa

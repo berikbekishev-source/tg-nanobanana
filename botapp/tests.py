@@ -8,7 +8,7 @@ from PIL import Image
 
 from botapp.business.balance import BalanceService, InsufficientBalanceError
 from botapp.business.generation import GenerationService
-from botapp.models import AIModel, TgUser, Transaction, UserBalance
+from botapp.models import AIModel, PricingSettings, TgUser, Transaction, UserBalance
 from botapp.providers.video.base import VideoGenerationError
 from botapp.providers.video.openai_sora import OpenAISoraProvider
 from botapp.media_utils import detect_reference_mime
@@ -19,6 +19,12 @@ from botapp.services import (
     generate_images_for_model,
     OPENAI_IMAGE_EDIT_URL,
 )
+
+
+def _cost_from_price(price_tokens: Decimal | str) -> Decimal:
+    settings = PricingSettings.objects.order_by('id').first()
+    factor = settings.usd_to_token_rate * settings.markup_multiplier
+    return (Decimal(price_tokens) / factor).quantize(Decimal('0.0001'))
 
 
 class BalanceServiceTests(TestCase):
@@ -38,6 +44,7 @@ class BalanceServiceTests(TestCase):
             description="Test description",
             short_description="Short",
             price=Decimal("2.50"),
+            unit_cost_usd=_cost_from_price(Decimal("2.50")),
             api_endpoint="https://example.com",
             api_model_name="test-model",
             max_prompt_length=1000,
@@ -87,6 +94,7 @@ class BalanceServiceTests(TestCase):
             description="Expensive model",
             short_description="Expensive",
             price=Decimal("10.00"),
+            unit_cost_usd=_cost_from_price(Decimal("10.00")),
             api_endpoint="https://example.com",
             api_model_name="expensive",
             max_prompt_length=1000,
@@ -160,6 +168,7 @@ class GenerationServiceTests(TestCase):
             description="",
             short_description="",
             price=Decimal("19.00"),
+            unit_cost_usd=_cost_from_price(Decimal("19.00")),
             api_endpoint="",
             api_model_name="veo-3.1-fast",
             max_prompt_length=1000,
@@ -375,6 +384,7 @@ class OpenAIImageGenerationTests(TestCase):
             description="",
             short_description="",
             price=Decimal("2.50"),
+            unit_cost_usd=_cost_from_price(Decimal("2.50")),
             api_endpoint="https://api.openai.com/v1/images",
             api_model_name="gpt-image-1",
             max_prompt_length=1000,
@@ -488,6 +498,7 @@ class OpenAIImageGenerationTests(TestCase):
             description="",
             short_description="",
             price=Decimal("1.00"),
+            unit_cost_usd=_cost_from_price(Decimal("1.00")),
             api_endpoint="https://example.com",
             api_model_name="gemini-image",
             max_prompt_length=1000,
@@ -520,6 +531,7 @@ class OpenAIImageGenerationTests(TestCase):
             description="",
             short_description="",
             price=Decimal("5.00"),
+            unit_cost_usd=_cost_from_price(Decimal("5.00")),
             api_endpoint="https://api.kie.ai",
             api_model_name="midjourney/v6-text-to-image",
             max_prompt_length=2500,

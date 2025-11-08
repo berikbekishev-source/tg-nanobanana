@@ -2,7 +2,8 @@ from ninja import NinjaAPI, Schema
 from django.http import JsonResponse
 from django.conf import settings
 from django.utils import timezone
-from botapp.models import TgUser, UserBalance, Transaction
+from botapp.models import TgUser, UserBalance, Transaction, TokenPackage
+from botapp.business.pricing import usd_to_tokens
 from decimal import Decimal
 import hashlib
 import hmac
@@ -121,20 +122,30 @@ def create_payment(request, data: CreatePaymentRequest):
                 # user = None
 
         # Валидация суммы и кредитов
-        if data.credits not in [100, 200, 500, 1000]:
-            logger.warning(f"Invalid credits amount: {data.credits}")
+        amount_decimal = Decimal(str(data.amount)).quantize(Decimal('0.01'))
+        package = TokenPackage.objects.filter(
+            is_active=True,
+            price_usd=amount_decimal,
+        ).order_by('sort_order').first()
+
+        if not package:
+            logger.warning(f"No token package matches amount {amount_decimal}")
             return PaymentResponse(
                 success=False,
-                error="Некорректное количество кредитов"
+                error="Пакет с такой суммой не найден. Обновите приложение и попробуйте снова."
             )
 
-        # Проверка соответствия цены
-        expected_price = data.credits * 0.05  # $5 за 100 кредитов
-        if abs(data.amount - expected_price) > 0.01:
-            logger.warning(f"Price mismatch: expected {expected_price}, got {data.amount}")
+        expected_credits = int(package.credits)
+        if data.credits != expected_credits:
+            logger.warning(
+                "Package mismatch: expected %s credits for $%s, got %s",
+                expected_credits,
+                amount_decimal,
+                data.credits,
+            )
             return PaymentResponse(
                 success=False,
-                error="Некорректная сумма платежа"
+                error="Количество токенов устарело. Обновите приложение и попробуйте снова."
             )
 
         # ВРЕМЕННО: Пропускаем проверку пользователя для тестирования
@@ -154,7 +165,7 @@ def create_payment(request, data: CreatePaymentRequest):
                     type='deposit',
                     amount=Decimal(str(data.amount)),
                     balance_after=user_balance.balance,
-                    description=f"Пополнение {data.credits} кредитов через {data.payment_method}",
+                    description=f"Пополнение {expected_credits} кредитов через {data.payment_method}",
                     payment_method=data.payment_method,
                     is_pending=True,
                     is_completed=False
@@ -169,7 +180,7 @@ def create_payment(request, data: CreatePaymentRequest):
             transaction_id = str(uuid.uuid4())[:8]
 
         # Получаем URL для оплаты
-        logger.info(f"Getting payment URL for credits={data.credits}, transaction_id={transaction_id}")
+        logger.info(f"Getting payment URL for credits={expected_credits}, transaction_id={transaction_id}")
         preferred_method = None
         if isinstance(data.payment_method, str):
             candidate = data.payment_method.upper()
@@ -181,12 +192,12 @@ def create_payment(request, data: CreatePaymentRequest):
             preferred_method = candidate
 
         payment_result = get_payment_url(
-            credits=data.credits,
+            credits=expected_credits,
             transaction_id=transaction_id,
             user_email=data.email,
             payment_method=preferred_method,
             custom_fields={
-                "credits": data.credits,
+                "credits": expected_credits,
                 "transaction_id": str(transaction_id),
             }
         )
@@ -198,7 +209,7 @@ def create_payment(request, data: CreatePaymentRequest):
                 "success": False,
                 "payment_url": None,
                 "payment_id": None,
-                "error": f"Платежная ссылка для {data.credits} токенов еще не создана в Lava.top"
+                "error": f"Платежная ссылка для {expected_credits} токенов еще не создана в Lava.top"
             }
 
         if isinstance(payment_result, dict):
@@ -412,8 +423,8 @@ def lava_webhook(request):
                     user=trans.user
                 )
 
-                # Начисляем токены (курс: $0.05 за токен = 20 токенов за $1)
-                credits_amount = trans.amount * 20  # Конвертируем USD в токены
+                # Начисляем токены по текущему курсу
+                credits_amount = usd_to_tokens(trans.amount)
                 user_balance.balance += credits_amount
                 user_balance.total_deposited += credits_amount
                 user_balance.save()

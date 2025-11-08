@@ -80,6 +80,12 @@ class AIModel(models.Model):
     description = models.TextField()
     short_description = models.CharField(max_length=255)  # Краткое описание для меню
     price = models.DecimalField(max_digits=6, decimal_places=2, validators=[MinValueValidator(Decimal('0.00'))])
+    unit_cost_usd = models.DecimalField(
+        max_digits=8,
+        decimal_places=4,
+        default=Decimal('0.0000'),
+        help_text="Себестоимость генерации в долларах США",
+    )
 
     # Технические параметры
     api_endpoint = models.CharField(max_length=255, blank=True)
@@ -352,3 +358,50 @@ class Promocode(models.Model):
 
     def __str__(self):
         return f"Promo: {self.code} ({self.value})"
+
+
+class PricingSettings(models.Model):
+    """Глобальные настройки курсов и наценки для расчёта прайса."""
+
+    usd_to_token_rate = models.DecimalField(
+        max_digits=8,
+        decimal_places=4,
+        default=Decimal('20.0000'),
+        validators=[MinValueValidator(Decimal('0.0001'))],
+        help_text="Сколько токенов выдаём за 1 доллар США",
+    )
+    markup_multiplier = models.DecimalField(
+        max_digits=6,
+        decimal_places=3,
+        default=Decimal('2.000'),
+        validators=[MinValueValidator(Decimal('0.001'))],
+        help_text="Глобальный коэффициент наценки",
+    )
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Pricing Settings"
+        verbose_name_plural = "Pricing Settings"
+
+    def __str__(self):
+        return f"Курс {self.usd_to_token_rate} токенов за $1 (×{self.markup_multiplier})"
+
+
+class TokenPackage(models.Model):
+    """Пакеты токенов для внешних платёжных каналов (миниапп, Stars, Lava)."""
+
+    code = models.CharField(max_length=100, primary_key=True)
+    title = models.CharField(max_length=255)
+    credits = models.DecimalField(max_digits=12, decimal_places=2)
+    price_usd = models.DecimalField(max_digits=10, decimal_places=2)
+    stars_amount = models.IntegerField(default=0)
+    is_active = models.BooleanField(default=True)
+    sort_order = models.IntegerField(default=100)
+
+    class Meta:
+        db_table = 'token_packages'
+        managed = False
+        ordering = ['sort_order', 'price_usd']
+
+    def __str__(self):
+        return f"{self.title} — ${self.price_usd}"

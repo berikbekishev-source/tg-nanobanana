@@ -10,6 +10,8 @@ from typing import Dict, Optional
 from django.conf import settings
 from decimal import Decimal
 
+from botapp.business.pricing import usd_to_tokens
+
 logger = logging.getLogger(__name__)
 
 
@@ -152,8 +154,8 @@ def process_webhook(payload: Dict, signature: str = None) -> Dict:
     if status in ['success', 'paid', 'completed']:
         logger.info(f"Payment {payment_data['order_id']} completed")
 
-        # Calculate tokens (20 tokens per dollar)
-        tokens = int(payment_data['amount'] * 20)
+        # Calculate tokens based on current rate
+        tokens = int(usd_to_tokens(Decimal(str(payment_data['amount']))))
 
         return {
             'success': True,

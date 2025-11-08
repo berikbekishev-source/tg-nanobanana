@@ -3,7 +3,7 @@ from django.utils.html import format_html
 from django.db.models import Count, Sum
 from .models import (
     TgUser, GenRequest, UserBalance, AIModel,
-    Transaction, UserSettings, Promocode
+    Transaction, UserSettings, Promocode, PricingSettings
 )
 
 
@@ -67,13 +67,19 @@ class UserBalanceAdmin(admin.ModelAdmin):
 
 @admin.register(AIModel)
 class AIModelAdmin(admin.ModelAdmin):
-    list_display = ('slug', 'display_name', 'type', 'provider', 'price',
+    list_display = ('slug', 'display_name', 'type', 'provider', 'unit_cost_usd', 'price',
                     'is_active', 'is_beta', 'order', 'total_generations')
     search_fields = ('slug', 'name', 'display_name', 'description')
     list_filter = ('type', 'provider', 'is_active', 'is_beta')
     ordering = ('order', 'name')
-    readonly_fields = ('total_generations', 'total_errors', 'average_generation_time',
-                      'created_at', 'updated_at')
+    readonly_fields = (
+        'price',
+        'total_generations',
+        'total_errors',
+        'average_generation_time',
+        'created_at',
+        'updated_at',
+    )
 
     fieldsets = (
         ('Basic Info', {
@@ -83,7 +89,7 @@ class AIModelAdmin(admin.ModelAdmin):
             'fields': ('description', 'short_description')
         }),
         ('Pricing', {
-            'fields': ('price',)
+            'fields': ('unit_cost_usd', 'price')
         }),
         ('Technical Settings', {
             'fields': ('api_endpoint', 'api_model_name', 'max_prompt_length',
@@ -117,6 +123,23 @@ class AIModelAdmin(admin.ModelAdmin):
         updated = queryset.update(is_active=False)
         self.message_user(request, f'{updated} model(s) deactivated.')
     deactivate_models.short_description = "Deactivate selected models"
+
+
+@admin.register(PricingSettings)
+class PricingSettingsAdmin(admin.ModelAdmin):
+    list_display = ('usd_to_token_rate', 'markup_multiplier', 'updated_at')
+    readonly_fields = ('updated_at',)
+
+    fieldsets = (
+        (None, {
+            'fields': ('usd_to_token_rate', 'markup_multiplier', 'updated_at')
+        }),
+    )
+
+    def has_add_permission(self, request):
+        if PricingSettings.objects.exists():
+            return False
+        return super().has_add_permission(request)
 
 
 @admin.register(GenRequest)
