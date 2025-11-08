@@ -296,35 +296,19 @@ def get_prices_info(balance: Decimal) -> str:
     lines.append("💰 Текущие цены:")
     lines.append("")
 
+    unit_labels = {
+        AIModel.CostUnit.SECOND: "за 1 сек.",
+        AIModel.CostUnit.IMAGE: "за 1 изображение",
+        AIModel.CostUnit.GENERATION: "за генерацию",
+    }
     available_models = {m.slug: m for m in AIModel.objects.filter(is_active=True)}
     for title, slug in MODEL_PRICE_PRESETS:
         model = available_models.get(slug)
         if not model:
             continue
         base_price = _get_unit_price_tokens(model)
-        if model.type == 'image':
-            section = "Изображения"
-        else:
-            section = "Видео"
-
-        # Вставляем заголовок секции или пустую строку в зависимости от структуры
-        if f"**{section}:**" not in lines:
-            if section == "Видео" and "**Изображения:**" not in lines:
-                lines.append("**Изображения:**")
-                lines.append("_Нет активных моделей_")
-                lines.append("")
-            lines.append(f"**{section}:**")
-
-        lines.append(f"{title} — ⚡{base_price:.2f} токенов")
-
-    # Гарантируем, что обе секции присутствуют
-    if "**Изображения:**" not in lines:
-        lines.append("**Изображения:**")
-        lines.append("_Нет активных моделей_")
-    if "**Видео:**" not in lines:
-        lines.append("")
-        lines.append("**Видео:**")
-        lines.append("_Нет активных моделей_")
+        suffix = unit_labels.get(model.cost_unit, "за генерацию")
+        lines.append(f"{title} — ⚡{base_price:.2f} токенов {suffix}")
 
     lines.append("")
     lines.append(
