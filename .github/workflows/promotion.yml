@@ -1,0 +1,27 @@
+name: Promote staging to main (manual)
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: 'Подтверждение человека на PR staging → main'
+        required: true
+        type: choice
+        options:
+          - yes
+          - no
+
+jobs:
+  block_if_no:
+    if: ${{ github.event.inputs.confirmation != 'yes' }}
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          echo '❌ Нет подтверждения, вручную создайте PR позже.'
+          exit 1
+  info_when_yes:
+    if: ${{ github.event.inputs.confirmation == 'yes' }}
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          echo '✅ Человек дал добро. Создайте PR staging → main вручную.'
