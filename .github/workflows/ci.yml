@@ -56,7 +56,7 @@ jobs:
     steps:
       - name: Wait for staging deploy and check health
         env:
-          BASE_URL: ${{ secrets.STAGING_BASE_URL }}
+          BASE_URL: ${{ vars.STAGING_BASE_URL }}
         run: |
           if [ -z "$BASE_URL" ]; then
             echo "STAGING_BASE_URL secret is not set"; exit 1; fi
@@ -76,7 +76,7 @@ jobs:
     steps:
       - name: Check production health
         env:
-          BASE_URL: ${{ secrets.PRODUCTION_BASE_URL }}
+          BASE_URL: ${{ vars.PRODUCTION_BASE_URL }}
         run: |
           if [ -z "$BASE_URL" ]; then
             echo "PRODUCTION_BASE_URL secret is not set"; exit 1; fi
