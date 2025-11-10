@@ -4,23 +4,14 @@ on:
   push:
     branches: [ "main", "staging" ]
   workflow_dispatch:
-    inputs:
-      enforce_admins:
-        description: 'Enforce admins'
-        type: boolean
-        default: true
-      require_reviews:
-        description: 'Required approving reviews count'
-        type: number
-        default: 1
-      require_linear_history:
-        description: 'Require linear history'
-        type: boolean
-        default: true
 
 jobs:
   protect:
     runs-on: ubuntu-latest
+    env:
+      ENFORCE_ADMINS: true
+      REVIEWS: 1
+      REQUIRE_LINEAR_HISTORY: true
     steps:
       - name: Validate token
         run: |
@@ -53,9 +44,9 @@ PY
           GH_TOKEN: ${{ secrets.ADMIN_GH_TOKEN }}
           OWNER: ${{ github.repository_owner }}
           REPO: ${{ github.event.repository.name }}
-          ENFORCE_ADMINS: ${{ inputs.enforce_admins }}
-          REVIEWS: ${{ inputs.require_reviews }}
-          REQUIRE_LINEAR: ${{ inputs.require_linear_history }}
+          ENFORCE_ADMINS: ${{ env.ENFORCE_ADMINS }}
+          REVIEWS: ${{ env.REVIEWS }}
+          REQUIRE_LINEAR: ${{ env.REQUIRE_LINEAR_HISTORY }}
         run: |
           set -euo pipefail
           API="https://api.github.com"; HDR=( -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" )
@@ -83,9 +74,9 @@ JSON
           GH_TOKEN: ${{ secrets.ADMIN_GH_TOKEN }}
           OWNER: ${{ github.repository_owner }}
           REPO: ${{ github.event.repository.name }}
-          ENFORCE_ADMINS: ${{ inputs.enforce_admins }}
-          REVIEWS: ${{ inputs.require_reviews }}
-          REQUIRE_LINEAR: ${{ inputs.require_linear_history }}
+          ENFORCE_ADMINS: ${{ env.ENFORCE_ADMINS }}
+          REVIEWS: ${{ env.REVIEWS }}
+          REQUIRE_LINEAR: ${{ env.REQUIRE_LINEAR_HISTORY }}
         run: |
           set -euo pipefail
           API="https://api.github.com"; HDR=( -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" )
