@@ -1,6 +1,8 @@
 name: Setup Branch Protection
 
 on:
+  push:
+    branches: [ "main", "staging" ]
   workflow_dispatch:
     inputs:
       enforce_admins:
@@ -106,4 +108,3 @@ JSON
           }
 JSON
           curl -fsSL -X PUT "${HDR[@]}" -d @body.json "$API/repos/$OWNER/$REPO/branches/staging/protection" >/dev/null
-
