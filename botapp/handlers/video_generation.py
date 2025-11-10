@@ -237,9 +237,7 @@ async def select_video_model(callback: CallbackQuery, state: FSMContext):
     info_message = (
         f"Модель: {model.name}.\n"
         f"Стоимость: ⚡{model_cost:.2f} токенов.\n"
-        f"Генерация видео в качестве {default_resolution} и до {default_duration} секунд.\n"
-        "Для генерации в режиме txt2video отправьте текстовый промт.\n"
-        "Для генерации в режиме img2video загрузите изображение и в описании напишите текстовый промт."
+        f"Генерация видео в качестве {default_resolution} и до {default_duration} секунд."
     )
     if duration_options:
         options_text = ", ".join(f"{value} сек" for value in duration_options)

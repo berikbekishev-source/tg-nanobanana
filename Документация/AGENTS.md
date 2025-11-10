@@ -63,6 +63,7 @@
   2. Сделайте коммит с осмысленным сообщением.
   3. Выполните `git push origin main`.
 - Только после пуша на GitHub произойдёт продакшн-деплой на Railway. Не обходите этот процесс.
+- Personal access tokens (classic) публикуем **только** в Secrets GitHub (`ADMIN_GH_TOKEN`). Хранить значение в репозитории запрещено.
 
 ## Общие рекомендации
 
@@ -803,6 +804,57 @@ railway redeploy --service web --yes
 - Railway Secrets для чувствительных данных
 
 ---
+
+## Доступ к GitHub для агентов
+
+Эта секция описывает, как ИИ‑агенты получают и используют доступ к управлению репозиторием GitHub (ветки, PR, защита веток, автодеплой).
+
+### Модель доступа
+
+- Используется отдельный бот‑аккаунт GitHub с Fine‑grained PAT.
+- Токен бота хранится в секретах репозитория под именем `ADMIN_GH_TOKEN` и доступен только в GitHub Actions.
+- Все операции выполняются через GitHub Actions (авто‑PR, авто‑ревью, авто‑мерж, защита веток, установка вебхуков).
+
+### Права PAT (fine‑grained)
+
+- Repository access: только для репозитория `tg-nanobanana`.
+- Permissions (Repository): Administration (RW), Contents (RW), Pull requests (RW), Actions (RW), Workflows (RW).
+
+### Обязательные настройки репозитория
+
+- Settings → Actions → General:
+  - Workflow permissions: Read and write
+  - Allow GitHub Actions to create and approve pull requests: On
+- Settings → General: Allow auto‑merge: On
+- Settings → Branches: защита `main` и `staging` (PR only, ≥1 approval, required check: “CI and Smoke / build-test”, linear history, conversation resolution).
+
+### Secrets/Variables репозитория
+
+- Secrets → Actions:
+  - `ADMIN_GH_TOKEN` — PAT бот‑аккаунта
+  - `TELEGRAM_MONITOR_BOT_TOKEN`, `TELEGRAM_MONITOR_CHAT_ID` — Telegram бот/чат для уведомлений post-deploy мониторинга
+  - (опционально для вебхуков) `STAGING_TELEGRAM_BOT_TOKEN`, `STAGING_TG_WEBHOOK_SECRET`, `PROD_TELEGRAM_BOT_TOKEN`, `PROD_TG_WEBHOOK_SECRET`
+- Variables → Actions:
+  - `RAILWAY_API_TOKEN` — токен Railway для автоматизаций
+  - `PRODUCTION_BASE_URL` — домен прод веб‑сервиса
+  - `STAGING_BASE_URL` — домен staging веб‑сервиса
+
+### Воркфлоу, которые уже настроены
+
+- `.github/workflows/ci.yml` — CI + smoke `/api/health` на `staging`/`main`
+- `.github/workflows/setup-branch-protection.yml` — защита веток (push + ручной запуск)
+- `.github/workflows/pr-from-feature.yml` — автосоздание PR → `staging` при пуше в feature‑ветку
+- `.github/workflows/auto-approve.yml` — авто‑ревью (github‑actions bot) и включение auto‑merge при зелёном CI
+- `.github/workflows/set-telegram-webhook.yml` — установка вебхука Telegram
+- `.github/workflows/post-deploy-monitor.yml` — смоки и анализ логов после деплоя `main`; при ошибках откатывает коммит и шлёт уведомления
+
+Агентам достаточно пушить изменения в feature‑ветку — PR в `staging` создаётся и мёрджится автоматически после CI. PR `staging → main` создаём вручную после ручных смоков; дальнейшее ревью/merge обрабатывает `auto-approve.yml`. Для ручной установки вебхука запустите соответствующий workflow из Actions.
+
+### Ротация токена и восстановление
+
+- При замене PAT обновите `ADMIN_GH_TOKEN` в Secrets.
+- Если защита веток блокирует технический PR (например, фиксы CI): временно ослабьте правила через `setup-branch-protection.yml` (Run workflow), замержите фиксы, затем снова примените строгие правила.
+
 
 ## Changelog
 

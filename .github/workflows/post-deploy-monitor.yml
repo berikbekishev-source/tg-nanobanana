@@ -1,0 +1,156 @@
+name: Post Deploy Monitor and Rollback
+
+on:
+  workflow_run:
+    workflows: ["CI and Smoke"]
+    types: [completed]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  monitor:
+    if: ${{ github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main' }}
+    runs-on: ubuntu-latest
+    env:
+      PRODUCTION_BASE_URL: ${{ vars.PRODUCTION_BASE_URL }}
+      RAILWAY_TOKEN: ${{ vars.RAILWAY_API_TOKEN }}
+      RAILWAY_PROJECT_ID: 866bc61a-0ef1-41d1-af53-26784f6e5f06
+      PRODUCTION_ENV_ID: 2eee50d8-402e-44bf-9035-8298efef91bc
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_MONITOR_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_MONITOR_CHAT_ID }}
+      DEPLOY_COMMIT_SHA: ${{ github.event.workflow_run.head_sha }}
+    outputs:
+      fail_reason: ${{ steps.monitor.outputs.fail_reason }}
+    steps:
+      - name: Install Railway CLI
+        run: |
+          curl -sSL https://railway.app/install.sh | sh
+          echo "$HOME/.railway/bin" >> "$GITHUB_PATH"
+
+      - name: Monitor production
+        id: monitor
+        run: |
+          set -euo pipefail
+          if [ -z "$PRODUCTION_BASE_URL" ]; then
+            echo "PRODUCTION_BASE_URL is not configured"
+            echo "fail_reason=PRODUCTION_BASE_URL is missing" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+
+          log_dir="$(pwd)/monitor-logs"
+          mkdir -p "$log_dir"
+
+          fail_reason=""
+          echo "Checking /api/health on $PRODUCTION_BASE_URL"
+          healthy=false
+          for attempt in $(seq 1 30); do
+            code=$(curl -s -o /dev/null -w "%{http_code}" "$PRODUCTION_BASE_URL/api/health" || true)
+            echo "Attempt $attempt: HTTP $code"
+            if [ "$code" = "200" ]; then
+              healthy=true
+              break
+            fi
+            sleep 20
+          done
+          if [ "$healthy" != "true" ]; then
+            fail_reason="Health check failed on production"
+          fi
+
+          services=("web" "worker" "beat")
+          for svc in "${services[@]}"; do
+            logfile="$log_dir/${svc}.log"
+            echo "Fetching last 200 lines for $svc"
+            if railway logs --project "$RAILWAY_PROJECT_ID" --environment "$PRODUCTION_ENV_ID" --service "$svc" --tail 200 > "$logfile"; then
+              if grep -E "Traceback|ERROR" "$logfile" >/dev/null; then
+                if [ -n "$fail_reason" ]; then
+                  fail_reason="$fail_reason; "
+                fi
+                fail_reason="${fail_reason}Detected errors in ${svc} logs"
+                echo "::error::Errors detected in ${svc} logs"
+              fi
+            else
+              if [ -n "$fail_reason" ]; then
+                fail_reason="$fail_reason; "
+              fi
+              fail_reason="${fail_reason}Failed to fetch logs for ${svc}"
+              echo "::warning::Unable to fetch logs for ${svc}"
+            fi
+          done
+
+          if [ -z "$fail_reason" ]; then
+            echo "All checks passed"
+          else
+            echo "fail_reason=$fail_reason" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+          echo "fail_reason=" >> "$GITHUB_OUTPUT"
+
+      - name: Upload monitor logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: post-deploy-monitor-logs
+          path: monitor-logs
+          if-no-files-found: ignore
+
+      - name: Notify Telegram (monitor result)
+        if: always()
+        run: |
+          if [ -z "${TELEGRAM_BOT_TOKEN:-}" ] || [ -z "${TELEGRAM_CHAT_ID:-}" ]; then
+            echo "Telegram secrets are not configured, skipping notification"
+            exit 0
+          fi
+
+          status="${{ job.status }}"
+          fail_reason="${{ steps.monitor.outputs.fail_reason }}"
+          commit="${DEPLOY_COMMIT_SHA:0:7}"
+          if [ "$status" = "success" ]; then
+            text="✅ Продакшн деплой ${commit} прошёл проверки. /api/health отвечает 200, критичных ошибок в логах нет."
+          else
+            text="❌ Продакшн деплой ${commit} не прошёл проверки. Причина: ${fail_reason:-см. логи}. Запускаем автоматический откат."
+          fi
+
+          curl -sS -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            -d chat_id="$TELEGRAM_CHAT_ID" \
+            -d text="$text"
+
+  rollback:
+    if: ${{ needs.monitor.result == 'failure' }}
+    needs: monitor
+    runs-on: ubuntu-latest
+    env:
+      DEPLOY_COMMIT_SHA: ${{ github.event.workflow_run.head_sha }}
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_MONITOR_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_MONITOR_CHAT_ID }}
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          token: ${{ secrets.ADMIN_GH_TOKEN }}
+          fetch-depth: 0
+
+      - name: Configure git author
+        run: |
+          git config user.name "tg-nanobanana-bot"
+          git config user.email "tg-nanobanana-bot@example.com"
+
+      - name: Revert failed deployment commit
+        run: |
+          git revert --no-edit "$DEPLOY_COMMIT_SHA"
+          git push origin HEAD:main
+
+      - name: Notify Telegram (rollback)
+        if: always()
+        run: |
+          if [ -z "${TELEGRAM_BOT_TOKEN:-}" ] || [ -z "${TELEGRAM_CHAT_ID:-}" ]; then
+            echo "Telegram secrets are not configured, skipping notification"
+            exit 0
+          fi
+          reason="${{ needs.monitor.outputs.fail_reason }}"
+          text="↩️ Выполнен автоматический откат коммита ${DEPLOY_COMMIT_SHA}. Причина: ${reason:-см. логи.}"
+          curl -sS -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            -d chat_id="$TELEGRAM_CHAT_ID" \
+            -d text="$text"
