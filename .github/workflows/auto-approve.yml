@@ -35,7 +35,7 @@ jobs:
       - name: Enable auto-merge (squash)
         if: ${{ success() }}
         uses: peter-evans/enable-pull-request-automerge@v3
+        continue-on-error: true
         with:
           token: ${{ secrets.ADMIN_GH_TOKEN }}
           merge-method: squash
-
