@@ -31,11 +31,11 @@ jobs:
         with:
           review-message: "Авто-ревью: базовые проверки пройдены. Ожидаем статус-проверки CI."
         env:
-          GITHUB_TOKEN: ${{ secrets.ADMIN_GH_TOKEN }}
+          GITHUB_TOKEN: ${{ github.token }}
       - name: Enable auto-merge (squash)
         if: ${{ success() }}
         uses: peter-evans/enable-pull-request-automerge@v3
         continue-on-error: true
         with:
-          token: ${{ secrets.ADMIN_GH_TOKEN }}
+          token: ${{ github.token }}
           merge-method: squash

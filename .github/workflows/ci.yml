@@ -6,6 +6,10 @@ on:
   push:
     branches: [ "staging", "main" ]
 
+permissions:
+  contents: read
+  statuses: write
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -22,6 +26,7 @@ jobs:
       TG_WEBHOOK_SECRET: "ci-webhook-secret"
       SUPABASE_URL: "https://example.supabase.co"
       SUPABASE_SERVICE_ROLE_KEY: "ci-key"
+      PUBLIC_BASE_URL: "https://ci.local"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -49,17 +54,41 @@ jobs:
       - name: Build worker image
         run: docker build -f Dockerfile.worker -t tg-nanobanana-worker:ci .
 
+      - name: Report commit status
+        if: always()
+        uses: actions/github-script@v7
+        env:
+          JOB_STATUS: ${{ job.status }}
+        with:
+          script: |
+            const sha = context.eventName === 'pull_request'
+              ? context.payload.pull_request.head.sha
+              : context.sha;
+            const status = (process.env.JOB_STATUS || '').toLowerCase();
+            const map = { success: 'success', failure: 'failure', cancelled: 'error' };
+            const state = map[status] || 'error';
+            const server = process.env.GITHUB_SERVER_URL || 'https://github.com';
+            await github.rest.repos.createCommitStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              sha,
+              state,
+              context: 'CI and Smoke / build-test',
+              description: `Build & Django checks ${status}`,
+              target_url: `${server}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`
+            });
+
   staging-smoke:
-    if: ${{ github.ref == 'refs/heads/staging' && secrets.STAGING_BASE_URL != '' }}
+    if: ${{ github.ref == 'refs/heads/staging' && vars.STAGING_BASE_URL != '' }}
     needs: build-test
     runs-on: ubuntu-latest
     steps:
       - name: Wait for staging deploy and check health
         env:
-          BASE_URL: ${{ secrets.STAGING_BASE_URL }}
+          BASE_URL: ${{ vars.STAGING_BASE_URL }}
         run: |
           if [ -z "$BASE_URL" ]; then
-            echo "STAGING_BASE_URL secret is not set"; exit 1; fi
+            echo "STAGING_BASE_URL variable is not set"; exit 1; fi
           for i in $(seq 1 30); do
             code=$(curl -s -o /dev/null -w "%{http_code}" "$BASE_URL/api/health" || true)
             echo "Attempt $i: HTTP $code"
@@ -70,16 +99,16 @@ jobs:
           echo "Staging health check failed"; exit 1
 
   production-smoke:
-    if: ${{ github.ref == 'refs/heads/main' && secrets.PRODUCTION_BASE_URL != '' }}
+    if: ${{ github.ref == 'refs/heads/main' && vars.PRODUCTION_BASE_URL != '' }}
     needs: build-test
     runs-on: ubuntu-latest
     steps:
       - name: Check production health
         env:
-          BASE_URL: ${{ secrets.PRODUCTION_BASE_URL }}
+          BASE_URL: ${{ vars.PRODUCTION_BASE_URL }}
         run: |
           if [ -z "$BASE_URL" ]; then
-            echo "PRODUCTION_BASE_URL secret is not set"; exit 1; fi
+            echo "PRODUCTION_BASE_URL variable is not set"; exit 1; fi
           for i in $(seq 1 30); do
             code=$(curl -s -o /dev/null -w "%{http_code}" "$BASE_URL/api/health" || true)
             echo "Attempt $i: HTTP $code"
