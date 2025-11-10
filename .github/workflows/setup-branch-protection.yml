@@ -22,28 +22,26 @@ jobs:
       - name: Create staging branch if missing
         env:
           GH_TOKEN: ${{ secrets.ADMIN_GH_TOKEN }}
-          OWNER: ${{ github.repository_owner }}
-          REPO: ${{ github.event.repository.name }}
+          REPO_FULL: ${{ github.repository }}
         run: |
           set -euo pipefail
           API="https://api.github.com"; HDR=( -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" )
-          main_json=$(curl -fsSL "${HDR[@]}" "$API/repos/$OWNER/$REPO/git/refs/heads/main")
+          main_json=$(curl -fsSL "${HDR[@]}" "$API/repos/$REPO_FULL/git/refs/heads/main")
           main_sha=$(python3 - << PY <<<"$main_json"
 import sys,json; print(json.load(sys.stdin)["object"]["sha"])
 PY
           )
-          status=$(curl -s -o /dev/null -w '%{http_code}' "${API}/repos/$OWNER/$REPO/git/refs/heads/staging" "${HDR[@]}")
+          status=$(curl -s -o /dev/null -w '%{http_code}' "${API}/repos/$REPO_FULL/git/refs/heads/staging" "${HDR[@]}")
           if [ "$status" = "404" ]; then
             echo "Creating staging…"
-            curl -fsSL -X POST "${HDR[@]}" -d "{\"ref\":\"refs/heads/staging\",\"sha\":\"$main_sha\"}" "$API/repos/$OWNER/$REPO/git/refs" >/dev/null
+            curl -fsSL -X POST "${HDR[@]}" -d "{\"ref\":\"refs/heads/staging\",\"sha\":\"$main_sha\"}" "$API/repos/$REPO_FULL/git/refs" >/dev/null
           else
             echo "staging exists (HTTP $status)"
           fi
       - name: Apply protection (main)
         env:
           GH_TOKEN: ${{ secrets.ADMIN_GH_TOKEN }}
-          OWNER: ${{ github.repository_owner }}
-          REPO: ${{ github.event.repository.name }}
+          REPO_FULL: ${{ github.repository }}
           ENFORCE_ADMINS: ${{ env.ENFORCE_ADMINS }}
           REVIEWS: ${{ env.REVIEWS }}
           REQUIRE_LINEAR: ${{ env.REQUIRE_LINEAR_HISTORY }}
@@ -68,12 +66,11 @@ PY
             "required_conversation_resolution": true
           }
 JSON
-          curl -fsSL -X PUT "${HDR[@]}" -d @body.json "$API/repos/$OWNER/$REPO/branches/main/protection" >/dev/null
+          curl -fsSL -X PUT "${HDR[@]}" -d @body.json "$API/repos/$REPO_FULL/branches/main/protection" >/dev/null
       - name: Apply protection (staging)
         env:
           GH_TOKEN: ${{ secrets.ADMIN_GH_TOKEN }}
-          OWNER: ${{ github.repository_owner }}
-          REPO: ${{ github.event.repository.name }}
+          REPO_FULL: ${{ github.repository }}
           ENFORCE_ADMINS: ${{ env.ENFORCE_ADMINS }}
           REVIEWS: ${{ env.REVIEWS }}
           REQUIRE_LINEAR: ${{ env.REQUIRE_LINEAR_HISTORY }}
@@ -98,4 +95,4 @@ JSON
             "required_conversation_resolution": true
           }
 JSON
-          curl -fsSL -X PUT "${HDR[@]}" -d @body.json "$API/repos/$OWNER/$REPO/branches/staging/protection" >/dev/null
+          curl -fsSL -X PUT "${HDR[@]}" -d @body.json "$API/repos/$REPO_FULL/branches/staging/protection" >/dev/null
