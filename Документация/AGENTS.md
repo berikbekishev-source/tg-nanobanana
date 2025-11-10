@@ -174,8 +174,10 @@ SENTRY_ENVIRONMENT=staging|production
 
 ```bash
 PROJECT_ID="866bc61a-0ef1-41d1-af53-26784f6e5f06"
-ENVIRONMENT_ID="2eee50d8-402e-44bf-9035-8298efef91bc"
-ENVIRONMENT_NAME="production"
+# production
+PROD_ENV_ID="2eee50d8-402e-44bf-9035-8298efef91bc"
+# staging
+STAGING_ENV_ID="9e15b55d-8220-4067-a47e-191a57c2bcca"
 ```
 
 ### Service IDs
@@ -194,6 +196,43 @@ RAILWAY_API_TOKEN="47a20fbb-1f26-402d-8e66-ba38660ef1d4"
 ```
 
 ⚠️ **ВАЖНО:** Этот токен дает полный доступ к проекту. Не публикуйте его в GitHub!
+
+---
+
+### Сопоставление веток GitHub и Railway окружений
+
+| Git ветка | Railway окружение | Триггер деплоя             | Автоматизация                                                                            |
+|-----------|--------------------|----------------------------|------------------------------------------------------------------------------------------|
+| `staging` | `staging`          | Merge/Push в `staging`     | `auto-merge-staging.yml` мержит PR → `staging`, Railway автодеплойт web/worker/beat.     |
+| `main`    | `production`       | Merge в `main`             | После merge Railway выкатывает прод, `post-deploy-monitor.yml` проверяет health/logs.    |
+
+**Важно:** никаких прямых запусков `railway deploy` или правок через Railway UI. Всё делаем через Git + GitHub Actions.
+
+### Чек-лист агента после автодеплоя в Staging
+
+1. Убедиться, что PR → `staging` смержился (если нет — выполнить merge через CLI).  
+2. Проверить статус Railway:
+   ```bash
+   railway status --service web --environment staging
+   railway deployment list --service web --environment staging
+   ```
+3. Просмотреть логи:
+   ```bash
+   railway logs --service web --tail 200
+   railway logs --service worker --tail 200
+   ```
+4. Проверить `/api/health`:
+   ```bash
+   curl -s -o /dev/null -w "%{http_code}" "$STAGING_BASE_URL/api/health"
+   ```
+5. Если что-то упало — описать проблему (какой шаг, лог, ошибка) и отправить отчёт человеку. Если всё зелёное — сообщить, что стейджинг готов к ручным смокам.
+
+### Продакшн-деплой
+
+1. PR `staging → main` создаётся **только после подтверждения человека**.
+2. `CI and Smoke` снова гоняет тесты, `auto-approve.yml` ставит approve и включает auto-merge.
+3. Railway выкатывает `main`.  
+4. `post-deploy-monitor.yml` 30 попыток пингует `/api/health`, скачивает логи web/worker/beat, отправляет статус в Telegram. При ошибке workflow сам делает `git revert` + push в `main` и уведомляет всех.
 
 ---
 
