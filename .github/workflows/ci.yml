@@ -50,7 +50,7 @@ jobs:
         run: docker build -f Dockerfile.worker -t tg-nanobanana-worker:ci .
 
   staging-smoke:
-    if: github.ref == 'refs/heads/staging' && secrets.STAGING_BASE_URL != ''
+    if: ${{ github.ref == 'refs/heads/staging' && secrets.STAGING_BASE_URL != '' }}
     needs: build-test
     runs-on: ubuntu-latest
     steps:
@@ -70,7 +70,7 @@ jobs:
           echo "Staging health check failed"; exit 1
 
   production-smoke:
-    if: github.ref == 'refs/heads/main' && secrets.PRODUCTION_BASE_URL != ''
+    if: ${{ github.ref == 'refs/heads/main' && secrets.PRODUCTION_BASE_URL != '' }}
     needs: build-test
     runs-on: ubuntu-latest
     steps:
