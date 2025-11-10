@@ -3,7 +3,8 @@ from django.utils.html import format_html
 from django.db.models import Count, Sum
 from .models import (
     TgUser, GenRequest, UserBalance, AIModel,
-    Transaction, UserSettings, Promocode, PricingSettings
+    Transaction, UserSettings, Promocode, PricingSettings,
+    ChatThread, ChatMessage,
 )
 
 
@@ -367,6 +368,47 @@ class PromocodeAdmin(admin.ModelAdmin):
         updated = queryset.update(is_active=False)
         self.message_user(request, f'{updated} promocode(s) deactivated.')
     deactivate_promocodes.short_description = "Deactivate selected promocodes"
+
+
+@admin.register(ChatThread)
+class ChatThreadAdmin(admin.ModelAdmin):
+    list_display = ('user', 'last_message_preview', 'last_message_direction',
+                    'last_message_at', 'unread_count')
+    search_fields = ('user__username', 'user__chat_id', 'user__first_name', 'user__last_name')
+    ordering = ('-last_message_at',)
+    readonly_fields = ('created_at', 'updated_at')
+    raw_id_fields = ('user',)
+
+    @staticmethod
+    def last_message_preview(obj):
+        preview = obj.last_message_text or ""
+        return (preview[:50] + '...') if len(preview) > 53 else preview
+
+
+@admin.register(ChatMessage)
+class ChatMessageAdmin(admin.ModelAdmin):
+    list_display = ('thread', 'direction', 'message_type', 'short_text', 'message_date')
+    search_fields = ('thread__user__username', 'thread__user__chat_id', 'text')
+    list_filter = ('direction', 'message_type')
+    ordering = ('-message_date',)
+    raw_id_fields = ('thread', 'user')
+    readonly_fields = (
+        'thread',
+        'user',
+        'direction',
+        'message_type',
+        'text',
+        'media_file_id',
+        'media_file_name',
+        'payload',
+        'message_date',
+        'created_at',
+    )
+
+    @staticmethod
+    def short_text(obj):
+        return (obj.text[:60] + '...') if obj.text and len(obj.text) > 63 else (obj.text or '')
+    short_text.short_description = 'Text'
 
 
 # Настройка админ-панели
