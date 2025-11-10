@@ -77,9 +77,33 @@ TEMPLATES = [
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
 
 
+DATABASE_URL = os.getenv("DATABASE_URL")
+if not DATABASE_URL:
+    raise RuntimeError("Не задана переменная окружения DATABASE_URL")
+
+DB_CONN_MAX_AGE = int(os.getenv("DB_CONN_MAX_AGE", "60"))
 DATABASES = {
-    "default": dj_database_url.parse(os.getenv("DATABASE_URL"), conn_max_age=600, ssl_require=True)
+    "default": dj_database_url.parse(
+        DATABASE_URL,
+        conn_max_age=DB_CONN_MAX_AGE,
+        ssl_require=True,
+    )
 }
+
+db_pool_mode = os.getenv("DB_POOL_MODE", "session").strip().lower()
+if db_pool_mode == "transaction":
+    DATABASES["default"]["CONN_MAX_AGE"] = 0  # соединение закрывается сразу после запроса
+    DATABASES["default"]["DISABLE_SERVER_SIDE_CURSORS"] = True
+    options = DATABASES["default"].get("OPTIONS", {}).copy()
+    options.setdefault("sslmode", "require")
+    # Используем prepared_statements=off, чтобы PgBouncer в transaction-режиме не падал
+    extra_options = options.get("options", "")
+    if "prepared_statements=off" not in extra_options:
+        extra_options = f"{extra_options} prepared_statements=off".strip()
+    options["options"] = extra_options
+    DATABASES["default"]["OPTIONS"] = options
+
+DATABASES["default"]["CONN_HEALTH_CHECKS"] = True
 
 
 # Password validation
@@ -132,6 +156,11 @@ CELERY_BROKER_URL = os.getenv("REDIS_URL")
 CELERY_RESULT_BACKEND = os.getenv("REDIS_URL")
 CELERY_TASK_ALWAYS_EAGER = False
 CELERY_TASK_DEFAULT_QUEUE = "default"
+CELERY_WORKER_CONCURRENCY = int(os.getenv("CELERY_WORKER_CONCURRENCY", "2"))
+CELERY_WORKER_PREFETCH_MULTIPLIER = int(os.getenv("CELERY_WORKER_PREFETCH_MULTIPLIER", "1"))
+CELERY_TASK_ACKS_LATE = True
+CELERY_TASK_TIME_LIMIT = int(os.getenv("CELERY_TASK_TIME_LIMIT", str(15 * 60)))
+CELERY_TASK_SOFT_TIME_LIMIT = int(os.getenv("CELERY_TASK_SOFT_TIME_LIMIT", str(12 * 60)))
 
 # --- Telegram/Gemini/Supabase ---
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")

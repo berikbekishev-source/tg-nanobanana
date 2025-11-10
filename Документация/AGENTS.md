@@ -76,6 +76,44 @@
 
 Следуйте инструкции, чтобы поддерживать стабильность сервиса и прозрачность процессов развёртывания.
 
+---
+
+## Схема веток и деплоя (staging/main)
+
+Цель: безопасная выкладка без простоя продакшена при параллельной работе ИИ‑агентов.
+
+- Ветки: `staging` (препрод) и `main` (прод). Прямые пуши запрещены, только PR.
+- Порядок работы: feature-ветки → PR в `staging` → автодеплой в Staging → ручные смоки → PR `staging` → `main` → автодеплой в Prod.
+- Railway: 2 окружения/проекта (Staging ↔ `staging`, Production ↔ `main`) с разными переменными окружения и отдельным Telegram‑ботом для Staging.
+- CI: на PR и push выполняются проверки Python/Django, сборка Docker, после деплоя — smoke `/api/health` с таймаутом ожидания.
+
+Обязательные переменные для каждого окружения:
+
+```bash
+# Telegram
+TELEGRAM_BOT_TOKEN=<token для окружения>
+TG_WEBHOOK_SECRET=<секрет заголовка webhook>
+PUBLIC_BASE_URL=https://<домен окружения>
+
+# БД/Supabase/Redis — отдельные для Staging и Prod
+DATABASE_URL=...
+SUPABASE_URL=...
+SUPABASE_SERVICE_ROLE_KEY=...
+SUPABASE_BUCKET=...
+SUPABASE_VIDEO_BUCKET=...
+REDIS_URL=...
+
+# Наблюдаемость (рекомендуется)
+SENTRY_DSN=...
+SENTRY_ENVIRONMENT=staging|production
+```
+
+Требования к PR:
+- Нет незакоммиченных миграций (`manage.py makemigrations --check`).
+- Новые фичи — под фичефлагами (по умолчанию выключены на проде).
+- Смоки на Staging пройдены (бот и `/api/health`).
+
+
 # Railway Deployment Guide
 
 Документация по работе с Railway для проекта Telegram NanoBanana Bot.
@@ -458,7 +496,7 @@ REDIS_URL=redis://<host>:<port>
 
 # Telegram Bot
 TELEGRAM_BOT_TOKEN=<bot-token>
-TELEGRAM_WEBHOOK_SECRET=<random-webhook-secret>
+TG_WEBHOOK_SECRET=<random-webhook-secret>
 
 # Sentry (опционально)
 SENTRY_DSN=<sentry-dsn>

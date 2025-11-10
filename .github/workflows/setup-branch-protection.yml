@@ -1,0 +1,109 @@
+name: Setup Branch Protection
+
+on:
+  workflow_dispatch:
+    inputs:
+      enforce_admins:
+        description: 'Enforce admins'
+        type: boolean
+        default: true
+      require_reviews:
+        description: 'Required approving reviews count'
+        type: number
+        default: 1
+      require_linear_history:
+        description: 'Require linear history'
+        type: boolean
+        default: true
+
+jobs:
+  protect:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate token
+        run: |
+          if [ -z "${{ secrets.ADMIN_GH_TOKEN }}" ]; then
+            echo 'Please add repository secret ADMIN_GH_TOKEN with admin rights.'
+            exit 1
+          fi
+      - name: Create staging branch if missing
+        env:
+          GH_TOKEN: ${{ secrets.ADMIN_GH_TOKEN }}
+          OWNER: ${{ github.repository_owner }}
+          REPO: ${{ github.event.repository.name }}
+        run: |
+          set -euo pipefail
+          API="https://api.github.com"; HDR=( -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" )
+          main_json=$(curl -fsSL "${HDR[@]}" "$API/repos/$OWNER/$REPO/git/refs/heads/main")
+          main_sha=$(python3 - << PY <<<"$main_json"
+import sys,json; print(json.load(sys.stdin)["object"]["sha"])
+PY
+          )
+          status=$(curl -s -o /dev/null -w '%{http_code}' "${API}/repos/$OWNER/$REPO/git/refs/heads/staging" "${HDR[@]}")
+          if [ "$status" = "404" ]; then
+            echo "Creating staging…"
+            curl -fsSL -X POST "${HDR[@]}" -d "{\"ref\":\"refs/heads/staging\",\"sha\":\"$main_sha\"}" "$API/repos/$OWNER/$REPO/git/refs" >/dev/null
+          else
+            echo "staging exists (HTTP $status)"
+          fi
+      - name: Apply protection (main)
+        env:
+          GH_TOKEN: ${{ secrets.ADMIN_GH_TOKEN }}
+          OWNER: ${{ github.repository_owner }}
+          REPO: ${{ github.event.repository.name }}
+          ENFORCE_ADMINS: ${{ inputs.enforce_admins }}
+          REVIEWS: ${{ inputs.require_reviews }}
+          REQUIRE_LINEAR: ${{ inputs.require_linear_history }}
+        run: |
+          set -euo pipefail
+          API="https://api.github.com"; HDR=( -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" )
+          cat > body.json << JSON
+          {
+            "required_status_checks": { "strict": true, "contexts": ["CI and Smoke / build-test"] },
+            "enforce_admins": ${ENFORCE_ADMINS},
+            "required_pull_request_reviews": {
+              "required_approving_review_count": ${REVIEWS},
+              "dismiss_stale_reviews": true,
+              "require_code_owner_reviews": false,
+              "require_last_push_approval": false
+            },
+            "restrictions": null,
+            "required_linear_history": ${REQUIRE_LINEAR},
+            "allow_force_pushes": false,
+            "allow_deletions": false,
+            "block_creations": false,
+            "required_conversation_resolution": true
+          }
+JSON
+          curl -fsSL -X PUT "${HDR[@]}" -d @body.json "$API/repos/$OWNER/$REPO/branches/main/protection" >/dev/null
+      - name: Apply protection (staging)
+        env:
+          GH_TOKEN: ${{ secrets.ADMIN_GH_TOKEN }}
+          OWNER: ${{ github.repository_owner }}
+          REPO: ${{ github.event.repository.name }}
+          ENFORCE_ADMINS: ${{ inputs.enforce_admins }}
+          REVIEWS: ${{ inputs.require_reviews }}
+          REQUIRE_LINEAR: ${{ inputs.require_linear_history }}
+        run: |
+          set -euo pipefail
+          API="https://api.github.com"; HDR=( -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" )
+          cat > body.json << JSON
+          {
+            "required_status_checks": { "strict": true, "contexts": ["CI and Smoke / build-test"] },
+            "enforce_admins": ${ENFORCE_ADMINS},
+            "required_pull_request_reviews": {
+              "required_approving_review_count": ${REVIEWS},
+              "dismiss_stale_reviews": true,
+              "require_code_owner_reviews": false,
+              "require_last_push_approval": false
+            },
+            "restrictions": null,
+            "required_linear_history": ${REQUIRE_LINEAR},
+            "allow_force_pushes": false,
+            "allow_deletions": false,
+            "block_creations": false,
+            "required_conversation_resolution": true
+          }
+JSON
+          curl -fsSL -X PUT "${HDR[@]}" -d @body.json "$API/repos/$OWNER/$REPO/branches/staging/protection" >/dev/null
+

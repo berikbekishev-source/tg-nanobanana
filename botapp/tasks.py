@@ -1,7 +1,7 @@
 """
 Celery задачи для асинхронной генерации изображений и видео
 """
-from celery import shared_task
+from celery import shared_task, signals
 import httpx
 from django.conf import settings
 from decimal import Decimal
@@ -13,6 +13,7 @@ import tempfile
 import subprocess
 
 from imageio_ffmpeg import get_ffmpeg_exe
+from django.db import close_old_connections
 
 from .models import GenRequest, TgUser, AIModel
 from .services import generate_images_for_model, supabase_upload_png, supabase_upload_video
@@ -118,6 +119,15 @@ def fetch_remote_file(url: str) -> bytes:
 @lru_cache()
 def _ffmpeg_bin() -> str:
     return get_ffmpeg_exe()
+
+
+def _close_db_connections(**kwargs):
+    """Закрываем незавершённые соединения с БД перед/после тасков."""
+    close_old_connections()
+
+
+signals.task_prerun.connect(_close_db_connections)
+signals.task_postrun.connect(_close_db_connections)
 
 
 def _run_command(command: List[str]) -> str:
