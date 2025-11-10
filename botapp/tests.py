@@ -1,14 +1,26 @@
+import asyncio
 import base64
 from decimal import Decimal
 from io import BytesIO
 from unittest.mock import MagicMock, patch
 
 from django.test import TestCase, override_settings
+from django.utils import timezone
 from PIL import Image
+from aiogram.types import Message
 
 from botapp.business.balance import BalanceService, InsufficientBalanceError
 from botapp.business.generation import GenerationService
-from botapp.models import AIModel, PricingSettings, TgUser, Transaction, UserBalance
+from botapp.chat_logger import ChatLogger
+from botapp.models import (
+    AIModel,
+    PricingSettings,
+    TgUser,
+    Transaction,
+    UserBalance,
+    ChatThread,
+    ChatMessage,
+)
 from botapp.providers.video.base import VideoGenerationError
 from botapp.providers.video.openai_sora import OpenAISoraProvider
 from botapp.media_utils import detect_reference_mime
@@ -684,3 +696,77 @@ class GeminiVertexApiKeyTests(TestCase):
         headers = http_post.call_args.kwargs["headers"]
         self.assertEqual(headers["x-goog-api-key"], "test-key")
         load_info.assert_not_called()
+
+
+class ChatLoggerTests(TestCase):
+    def _build_message(self, **overrides) -> Message:
+        now = overrides.pop('when', timezone.now())
+        chat_id = overrides.pop('chat_id', 555001)
+        base = {
+            "message_id": overrides.pop('message_id', 1),
+            "date": now,
+            "chat": overrides.pop('chat') or {
+                "id": chat_id,
+                "type": "private",
+                "first_name": overrides.pop('chat_first_name', "Tester"),
+                "last_name": overrides.pop('chat_last_name', ""),
+                "username": overrides.pop('chat_username', "tester"),
+            },
+            "from": overrides.pop('from_user') or {
+                "id": chat_id,
+                "is_bot": False,
+                "first_name": overrides.pop('from_first_name', "Tester"),
+                "last_name": overrides.pop('from_last_name', ""),
+                "username": overrides.pop('from_username', "tester"),
+                "language_code": "ru",
+            },
+            "text": overrides.pop('text', "Привет"),
+        }
+        base.update(overrides)
+        return Message.model_validate(base)
+
+    def test_log_incoming_message_creates_thread(self):
+        message = self._build_message(text="Здравствуйте")
+        asyncio.run(ChatLogger.log_incoming(message))
+
+        thread = ChatThread.objects.get()
+        self.assertEqual(thread.user.chat_id, 555001)
+        self.assertEqual(thread.last_message_text, "Здравствуйте")
+        self.assertEqual(thread.last_message_direction, ChatMessage.Direction.INCOMING)
+
+        stored_message = ChatMessage.objects.get()
+        self.assertEqual(stored_message.text, "Здравствуйте")
+        self.assertEqual(stored_message.direction, ChatMessage.Direction.INCOMING)
+
+    def test_log_outgoing_photo_stores_media(self):
+        initial = self._build_message(message_id=5, text="hello")
+        asyncio.run(ChatLogger.log_incoming(initial))
+
+        outgoing_photo = self._build_message(
+            message_id=6,
+            text=None,
+            photo=[
+                {
+                    "file_id": "photo-file",
+                    "file_unique_id": "unique-photo",
+                    "width": 640,
+                    "height": 640,
+                    "file_size": 12345,
+                }
+            ],
+            caption="Вот фото",
+            from_user={
+                "id": 999999,
+                "is_bot": True,
+                "first_name": "NanoBot",
+            },
+        )
+
+        asyncio.run(ChatLogger.log_outgoing(outgoing_photo))
+
+        self.assertEqual(ChatMessage.objects.count(), 2)
+        last_message = ChatMessage.objects.order_by('-id').first()
+        self.assertEqual(last_message.direction, ChatMessage.Direction.OUTGOING)
+        self.assertEqual(last_message.media_file_id, "photo-file")
+        self.assertEqual(last_message.message_type, ChatMessage.MessageType.PHOTO)
+        self.assertEqual(last_message.text, "Вот фото")

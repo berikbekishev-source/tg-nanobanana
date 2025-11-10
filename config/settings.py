@@ -43,6 +43,7 @@ INSTALLED_APPS = [
     'ninja',         # Django Ninja
     'botapp.apps.BotappConfig',        # наше приложение бота
     'lavatop',       # Payment System (Lava.top)
+    'dashboard.apps.DashboardConfig',  # Панель администратора
 ]
 
 MIDDLEWARE = [
@@ -82,11 +83,12 @@ if not DATABASE_URL:
     raise RuntimeError("Не задана переменная окружения DATABASE_URL")
 
 DB_CONN_MAX_AGE = int(os.getenv("DB_CONN_MAX_AGE", "60"))
+_ssl_required = not DATABASE_URL.lower().startswith("sqlite")
 DATABASES = {
     "default": dj_database_url.parse(
         DATABASE_URL,
         conn_max_age=DB_CONN_MAX_AGE,
-        ssl_require=True,
+        ssl_require=_ssl_required,
     )
 }
 
