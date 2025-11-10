@@ -116,6 +116,7 @@ def get_video_format_keyboard() -> InlineKeyboardMarkup:
     builder.button(text="9:16 (Vertical)", callback_data="video_format:9:16")
     builder.button(text="16:9 (Horizontal)", callback_data="video_format:16:9")
     builder.adjust(2)
+    builder.row(InlineKeyboardButton(text="❌ Отмена", callback_data="cancel"))
     builder.row(InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu"))
     return builder.as_markup()
 

@@ -245,13 +245,9 @@ async def select_video_model(callback: CallbackQuery, state: FSMContext):
     if is_sora_model:
         info_message += "\nМаксимально доступное качество: 720p (ограничение OpenAI Sora)."
 
+    combined_message = f"{info_message}\n\nВыберите формат видео:"
     await callback.message.answer(
-        info_message,
-        reply_markup=get_cancel_keyboard()
-    )
-
-    await callback.message.answer(
-        "Выберите формат видео:",
+        combined_message,
         reply_markup=get_video_format_keyboard()
     )
 
