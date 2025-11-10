@@ -1,0 +1,60 @@
+name: Auto merge feature → staging PRs
+
+on:
+  workflow_run:
+    workflows: ["CI and Smoke"]
+    types: [completed]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  merge:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    env:
+      TARGET_BRANCH: staging
+    steps:
+      - name: Merge PR into staging after successful CI
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.ADMIN_GH_TOKEN }}
+          script: |
+            const branch = context.payload.workflow_run.head_branch;
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+
+            // Skip runs that already operate on staging/main to avoid loops
+            if (['staging', 'main'].includes(branch)) {
+              core.info(`Head branch ${branch} is protected, skip auto merge.`);
+              return;
+            }
+
+            const { data: prs } = await github.rest.pulls.list({
+              owner,
+              repo,
+              state: 'open',
+              base: process.env.TARGET_BRANCH,
+              head: `${owner}:${branch}`,
+            });
+
+            if (prs.length === 0) {
+              core.info(`No open PR ${branch} → ${process.env.TARGET_BRANCH}`);
+              return;
+            }
+
+            const prNumber = prs[0].number;
+            const { data: pr } = await github.rest.pulls.get({ owner, repo, pull_number: prNumber });
+            if (pr.mergeable === false) {
+              core.warning(`PR #${prNumber} is not mergeable (${pr.mergeable_state}).`);
+              return;
+            }
+
+            await github.rest.pulls.merge({
+              owner,
+              repo,
+              pull_number: prNumber,
+              merge_method: 'squash',
+            });
+            core.info(`Merged PR #${prNumber} (${branch} → ${process.env.TARGET_BRANCH}).`);
