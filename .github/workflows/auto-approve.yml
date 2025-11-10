@@ -27,6 +27,7 @@ jobs:
             }
       - name: Approve PR as AI reviewer
         if: ${{ success() }}
+        continue-on-error: true
         uses: hmarr/auto-approve-action@v4
         with:
           review-message: "Авто-ревью: базовые проверки пройдены. Ожидаем статус-проверки CI."
