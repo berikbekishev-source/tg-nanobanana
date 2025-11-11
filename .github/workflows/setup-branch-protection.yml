@@ -8,6 +8,7 @@ on:
 jobs:
   protect:
     runs-on: ubuntu-latest
+    continue-on-error: true
     env:
       ENFORCE_ADMINS: true
       REVIEWS: 1
