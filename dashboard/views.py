@@ -60,6 +60,9 @@ class ChatDetailView(StaffRequiredMixin, DetailView):
 
     def get_context_data(self, **kwargs: Any) -> Dict[str, Any]:
         context = super().get_context_data(**kwargs)
+        if self.object.unread_count:
+            self.object.unread_count = 0
+            self.object.save(update_fields=['unread_count', 'updated_at'])
         messages_qs = (
             self.object.messages.select_related('user')
             .order_by('-message_date')[:200]
