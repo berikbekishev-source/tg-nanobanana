@@ -13,7 +13,6 @@ from botapp.keyboards import (
     get_model_info_message,
     get_cancel_keyboard,
     get_main_menu_inline_keyboard,
-    get_generation_start_message,
     get_generation_complete_message,
     get_image_mode_keyboard,
 )
@@ -191,12 +190,6 @@ async def receive_image_prompt(message: Message, state: FSMContext):
             generation_type=generation_type,
             input_images=input_entries,
             generation_params={"image_mode": mode},
-        )
-
-        # Отправляем системное сообщение о начале генерации
-        await message.answer(
-            get_generation_start_message(),
-            parse_mode="Markdown"
         )
 
         # Отправляем информационное сообщение с деталями
