@@ -50,7 +50,7 @@ PY
           API="https://api.github.com"; HDR=( -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" )
           cat > body.json << JSON
           {
-            "required_status_checks": { "strict": true, "contexts": ["CI and Smoke / build-test"] },
+            "required_status_checks": { "strict": true, "contexts": ["CI / build-test"] },
             "enforce_admins": ${ENFORCE_ADMINS},
             "required_pull_request_reviews": {
               "required_approving_review_count": ${REVIEWS},
@@ -79,7 +79,7 @@ JSON
           API="https://api.github.com"; HDR=( -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" )
           cat > body.json << JSON
           {
-            "required_status_checks": { "strict": true, "contexts": ["CI and Smoke / build-test"] },
+            "required_status_checks": { "strict": true, "contexts": ["CI / build-test"] },
             "enforce_admins": ${ENFORCE_ADMINS},
             "required_pull_request_reviews": {
               "required_approving_review_count": ${REVIEWS},

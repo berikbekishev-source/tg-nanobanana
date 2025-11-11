@@ -114,6 +114,21 @@ SENTRY_ENVIRONMENT=staging|production
 - Новые фичи — под фичефлагами (по умолчанию выключены на проде).
 - Смоки на Staging пройдены (бот и `/api/health`).
 
+# Продакшн релиз (main)
+
+1. После одобрения человека создайте PR `staging → main`. Если появляется конфликт, заводите временную ветку `release/...`, в неё мерджите `main` (разрешая конфликты), и уже её отправляйте в `main`. После релиза подтяните `main` обратно в `staging`, чтобы ветки снова имели общий базовый коммит.
+2. Ветки `staging` и `main` защищены и требуют линейной истории. GitHub Actions автоматически открывают PR из feature-веток и ставят апрув, но при необходимости агент обязан дожать merge через CLI (`gh pr merge --admin`), чтобы не блокировать деплой.
+3. Workflow `CI` (раньше назывался `CI and Smoke`) должен пройти на PR и на push в `main`. Railway ожидает check suite с именем `CI`; не меняйте название workflow без веской причины.
+4. После merge в `main` стартует push-пайплайн `CI`. Он строит docker-образы, ожидает автодеплой Railway и запускает `production-smoke` (HTTP `/api/health`). Дождитесь зелёного статуса.
+5. Workflow `Post Deploy Monitor and Rollback` слушает успешные запуски `CI` на `main`: он собирает логи Railway, проверяет `/api/health` и, при сбое, делает `railway rollback/git revert` + уведомление в Telegram.
+6. Всегда проверяйте продакшн в Railway:
+   ```bash
+   railway environment production
+   railway status --json | jq '.services.edges[].node.serviceInstances.edges[] | select(.environmentId=="2eee50d8-402e-44bf-9035-8298efef91bc") | {serviceName, commit: .latestDeployment.meta.commitHash, status: .latestDeployment.status}'
+   ```
+   Если видите `skippedReason: "CI check suite failed"`, значит Railway не увидел успешный чек `CI`. Убедитесь, что workflow `CI` прошёл (можно перезапустить `gh run rerun <id>`), затем повторно откройте PR или создайте новый коммит и дайте пайплайну докрутиться.
+7. После релиза сообщите человеку: какие коммиты попали, какие проверки пройдены, какие действия предпринимать, если нужно катить назад.
+
 
 # Railway Deployment Guide
 
