@@ -9,6 +9,7 @@ jobs:
   protect:
     runs-on: ubuntu-latest
     continue-on-error: true
+    if: ${{ secrets.ADMIN_GH_TOKEN != '' }}
     env:
       ENFORCE_ADMINS: true
       REVIEWS: 1
