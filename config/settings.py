@@ -168,6 +168,16 @@ CELERY_TASK_SOFT_TIME_LIMIT = int(os.getenv("CELERY_TASK_SOFT_TIME_LIMIT", str(1
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TG_WEBHOOK_SECRET  = os.getenv("TG_WEBHOOK_SECRET")
 PUBLIC_BASE_URL    = os.getenv("PUBLIC_BASE_URL")
+_csrf_origins_raw = os.getenv("CSRF_TRUSTED_ORIGINS", "")
+CSRF_TRUSTED_ORIGINS = [
+    origin.strip().rstrip("/")
+    for origin in _csrf_origins_raw.split(",")
+    if origin.strip()
+]
+if PUBLIC_BASE_URL:
+    public_origin = PUBLIC_BASE_URL.rstrip("/")
+    if public_origin and public_origin not in CSRF_TRUSTED_ORIGINS:
+        CSRF_TRUSTED_ORIGINS.append(public_origin)
 GEMINI_API_KEY     = os.getenv("GEMINI_API_KEY")
 GEMINI_IMAGE_MODEL = os.getenv("GEMINI_IMAGE_MODEL", "gemini-2.5-flash-image")
 GEMINI_IMAGE_MODEL_FALLBACK = os.getenv("GEMINI_IMAGE_MODEL_FALLBACK", "gemini-2.5-flash-image-preview")

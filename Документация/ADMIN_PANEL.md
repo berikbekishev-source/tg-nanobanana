@@ -31,6 +31,16 @@ DATABASE_URL=sqlite:///db.sqlite3 python manage.py runserver
 
 После логина на `/admin/login/` панель доступна по адресу `http://127.0.0.1:8000/dashboard/`.
 
+### Настройка доменов в облаке
+
+Если панель открываете по HTTPS-домену (Railway, собственный хостинг), добавьте его в переменную окружения `CSRF_TRUSTED_ORIGINS`, иначе Django отклонит вход (403 CSRF). Пример для staging и production:
+
+```
+CSRF_TRUSTED_ORIGINS=https://web-staging-70d1.up.railway.app,https://app.nanobanana.ai
+```
+
+Переменную можно задать в Railway → Variables на каждом сервисе (`web`, `worker`, `beat`).
+
 ## Ручная проверка перед релизом
 
 1. Убедитесь, что миграции применены (`python manage.py migrate`) и есть staff‑пользователь.
