@@ -1,0 +1,54 @@
+{% extends "admin/base_site.html" %}
+{% load static %}
+
+{% block extrastyle %}
+    {{ block.super }}
+    <link rel="stylesheet" href="{% static 'dashboard/chat_admin.css' %}">
+{% endblock %}
+
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+    <a href="{% url 'admin:index' %}">Главная</a>
+    &rsaquo; <a href="{% url 'admin:botapp_chatthread_changelist' %}">Чаты</a>
+    &rsaquo; Диалог
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="chat-dialog-card">
+    <div class="chat-dialog-header">
+        <div>
+            <div class="chat-dialog-title">{{ thread.user.first_name }} {{ thread.user.last_name }} (@{{ thread.user.username|default:"—" }})</div>
+            <div class="chat-dialog-meta">Chat ID: {{ thread.user.chat_id }} · Сообщений: {{ messages|length }}</div>
+        </div>
+        <a class="button" href="{% url 'admin:botapp_chatthread_changelist' %}">← Назад к списку</a>
+    </div>
+
+    <div class="chat-dialog-body">
+        {% for message in messages %}
+            <div class="message-row {% if message.direction == 'outgoing' %}outgoing{% else %}incoming{% endif %}">
+                <div class="message-meta">
+                    {% if message.direction == 'outgoing' %}Бот{% else %}Пользователь{% endif %}
+                    · {{ message.message_date|date:"d.m.Y H:i" }}
+                </div>
+                {% if message.text %}
+                    <div class="message-text">{{ message.text|linebreaksbr }}</div>
+                {% endif %}
+                {% if message.media_file_id %}
+                    <div class="message-media">
+                        {% if message.media_mime_type|default:""|slice:":5" == "image" %}
+                            <img src="{% url 'dashboard:message_media' message.pk %}" alt="media preview">
+                        {% else %}
+                            <a href="{% url 'dashboard:message_media' message.pk %}" target="_blank">
+                                Скачать вложение ({{ message.media_mime_type|default:"файл" }})
+                            </a>
+                        {% endif %}
+                    </div>
+                {% endif %}
+            </div>
+        {% empty %}
+            <p>Сообщения не найдены.</p>
+        {% endfor %}
+    </div>
+</div>
+{% endblock %}

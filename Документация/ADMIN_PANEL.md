@@ -29,7 +29,7 @@ DATABASE_URL=sqlite:///db.sqlite3 python manage.py createsuperuser
 DATABASE_URL=sqlite:///db.sqlite3 python manage.py runserver
 ```
 
-После логина на `/admin/login/` панель доступна по адресу `http://127.0.0.1:8000/dashboard/`.
+После логина на `/admin/login/` главный интерфейс расположен на той же странице `/admin/` (навигация «Чаты / Пользователи / Генерации / Финансы»). История переписки открывается через раздел **Чаты** → кнопка «История».
 
 ### Настройка доменов в облаке
 
