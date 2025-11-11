@@ -23,6 +23,7 @@ from .business.generation import GenerationService
 from .business.balance import BalanceService
 from .media_utils import detect_reference_mime, ensure_png_format
 from .media_utils import detect_reference_mime
+from .chat_logger import ChatLogger
 
 
 def send_telegram_photo(chat_id: int, photo_bytes: bytes, caption: str, reply_markup: Optional[Dict] = None):
@@ -40,7 +41,9 @@ def send_telegram_photo(chat_id: int, photo_bytes: bytes, caption: str, reply_ma
     with httpx.Client(timeout=30) as client:
         resp = client.post(url, files=files, data=data)
         resp.raise_for_status()
-        return resp.json()
+        payload = resp.json()
+        ChatLogger.log_outgoing_from_payload(payload.get("result"))
+        return payload
 
 
 def send_telegram_video(chat_id: int, video_bytes: bytes, caption: str, reply_markup: Optional[Dict] = None):
@@ -58,7 +61,9 @@ def send_telegram_video(chat_id: int, video_bytes: bytes, caption: str, reply_ma
     with httpx.Client(timeout=60) as client:
         resp = client.post(url, files=files, data=data)
         resp.raise_for_status()
-        return resp.json()
+        payload = resp.json()
+        ChatLogger.log_outgoing_from_payload(payload.get("result"))
+        return payload
 
 
 def send_telegram_message(chat_id: int, text: str, reply_markup: Optional[Dict] = None, parse_mode: Optional[str] = "Markdown"):
@@ -76,7 +81,9 @@ def send_telegram_message(chat_id: int, text: str, reply_markup: Optional[Dict] 
     with httpx.Client(timeout=10) as client:
         resp = client.post(url, json=data)
         resp.raise_for_status()
-        return resp.json()
+        payload = resp.json()
+        ChatLogger.log_outgoing_from_payload(payload.get("result"))
+        return payload
 
 
 def get_inline_menu_markup():

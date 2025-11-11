@@ -34,6 +34,17 @@ class ChatLogger:
         await ChatLogger._persist_message(message, ChatMessage.Direction.OUTGOING)
 
     @staticmethod
+    def log_outgoing_from_payload(payload: dict) -> None:
+        """Синхронный способ логирования (например, после REST вызова Bot API)."""
+        if not payload:
+            return
+        try:
+            message = Message.model_validate(payload)
+        except Exception:
+            return
+        ChatLogger._save_message(message, ChatMessage.Direction.OUTGOING)
+
+    @staticmethod
     async def _persist_message(message: Message, direction: str) -> None:
         await sync_to_async(
             ChatLogger._save_message,

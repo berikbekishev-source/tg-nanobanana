@@ -1,6 +1,9 @@
 from django.contrib import admin
 from django.utils.html import format_html
 from django.db.models import Count, Sum
+from django.urls import path, reverse
+from django.shortcuts import get_object_or_404
+from django.template.response import TemplateResponse
 from .models import (
     TgUser, GenRequest, UserBalance, AIModel,
     Transaction, UserSettings, Promocode, PricingSettings,
@@ -373,7 +376,7 @@ class PromocodeAdmin(admin.ModelAdmin):
 @admin.register(ChatThread)
 class ChatThreadAdmin(admin.ModelAdmin):
     list_display = ('user', 'last_message_preview', 'last_message_direction',
-                    'last_message_at', 'unread_count')
+                    'last_message_at', 'unread_count', 'dialog_link')
     search_fields = ('user__username', 'user__chat_id', 'user__first_name', 'user__last_name')
     ordering = ('-last_message_at',)
     readonly_fields = ('created_at', 'updated_at')
@@ -383,6 +386,34 @@ class ChatThreadAdmin(admin.ModelAdmin):
     def last_message_preview(obj):
         preview = obj.last_message_text or ""
         return (preview[:50] + '...') if len(preview) > 53 else preview
+    last_message_preview.short_description = "Последнее сообщение"
+
+    def dialog_link(self, obj):
+        url = reverse('admin:botapp_chatthread_dialog', args=[obj.pk])
+        return format_html('<a class="button" href="{}">История</a>', url)
+    dialog_link.short_description = 'Диалог'
+
+    def get_urls(self):
+        urls = super().get_urls()
+        custom = [
+            path(
+                '<int:thread_id>/dialog/',
+                self.admin_site.admin_view(self.dialog_view),
+                name='botapp_chatthread_dialog',
+            ),
+        ]
+        return custom + urls
+
+    def dialog_view(self, request, thread_id: int):
+        thread = get_object_or_404(ChatThread.objects.select_related('user'), pk=thread_id)
+        messages = thread.messages.select_related('user').order_by('message_date')
+        context = {
+            **self.admin_site.each_context(request),
+            "thread": thread,
+            "messages": messages,
+            "title": f"Диалог с {thread.user.username or thread.user.chat_id}",
+        }
+        return TemplateResponse(request, "admin/botapp/chatthread/dialog.html", context)
 
 
 @admin.register(ChatMessage)
