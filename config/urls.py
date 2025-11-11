@@ -16,7 +16,7 @@ Including another URLconf
 """
 
 from django.contrib import admin
-from django.urls import path
+from django.urls import path, include
 from django.conf import settings
 from django.conf.urls.static import static
 from botapp.api import api  # Ninja API
@@ -28,6 +28,7 @@ urlpatterns = [
     path("api/", api.urls),  # /api/telegram/webhook и /api/health
     path("api/miniapp/", miniapp_api.urls),  # Payment API endpoints
     path("miniapp/", miniapp_payment, name='miniapp_payment'),  # Payment page
+    path("dashboard/", include("dashboard.urls")),
 ]
 
 # Статические файлы для Payment App

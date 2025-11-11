@@ -23,17 +23,17 @@ jobs:
           if [ "$ENV" = "staging" ]; then
             echo "token=${{ secrets.STAGING_TELEGRAM_BOT_TOKEN }}" >> $GITHUB_OUTPUT
             echo "secret=${{ secrets.STAGING_TG_WEBHOOK_SECRET }}" >> $GITHUB_OUTPUT
-            echo "base=${{ secrets.STAGING_BASE_URL }}" >> $GITHUB_OUTPUT
+            echo "base=${{ vars.STAGING_BASE_URL }}" >> $GITHUB_OUTPUT
           else
             echo "token=${{ secrets.PROD_TELEGRAM_BOT_TOKEN }}" >> $GITHUB_OUTPUT
             echo "secret=${{ secrets.PROD_TG_WEBHOOK_SECRET }}" >> $GITHUB_OUTPUT
-            echo "base=${{ secrets.PRODUCTION_BASE_URL }}" >> $GITHUB_OUTPUT
+            echo "base=${{ vars.PRODUCTION_BASE_URL }}" >> $GITHUB_OUTPUT
           fi
       - name: Validate inputs
         run: |
           test -n "${{ steps.vars.outputs.token }}" || (echo "Missing Telegram token secret" && exit 1)
           test -n "${{ steps.vars.outputs.secret }}" || (echo "Missing TG_WEBHOOK_SECRET secret" && exit 1)
-          test -n "${{ steps.vars.outputs.base }}" || (echo "Missing BASE_URL secret" && exit 1)
+          test -n "${{ steps.vars.outputs.base }}" || (echo "Missing BASE_URL variable" && exit 1)
       - name: Set webhook
         env:
           TOKEN: ${{ steps.vars.outputs.token }}
@@ -47,4 +47,4 @@ jobs:
             "https://api.telegram.org/bot${TOKEN}/setWebhook" \
             -d "url=$URL" \
             -d "secret_token=$SECRET" \
-            -d "allowed_updates=\"[\"message\"]\""
+            -d 'allowed_updates=["message"]'

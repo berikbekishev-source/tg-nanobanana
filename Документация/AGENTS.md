@@ -63,6 +63,7 @@
   2. Сделайте коммит с осмысленным сообщением.
   3. Выполните `git push origin main`.
 - Только после пуша на GitHub произойдёт продакшн-деплой на Railway. Не обходите этот процесс.
+- Personal access tokens (classic) публикуем **только** в Secrets GitHub (`ADMIN_GH_TOKEN`). Хранить значение в репозитории запрещено.
 
 ## Общие рекомендации
 
@@ -83,7 +84,7 @@
 Цель: безопасная выкладка без простоя продакшена при параллельной работе ИИ‑агентов.
 
 - Ветки: `staging` (препрод) и `main` (прод). Прямые пуши запрещены, только PR.
-- Порядок работы: feature-ветки → PR в `staging` → автодеплой в Staging → ручные смоки → PR `staging` → `main` → автодеплой в Prod.
+- Порядок работы: feature-ветки → PR в `staging` → автодеплой в Staging → ручные смоки → **только после явного подтверждения человека** агент создаёт PR `staging` → `main` → автодеплой в Prod.
 - Railway: 2 окружения/проекта (Staging ↔ `staging`, Production ↔ `main`) с разными переменными окружения и отдельным Telegram‑ботом для Staging.
 - CI: на PR и push выполняются проверки Python/Django, сборка Docker, после деплоя — smoke `/api/health` с таймаутом ожидания.
 
@@ -173,8 +174,10 @@ SENTRY_ENVIRONMENT=staging|production
 
 ```bash
 PROJECT_ID="866bc61a-0ef1-41d1-af53-26784f6e5f06"
-ENVIRONMENT_ID="2eee50d8-402e-44bf-9035-8298efef91bc"
-ENVIRONMENT_NAME="production"
+# production
+PROD_ENV_ID="2eee50d8-402e-44bf-9035-8298efef91bc"
+# staging
+STAGING_ENV_ID="9e15b55d-8220-4067-a47e-191a57c2bcca"
 ```
 
 ### Service IDs
@@ -193,6 +196,43 @@ RAILWAY_API_TOKEN="47a20fbb-1f26-402d-8e66-ba38660ef1d4"
 ```
 
 ⚠️ **ВАЖНО:** Этот токен дает полный доступ к проекту. Не публикуйте его в GitHub!
+
+---
+
+### Сопоставление веток GitHub и Railway окружений
+
+| Git ветка | Railway окружение | Триггер деплоя             | Автоматизация                                                                            |
+|-----------|--------------------|----------------------------|------------------------------------------------------------------------------------------|
+| `staging` | `staging`          | Merge/Push в `staging`     | `auto-merge-staging.yml` мержит PR → `staging`, Railway автодеплойт web/worker/beat.     |
+| `main`    | `production`       | Merge в `main`             | После merge Railway выкатывает прод, `post-deploy-monitor.yml` проверяет health/logs.    |
+
+**Важно:** никаких прямых запусков `railway deploy` или правок через Railway UI. Всё делаем через Git + GitHub Actions.
+
+### Чек-лист агента после автодеплоя в Staging
+
+1. Убедиться, что PR → `staging` смержился (если нет — выполнить merge через CLI).  
+2. Проверить статус Railway:
+   ```bash
+   railway status --service web --environment staging
+   railway deployment list --service web --environment staging
+   ```
+3. Просмотреть логи:
+   ```bash
+   railway logs --service web --tail 200
+   railway logs --service worker --tail 200
+   ```
+4. Проверить `/api/health`:
+   ```bash
+   curl -s -o /dev/null -w "%{http_code}" "$STAGING_BASE_URL/api/health"
+   ```
+5. Если что-то упало — описать проблему (какой шаг, лог, ошибка) и отправить отчёт человеку. Если всё зелёное — сообщить, что стейджинг готов к ручным смокам.
+
+### Продакшн-деплой
+
+1. PR `staging → main` создаётся **только после подтверждения человека**.
+2. `CI and Smoke` снова гоняет тесты, `auto-approve.yml` ставит approve и включает auto-merge.
+3. Railway выкатывает `main`.  
+4. `post-deploy-monitor.yml` 30 попыток пингует `/api/health`, скачивает логи web/worker/beat, отправляет статус в Telegram. При ошибке workflow сам делает `git revert` + push в `main` и уведомляет всех.
 
 ---
 
@@ -803,6 +843,57 @@ railway redeploy --service web --yes
 - Railway Secrets для чувствительных данных
 
 ---
+
+## Доступ к GitHub для агентов
+
+Эта секция описывает, как ИИ‑агенты получают и используют доступ к управлению репозиторием GitHub (ветки, PR, защита веток, автодеплой).
+
+### Модель доступа
+
+- Используется отдельный бот‑аккаунт GitHub с Fine‑grained PAT.
+- Токен бота хранится в секретах репозитория под именем `ADMIN_GH_TOKEN` и доступен только в GitHub Actions.
+- Все операции выполняются через GitHub Actions (авто‑PR, авто‑ревью, авто‑мерж, защита веток, установка вебхуков).
+
+### Права PAT (fine‑grained)
+
+- Repository access: только для репозитория `tg-nanobanana`.
+- Permissions (Repository): Administration (RW), Contents (RW), Pull requests (RW), Actions (RW), Workflows (RW).
+
+### Обязательные настройки репозитория
+
+- Settings → Actions → General:
+  - Workflow permissions: Read and write
+  - Allow GitHub Actions to create and approve pull requests: On
+- Settings → General: Allow auto‑merge: On
+- Settings → Branches: защита `main` и `staging` (PR only, ≥1 approval, required check: “CI and Smoke / build-test”, linear history, conversation resolution).
+
+### Secrets/Variables репозитория
+
+- Secrets → Actions:
+  - `ADMIN_GH_TOKEN` — PAT бот‑аккаунта
+  - `TELEGRAM_MONITOR_BOT_TOKEN`, `TELEGRAM_MONITOR_CHAT_ID` — Telegram бот/чат для уведомлений post-deploy мониторинга
+  - (опционально для вебхуков) `STAGING_TELEGRAM_BOT_TOKEN`, `STAGING_TG_WEBHOOK_SECRET`, `PROD_TELEGRAM_BOT_TOKEN`, `PROD_TG_WEBHOOK_SECRET`
+- Variables → Actions:
+  - `RAILWAY_API_TOKEN` — токен Railway для автоматизаций
+  - `PRODUCTION_BASE_URL` — домен прод веб‑сервиса
+  - `STAGING_BASE_URL` — домен staging веб‑сервиса
+
+### Воркфлоу, которые уже настроены
+
+- `.github/workflows/ci.yml` — CI + smoke `/api/health` на `staging`/`main`
+- `.github/workflows/setup-branch-protection.yml` — защита веток (push + ручной запуск)
+- `.github/workflows/pr-from-feature.yml` — автосоздание PR → `staging` при пуше в feature‑ветку
+- `.github/workflows/auto-approve.yml` — авто‑ревью (github‑actions bot) и включение auto‑merge при зелёном CI
+- `.github/workflows/set-telegram-webhook.yml` — установка вебхука Telegram
+- `.github/workflows/post-deploy-monitor.yml` — смоки и анализ логов после деплоя `main`; при ошибках откатывает коммит и шлёт уведомления
+
+Агентам достаточно пушить изменения в feature‑ветку — PR в `staging` создаётся и мёрджится автоматически после CI. PR `staging → main` создаём вручную после ручных смоков; дальнейшее ревью/merge обрабатывает `auto-approve.yml`. Для ручной установки вебхука запустите соответствующий workflow из Actions.
+
+### Ротация токена и восстановление
+
+- При замене PAT обновите `ADMIN_GH_TOKEN` в Secrets.
+- Если защита веток блокирует технический PR (например, фиксы CI): временно ослабьте правила через `setup-branch-protection.yml` (Run workflow), замержите фиксы, затем снова примените строгие правила.
+
 
 ## Changelog
 

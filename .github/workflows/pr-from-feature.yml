@@ -38,4 +38,3 @@ jobs:
             const body = 'Automated PR created on push to feature branch.';
             const { data: pr } = await github.rest.pulls.create({ owner, repo, title, head, base, body, maintainer_can_modify: true });
             core.info(`PR created: ${pr.html_url}`);
-

@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Админ-панель NanoBanana</title>
+    <style>
+        body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #f4f6fb; color: #111; }
+        header { background: #101828; color: #fff; padding: 16px 32px; display: flex; align-items: center; justify-content: space-between; }
+        header h1 { margin: 0; font-size: 18px; letter-spacing: 0.03em; }
+        .nav { display: flex; gap: 16px; align-items: center; }
+        .nav a { color: #d0d5ff; text-decoration: none; font-size: 15px; padding-bottom: 4px; border-bottom: 2px solid transparent; }
+        .nav a.active { color: #fff; border-color: #5b8def; }
+        .nav span { color: #94a3b8; font-size: 14px; }
+        main { padding: 24px 32px; }
+        .card { background: #fff; border-radius: 16px; padding: 24px; box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08); }
+        .breadcrumb { margin-bottom: 16px; font-size: 14px; color: #475467; }
+        a { color: #2563eb; }
+    </style>
+    {% block extra_head %}{% endblock %}
+</head>
+<body>
+    <header>
+        <h1>NanoBanana · Панель администратора</h1>
+        <nav class="nav">
+            <a href="{% url 'dashboard:chat_list' %}" class="{% if section == 'chats' %}active{% endif %}">Чаты</a>
+            <span>Рассылки (скоро)</span>
+            <span>Аналитика (скоро)</span>
+        </nav>
+    </header>
+    <main>
+        {% block content %}{% endblock %}
+    </main>
+</body>
+</html>

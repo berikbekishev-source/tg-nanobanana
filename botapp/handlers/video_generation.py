@@ -237,9 +237,7 @@ async def select_video_model(callback: CallbackQuery, state: FSMContext):
     info_message = (
         f"Модель: {model.name}.\n"
         f"Стоимость: ⚡{model_cost:.2f} токенов.\n"
-        f"Генерация видео в качестве {default_resolution} и до {default_duration} секунд.\n"
-        "Для генерации в режиме txt2video отправьте текстовый промт.\n"
-        "Для генерации в режиме img2video загрузите изображение и в описании напишите текстовый промт."
+        f"Генерация видео в качестве {default_resolution} и до {default_duration} секунд."
     )
     if duration_options:
         options_text = ", ".join(f"{value} сек" for value in duration_options)
@@ -247,13 +245,9 @@ async def select_video_model(callback: CallbackQuery, state: FSMContext):
     if is_sora_model:
         info_message += "\nМаксимально доступное качество: 720p (ограничение OpenAI Sora)."
 
+    combined_message = f"{info_message}\n\nВыберите формат видео:"
     await callback.message.answer(
-        info_message,
-        reply_markup=get_cancel_keyboard()
-    )
-
-    await callback.message.answer(
-        "Выберите формат видео:",
+        combined_message,
         reply_markup=get_video_format_keyboard()
     )
 

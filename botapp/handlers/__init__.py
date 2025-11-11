@@ -9,6 +9,7 @@ from .payment import router as payment_router
 
 # Главный роутер, который объединяет все
 from aiogram import Router
+from botapp.middlewares.chat_logging import ChatLoggingMiddleware
 
 main_router = Router()
 main_router.include_router(menu_router)
@@ -16,5 +17,6 @@ main_router.include_router(image_router)
 main_router.include_router(video_router)
 main_router.include_router(payment_router)
 main_router.include_router(reference_prompt_router)
+main_router.message.middleware(ChatLoggingMiddleware())
 
 __all__ = ['main_router']

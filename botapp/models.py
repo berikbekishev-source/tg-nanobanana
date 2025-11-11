@@ -1,5 +1,6 @@
 from django.db import models
 from django.core.validators import MinValueValidator
+from django.utils import timezone
 from decimal import Decimal
 import uuid
 
@@ -424,3 +425,86 @@ class TokenPackage(models.Model):
 
     def __str__(self):
         return f"{self.title} — ${self.price_usd}"
+
+
+class ChatThread(models.Model):
+    """Диалог пользователя с ботом."""
+
+    user = models.OneToOneField(
+        TgUser,
+        on_delete=models.CASCADE,
+        related_name='chat_thread',
+    )
+    last_message_text = models.TextField(blank=True, default="")
+    last_message_type = models.CharField(max_length=32, blank=True, default="")
+    last_message_direction = models.CharField(max_length=16, blank=True, default="")
+    last_message_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    unread_count = models.PositiveIntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Chat Thread"
+        verbose_name_plural = "Chat Threads"
+        ordering = ['-last_message_at', '-updated_at']
+
+    def __str__(self):
+        return f"Chat with {self.user.username or self.user.chat_id}"
+
+
+class ChatMessage(models.Model):
+    """Конкретное сообщение в диалоге пользователя с ботом."""
+
+    class Direction(models.TextChoices):
+        INCOMING = "incoming", "Входящее"
+        OUTGOING = "outgoing", "Исходящее"
+
+    class MessageType(models.TextChoices):
+        TEXT = "text", "Текст"
+        PHOTO = "photo", "Фото"
+        VIDEO = "video", "Видео"
+        DOCUMENT = "document", "Документ"
+        AUDIO = "audio", "Аудио"
+        VOICE = "voice", "Голосовое"
+        STICKER = "sticker", "Стикер"
+        OTHER = "other", "Другое"
+
+    thread = models.ForeignKey(
+        ChatThread,
+        on_delete=models.CASCADE,
+        related_name='messages',
+    )
+    user = models.ForeignKey(
+        TgUser,
+        on_delete=models.CASCADE,
+        related_name='chat_messages',
+    )
+    direction = models.CharField(max_length=16, choices=Direction.choices)
+    message_type = models.CharField(
+        max_length=32,
+        choices=MessageType.choices,
+        default=MessageType.TEXT,
+    )
+    telegram_message_id = models.BigIntegerField(null=True, blank=True)
+    text = models.TextField(blank=True, default="")
+    media_file_id = models.CharField(max_length=255, blank=True, default="")
+    media_unique_id = models.CharField(max_length=255, blank=True, default="")
+    media_file_path = models.CharField(max_length=512, blank=True, default="")
+    media_file_name = models.CharField(max_length=255, blank=True, default="")
+    media_mime_type = models.CharField(max_length=100, blank=True, default="")
+    payload = models.JSONField(default=dict, blank=True)
+    message_date = models.DateTimeField(default=timezone.now, db_index=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "Chat Message"
+        verbose_name_plural = "Chat Messages"
+        ordering = ['message_date', 'id']
+        indexes = [
+            models.Index(fields=['thread', 'message_date']),
+            models.Index(fields=['direction', 'message_date']),
+        ]
+
+    def __str__(self):
+        direction = "→" if self.direction == self.Direction.OUTGOING else "←"
+        return f"{direction} {self.message_type} @ {self.message_date:%Y-%m-%d %H:%M:%S}"
