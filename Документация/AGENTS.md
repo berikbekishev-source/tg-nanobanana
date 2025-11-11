@@ -127,6 +127,7 @@ SENTRY_ENVIRONMENT=staging|production
    railway status --json | jq '.services.edges[].node.serviceInstances.edges[] | select(.environmentId=="2eee50d8-402e-44bf-9035-8298efef91bc") | {serviceName, commit: .latestDeployment.meta.commitHash, status: .latestDeployment.status}'
    ```
    Если видите `skippedReason: "CI check suite failed"`, значит Railway не увидел успешный чек `CI`. Убедитесь, что workflow `CI` прошёл (можно перезапустить `gh run rerun <id>`), затем повторно откройте PR или создайте новый коммит и дайте пайплайну докрутиться.
+7. Не перезапускайте push-пайплайн `CI` на `main`, если коммит уже помечен успехом: повторный rerun создаёт дополнительный check suite со статусом `failure`, Railway увидит его и пометит деплой как `skipped`. Если нужен повторный деплой, делайте новый технический коммит (например, обновление доки) и проведите его по полному циклу.
 7. После релиза сообщите человеку: какие коммиты попали, какие проверки пройдены, какие действия предпринимать, если нужно катить назад.
 
 
