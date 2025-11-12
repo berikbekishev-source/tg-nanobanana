@@ -41,3 +41,10 @@
 - Проверки: `gh pr status` (контроль наличия PR и статуса проверок)
 - Коммит/PR: https://github.com/berikbekishev-source/tg-nanobanana/pull/37
 - Следующий шаг: дождаться merge в `staging`, проверить деплой и подготовить ручное тестирование
+
+## 2025-11-12 — деплой фикса истории на staging
+- Ветка: feature/admin-dashboard → staging
+- Шаг: смержил PR #37 (squash 9711117), дождался автодеплоя Railway
+- Проверки: `gh run list` (CI №19293752415 — success), `railway status --json` (commit 9711117 для web/worker/beat), `railway logs --service web|worker|beat --tail 200`, `curl https://web-staging-70d1.up.railway.app/api/health`
+- Коммит/PR: https://github.com/berikbekishev-source/tg-nanobanana/pull/37
+- Следующий шаг: ручное тестирование истории чатов в админке
