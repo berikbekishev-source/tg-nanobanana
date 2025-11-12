@@ -8,6 +8,7 @@ api = NinjaAPI(csrf=False)
 
 @api.get("/health")
 def health(request):
+    # Возвращаем минимальный ответ, чтобы health-check Railway проходил быстро.
     return {"ok": True}
 
 
