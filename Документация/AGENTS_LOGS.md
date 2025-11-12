@@ -75,3 +75,18 @@
 - Проверки: локальная попытка `python3 manage.py migrate` (падает на старом SQLite из-за SQL `DROP INDEX IF EXISTS`, что не влияет на PostgreSQL окружения)
 - Коммит/PR: pending
 - Следующий шаг: подготовить деплой на staging после ревью
+
+## 2025-11-12 13:45 UTC — e2e тест пайплайна деплоя
+- Ветка: feature/deploy-pipeline-e2e-20251112-181415 → staging
+- Шаги:
+  - Создал фичу с минимальной правкой (botapp/__init__.py) и STAGING_STATUS.md (бронировал стенд)
+  - Открыл PR #48 в staging; дождался зелёного CI и смержил (squash)
+  - Подтвердил автодеплой на staging: смоки прошли, Railway web/worker/beat — Success
+  - Освободил стенд (PR #50), зафиксировал статус
+  - Создал PR #51 staging → main (ожидает ручной merge человеком)
+- Проверки:
+  - gh pr checks 48/50/51 — success (build-test, staging-smoke)
+  - gh run list --branch staging — CI success (push)
+  - Railway статус (из статусов PR): web-staging-70d1.up.railway.app, web/worker/beat — Success
+- Коммиты/PR: staging@23d4be6 (merge #48), PR #50, PR #51
+- Следующий шаг: человек жмёт Merge в PR #51; затем проверить prod CI + post-deploy-monitor и health
