@@ -1,4 +1,4 @@
-name: AI Reviewer Auto-Approve and Auto-Merge
+name: AI Reviewer Auto-Approve
 
 on:
   pull_request:
@@ -10,7 +10,7 @@ permissions:
   pull-requests: write
 
 jobs:
-  approve-and-automerge:
+  approve:
     runs-on: ubuntu-latest
     steps:
       - name: Basic heuristics (no secrets in diff)
@@ -33,10 +33,3 @@ jobs:
           review-message: "Авто-ревью: базовые проверки пройдены. Ожидаем статус-проверки CI."
         env:
           GITHUB_TOKEN: ${{ secrets.ADMIN_GH_TOKEN }}
-      - name: Enable auto-merge (squash)
-        if: ${{ success() }}
-        uses: peter-evans/enable-pull-request-automerge@v3
-        continue-on-error: true
-        with:
-          token: ${{ secrets.ADMIN_GH_TOKEN }}
-          merge-method: squash
