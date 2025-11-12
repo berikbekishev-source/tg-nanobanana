@@ -61,3 +61,17 @@
 - Проверки: `python manage.py check`, `ALLOWED_HOSTS=localhost,127.0.0.1,testserver python manage.py shell … client.get('/admin/botapp/chatthread/1/dialog/')` (ручной просмотр HTML)
 - Коммит/PR: pending (будет новый push в feature/admin-dashboard)
 - Следующий шаг: закоммитить изменения, запустить CI и выкатить на staging для ручного теста
+
+## 2025-11-12 — починка статики для истории чатов
+- Ветка: feature/admin-dialog-ui
+- Шаг: подключил WhiteNoise, включил `collectstatic` в Dockerfile, настроил `STATIC_URL=/static/` и убрал дубли в `STATICFILES_DIRS`, чтобы кастомные стили admin загружались на staging
+- Проверки: `python manage.py collectstatic --noinput`, `python manage.py check`, `python manage.py test botapp.tests.AdminChatThreadViewTests` (упало: test_postgres уже существует в Supabase env)
+- Коммит/PR: pending (готовлю PR с фиксом UI)
+- Следующий шаг: закоммитить изменения, занять staging, проверить деплой и подтвердить готовность к ручному тесту
+
+## 2025-11-12 — внедрение мониторинга ошибок
+- Ветка: release/deploy-pipeline-main
+- Шаг: добавил модель `BotErrorEvent`, сервис `ErrorTracker`, интеграции с webhook/aiogram/Celery/GenerationService, документацию и env-переменные `ERROR_ALERT_*`
+- Проверки: локальная попытка `python3 manage.py migrate` (падает на старом SQLite из-за SQL `DROP INDEX IF EXISTS`, что не влияет на PostgreSQL окружения)
+- Коммит/PR: pending
+- Следующий шаг: подготовить деплой на staging после ревью
