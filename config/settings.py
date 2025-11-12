@@ -145,6 +145,7 @@ USE_TZ = True
 
 STATIC_URL = '/static/'
 STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
+os.makedirs(STATIC_ROOT, exist_ok=True)
 STATICFILES_DIRS = []
 _extra_static_dirs = [
     BASE_DIR / 'miniapp' / 'static',
@@ -153,16 +154,7 @@ for static_dir in _extra_static_dirs:
     if static_dir.exists():
         STATICFILES_DIRS.append(static_dir)
 
-STORAGES = {
-    "default": {
-        "BACKEND": "django.core.files.storage.FileSystemStorage",
-    },
-    "staticfiles": {
-        "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
-    },
-}
-
-WHITENOISE_USE_FINDERS = DEBUG
+WHITENOISE_USE_FINDERS = True
 WHITENOISE_AUTOREFRESH = DEBUG
 
 # Default primary key field type
