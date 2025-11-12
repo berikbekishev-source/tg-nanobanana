@@ -14,6 +14,12 @@
 
 Фиксируйте даже промежуточные действия (например, «дождался auto-merge PR #12», «проверил railway logs web»). Это обязательная часть процесса.
 
+## Что обязательно указывать для каждого деплоя
+- Кто и когда занял стенд (`STAGING_STATUS.md` должен ссылаться на соответствующую запись).
+- Номер PR/коммит, который выкатили на staging.
+- Команды, которые запускались при проверке (`railway status`, `railway logs web|worker|beat`, `curl -sf "$STAGING_BASE_URL/api/health"`).
+- Факт уведомления человека о готовности стенда к ручному тестированию.
+- Если деплой не удался — кратко опишите проблему и ссылки на логи, чтобы следующий агент понимал контекст.
 ## 2025-11-12 — проверка незадеплоенных изменений
 - Ветка: feature/admin-dashboard
 - Шаг: изучил Документация/AGENTS.md и собрал diff ветки относительно origin/staging (`git log origin/staging..HEAD`)
@@ -49,9 +55,9 @@
 - Коммит/PR: https://github.com/berikbekishev-source/tg-nanobanana/pull/37
 - Следующий шаг: ручное тестирование истории чатов в админке
 
-## 2025-11-12 — редизайн страницы диалога
+## 2025-11-12 — редизайн истории чатов
 - Ветка: feature/admin-dashboard
-- Шаг: обновил шаблон/стили истории чатов (баблы, превью медиа, кнопки навигации, новая палитра), переименовал контекст `messages` → `chat_messages`, добавил отображение аватаров/меток и расширил тест `AdminChatThreadViewTests`
-- Проверки: `python manage.py check`, `ALLOWED_HOSTS=localhost,127.0.0.1,testserver python manage.py shell … client.get('/admin/botapp/chatthread/1/dialog/')` (просмотр HTML)
-- Коммит/PR: pending (готовлю новый push)
-- Следующий шаг: закоммитить правки, прогнать CI и задеплоить на staging для ручного теста
+- Шаг: переработал шаблон/стили диалога (баблы как в Telegram, предпросмотр медиа, кнопки навигации), починил конфликт имён контекста (`chat_messages` вместо `messages`), добавил отображение аватаров/меток и обновил тест `AdminChatThreadViewTests`
+- Проверки: `python manage.py check`, `ALLOWED_HOSTS=localhost,127.0.0.1,testserver python manage.py shell … client.get('/admin/botapp/chatthread/1/dialog/')` (ручной просмотр HTML)
+- Коммит/PR: pending (будет новый push в feature/admin-dashboard)
+- Следующий шаг: закоммитить изменения, запустить CI и выкатить на staging для ручного теста

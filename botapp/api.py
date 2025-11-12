@@ -35,6 +35,7 @@ try:
 
             return JsonResponse({"ok": True})  # Telegram требует именно 200 + JSON
         except Exception as e:
+            # Логируем любую ошибку, чтобы её сразу видно было в Railway логах.
             print("❌ Webhook error:", e)
             return JsonResponse({"ok": False, "error": str(e)}, status=200)
 
