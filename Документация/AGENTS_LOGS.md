@@ -90,3 +90,16 @@
   - Railway статус (из статусов PR): web-staging-70d1.up.railway.app, web/worker/beat — Success
 - Коммиты/PR: staging@23d4be6 (merge #48), PR #50, PR #51
 - Следующий шаг: человек жмёт Merge в PR #51; затем проверить prod CI + post-deploy-monitor и health
+## 2025-11-12 — автоматический collectstatic на web-сервисе
+- Ветка: feature/admin-static
+- Шаг: обновил `railway.json`, чтобы web-сервис перед миграциями запускал `./.venv/bin/python manage.py collectstatic --noinput`; теперь WhiteNoise видит стили до старта gunicorn
+- Проверки: `railway ssh --service web "python manage.py collectstatic --noinput"` (ручной прогон на текущем деплое), `railway status --json` (commit df1ceb6 для web/worker/beat), `curl https://web-staging-70d1.up.railway.app/api/health`
+- Коммит/PR: pending
+- Следующий шаг: задеплоить фикс на staging, убедиться, что history view загружается без 500 и со стилями
+
+## 2025-11-12 — внедрение мониторинга ошибок (ErrorTracker)
+- Ветка: feature/error-monitoring
+- Шаг: добавил модель `BotErrorEvent`, миграцию, сервис `ErrorTracker`, глобальный обработчик aiogram, интеграцию в webhook/Celery/бизнес-слой/reference_prompt, документацию и команду `prune_bot_errors`
+- Проверки: `python3 manage.py check`, `python3 manage.py makemigrations --check --dry-run`
+- Коммит/PR: pending
+- Следующий шаг: подготовить PR → staging, после деплоя проверить логи web/worker/beat и health, затем передать стенд на ручные тесты

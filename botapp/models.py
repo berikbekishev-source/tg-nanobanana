@@ -508,3 +508,73 @@ class ChatMessage(models.Model):
     def __str__(self):
         direction = "→" if self.direction == self.Direction.OUTGOING else "←"
         return f"{direction} {self.message_type} @ {self.message_date:%Y-%m-%d %H:%M:%S}"
+
+
+class BotErrorEvent(models.Model):
+    """Системные ошибки бота с контекстом."""
+
+    class Severity(models.TextChoices):
+        INFO = "info", "Info"
+        WARNING = "warning", "Warning"
+        CRITICAL = "critical", "Critical"
+
+    class Status(models.TextChoices):
+        NEW = "new", "New"
+        IN_PROGRESS = "in_progress", "In progress"
+        RESOLVED = "resolved", "Resolved"
+
+    class Origin(models.TextChoices):
+        WEBHOOK = "webhook", "Telegram webhook"
+        TELEGRAM = "telegram_handler", "Telegram handlers"
+        CELERY = "celery_task", "Celery task"
+        GENERATION = "generation", "Generation pipeline"
+        PAYMENT = "payment", "Payments"
+        MINIAPP = "miniapp", "Miniapp/API"
+        OTHER = "other", "Other"
+
+    origin = models.CharField(max_length=64, choices=Origin.choices, default=Origin.OTHER)
+    severity = models.CharField(max_length=16, choices=Severity.choices, default=Severity.WARNING)
+    status = models.CharField(
+        max_length=16,
+        choices=Status.choices,
+        default=Status.NEW,
+        db_index=True,
+    )
+    occurred_at = models.DateTimeField(default=timezone.now, db_index=True)
+    handler = models.CharField(max_length=255, blank=True, default="")
+    error_class = models.CharField(max_length=255, blank=True, default="")
+    message = models.TextField(blank=True, default="")
+    stacktrace = models.TextField(blank=True, default="")
+    payload = models.JSONField(default=dict, blank=True)
+    extra = models.JSONField(default=dict, blank=True)
+    chat_id = models.BigIntegerField(null=True, blank=True, db_index=True)
+    user = models.ForeignKey(
+        TgUser,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='error_events',
+    )
+    username_snapshot = models.CharField(max_length=255, blank=True, default="")
+    gen_request = models.ForeignKey(
+        "GenRequest",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='error_events',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Bot Error"
+        verbose_name_plural = "Bot Errors"
+        ordering = ['-occurred_at', '-id']
+        indexes = [
+            models.Index(fields=['origin', 'severity', 'occurred_at']),
+            models.Index(fields=['status', 'occurred_at']),
+        ]
+
+    def __str__(self):
+        base = self.message or self.error_class or "Ошибка"
+        return f"{self.get_origin_display()} · {base[:60]}"

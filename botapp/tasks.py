@@ -1,29 +1,32 @@
 """
 Celery задачи для асинхронной генерации изображений и видео
 """
-from celery import shared_task, signals
-import httpx
-from django.conf import settings
-from decimal import Decimal
-from typing import Any, Dict, List, Optional, Tuple
-from functools import lru_cache
 import json
+import logging
 import os
-import tempfile
 import subprocess
+import tempfile
+from decimal import Decimal
+from functools import lru_cache
+from typing import Any, Dict, List, Optional, Tuple
 
-from imageio_ffmpeg import get_ffmpeg_exe
+import httpx
+from celery import shared_task, signals
+from django.conf import settings
 from django.db import close_old_connections
+from imageio_ffmpeg import get_ffmpeg_exe
 
-from .models import GenRequest, TgUser, AIModel
-from .services import generate_images_for_model, supabase_upload_png, supabase_upload_video
-from .keyboards import get_generation_complete_message, get_main_menu_inline_keyboard
-from .providers import get_video_provider, VideoGenerationError
-from .business.generation import GenerationService
 from .business.balance import BalanceService
-from .media_utils import detect_reference_mime, ensure_png_format
-from .media_utils import detect_reference_mime
+from .business.generation import GenerationService
 from .chat_logger import ChatLogger
+from .error_tracker import ErrorTracker
+from .keyboards import get_generation_complete_message, get_main_menu_inline_keyboard
+from .media_utils import detect_reference_mime, ensure_png_format
+from .models import AIModel, BotErrorEvent, GenRequest, TgUser
+from .providers import VideoGenerationError, get_video_provider
+from .services import generate_images_for_model, supabase_upload_png, supabase_upload_video
+
+logger = logging.getLogger(__name__)
 
 
 def send_telegram_photo(chat_id: int, photo_bytes: bytes, caption: str, reply_markup: Optional[Dict] = None):
@@ -135,6 +138,23 @@ def _close_db_connections(**kwargs):
 
 signals.task_prerun.connect(_close_db_connections)
 signals.task_postrun.connect(_close_db_connections)
+
+
+@signals.task_failure.connect
+def _log_task_failure(sender=None, task_id=None, exception=None, args=None, kwargs=None, einfo=None, **extra):
+    task_name = getattr(sender, "name", str(sender) if sender else "unknown")
+    ErrorTracker.log(
+        origin=BotErrorEvent.Origin.CELERY,
+        severity=BotErrorEvent.Severity.CRITICAL,
+        handler=task_name,
+        payload={
+            "task_id": task_id,
+            "args": args,
+            "kwargs": kwargs,
+        },
+        extra={"traceback": str(einfo) if einfo else ""},
+        exc=exception,
+    )
 
 
 def _run_command(command: List[str]) -> str:
@@ -696,7 +716,16 @@ def generate_video_task(self, request_id: int):
                 parse_mode=None,
             )
         except Exception as send_error:
-            print(f"Failed to notify user about video error: {send_error}")
+            logger.exception("Failed to notify user about video error: %s", send_error)
+            ErrorTracker.log(
+                origin=BotErrorEvent.Origin.CELERY,
+                severity=BotErrorEvent.Severity.WARNING,
+                handler="send_video_failure_notification",
+                chat_id=req.chat_id,
+                gen_request=req,
+                payload={"request_id": req.id},
+                exc=send_error,
+            )
         return
     except Exception as e:
         if req:
