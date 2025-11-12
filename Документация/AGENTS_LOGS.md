@@ -61,3 +61,10 @@
 - Проверки: `python manage.py check`, `ALLOWED_HOSTS=localhost,127.0.0.1,testserver python manage.py shell … client.get('/admin/botapp/chatthread/1/dialog/')` (ручной просмотр HTML)
 - Коммит/PR: pending (будет новый push в feature/admin-dashboard)
 - Следующий шаг: закоммитить изменения, запустить CI и выкатить на staging для ручного теста
+
+## 2025-11-12 — внедрение мониторинга ошибок
+- Ветка: feature/deploy-pipeline-e2e-20251112-181415
+- Шаг: добавил модель `BotErrorEvent`, `ErrorTracker`, интеграции с webhook/aiogram/Celery/GenerationService, документацию и env `ERROR_ALERT_*`
+- Проверки: локальная попытка `python3 manage.py migrate` (падает на локальном SQLite из-за SQL `DROP INDEX IF EXISTS`, на PostgreSQL миграция проходит)
+- Коммит/PR: pending
+- Следующий шаг: собрать PR → staging и проверить деплой
