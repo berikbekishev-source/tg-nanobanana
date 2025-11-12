@@ -7,9 +7,10 @@ from typing import Optional, List, Dict, Any
 from django.db import transaction as db_transaction
 from django.utils import timezone
 
-from botapp.models import TgUser, GenRequest, AIModel, Transaction
+from botapp.models import TgUser, GenRequest, AIModel, Transaction, BotErrorEvent
 from botapp.business.balance import BalanceService, InsufficientBalanceError
 from botapp.business.pricing import calculate_request_cost
+from botapp.error_tracker import ErrorTracker
 
 
 class GenerationService:
@@ -261,6 +262,21 @@ class GenerationService:
         if gen_request.ai_model:
             gen_request.ai_model.total_errors += 1
             gen_request.ai_model.save()
+
+        ErrorTracker.log(
+            origin=BotErrorEvent.Origin.GENERATION,
+            severity=BotErrorEvent.Severity.WARNING,
+            handler="GenerationService.fail_generation",
+            user=gen_request.user,
+            chat_id=gen_request.chat_id,
+            gen_request=gen_request,
+            message=error_message,
+            payload={
+                "generation_type": gen_request.generation_type,
+                "ai_model": gen_request.ai_model.display_name if gen_request.ai_model else None,
+                "prompt": (gen_request.prompt or "")[:400],
+            },
+        )
 
         # Возвращаем средства если нужно
         if refund and gen_request.transaction:

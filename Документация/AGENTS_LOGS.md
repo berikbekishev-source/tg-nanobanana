@@ -62,6 +62,7 @@
 - Коммит/PR: pending (будет новый push в feature/admin-dashboard)
 - Следующий шаг: закоммитить изменения, запустить CI и выкатить на staging для ручного теста
 
+<<<<<<< HEAD
 ## 2025-11-12 — починка статики для истории чатов
 - Ветка: feature/admin-dialog-ui
 - Шаг: подключил WhiteNoise, включил `collectstatic` в Dockerfile, настроил `STATIC_URL=/static/` и убрал дубли в `STATICFILES_DIRS`, чтобы кастомные стили admin загружались на staging
@@ -70,8 +71,8 @@
 - Следующий шаг: закоммитить изменения, занять staging, проверить деплой и подтвердить готовность к ручному тесту
 
 ## 2025-11-12 — внедрение мониторинга ошибок
-- Ветка: release/deploy-pipeline-main
-- Шаг: добавил модель `BotErrorEvent`, сервис `ErrorTracker`, интеграции с webhook/aiogram/Celery/GenerationService, документацию и env-переменные `ERROR_ALERT_*`
-- Проверки: локальная попытка `python3 manage.py migrate` (падает на старом SQLite из-за SQL `DROP INDEX IF EXISTS`, что не влияет на PostgreSQL окружения)
+- Ветка: feature/deploy-pipeline-e2e-20251112-181415
+- Шаг: добавил модель `BotErrorEvent`, `ErrorTracker`, интеграции с webhook/aiogram/Celery/GenerationService, документацию и env `ERROR_ALERT_*`
+- Проверки: локальная попытка `python3 manage.py migrate` (падает на локальном SQLite из-за SQL `DROP INDEX IF EXISTS`, на PostgreSQL миграция проходит)
 - Коммит/PR: pending
-- Следующий шаг: подготовить деплой на staging после ревью
+- Следующий шаг: собрать PR → staging и проверить деплой
