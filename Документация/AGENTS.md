@@ -1,925 +1,195 @@
 # Инструкция для ИИ-агентов
 
-Документ описывает правила работы с проектом, его структуру и доступные инструменты. Действуйте строго в рамках указанных процессов и не нарушайте приведённые ограничения.
+Документ описывает как работать с проектом Telegram NanoBanana Bot, какие ресурсы доступны и как устроен пайплайн деплоя. Все действия выполняйте строго по описанным правилам.
 
-Отвечать только на русском языке. Комментарии при выполнении задач прописывать на русском языке.
+## 1. Структура проекта
 
-Комментарии в коде писать только на русском языке.
-
-## Структура проекта
-
-- `botapp/` — основная бизнес-логика бота: модели (`models.py`), API на Django Ninja (`api.py`), Celery-задачи (`tasks.py`), обработчики Telegram (`handlers/`, `telegram.py`), интеграции (`providers/`, `services.py`), вспомогательные модули (`business/`).
-- `config/` — конфигурация Django: основные настройки (`settings.py`), ASGI (`asgi.py`), Celery (`celery.py`), URL-маршруты (`urls.py`), упрощённые настройки для тестов (`settings_sqlite.py`).
-- `manage.py` — стандартная точка входа Django.
-- `Dockerfile.web`, `Dockerfile.worker`, `docker-compose.yml` — контейнеризация и локальный запуск web/worker/beat/flower/redis.
-- `requirements.txt` — список Python-зависимостей.
-- `Документация/` — все внутренние документы проекта (добавляйте новые инструкции сюда).
-
-## Рабочее окружение
-
-- Основной стек: Python 3.12 (локально), Django 5.2, Celery, Redis, PostgreSQL (Supabase), Railway.
-- Все чувствительные значения берите из переменных окружения Railway либо `.env.railway`. Не храните секреты в других местах.
-
-## Доступные инструменты
-
-### 1. База данных Supabase
-
-- **PostgreSQL-подключение** (используйте для `psql`, миграций, SQL-скриптов):
-  ```
-  postgresql://postgres.eqgcrggbksouurhjxvzs:3ZVyk8a27nT4lHMh@aws-1-eu-north-1.pooler.supabase.com:5432/postgres
-  ```
-- **REST и Storage API**:
-  - `SUPABASE_URL`: `https://eqgcrggbksouurhjxvzs.supabase.co`
-  - `SUPABASE_SERVICE_ROLE_KEY`: `eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVxZ2NyZ2dia3NvdXVyaGp4dnpzIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1NTUxNDc5OSwiZXhwIjoyMDcxMDkwNzk5fQ.MPnkmxqucGWASbifVoBN80d4k_fIGeo0XTWWdNf1AU0`
-  - `SUPABASE_BUCKET`: `video_veo3`
-  - Для Storage Video используйте `SUPABASE_VIDEO_BUCKET` (если указан отдельно).
-- **CLI**:
-  1. Установите [Supabase CLI](https://supabase.com/docs/reference/cli/installation).
-  2. Выполните `supabase login --token <SUPABASE_SERVICE_ROLE_KEY>`.
-  3. Для прямого подключения к БД: `supabase db remote connect --db-url "<DATABASE_URL>"`.
-- **REST запросы**: добавляйте заголовок `apikey: <SUPABASE_SERVICE_ROLE_KEY>` и `Authorization: Bearer <SUPABASE_SERVICE_ROLE_KEY>`.
-
-### 2. Railway
-
-- Используется для деплоя web, worker, beat, flower и Redis.
-- Основные команды Railway CLI (проект и окружение уже привязаны):
-  - `railway status` — текущий сервис, состояние деплоя, домены.
-  - `railway logs --service web --lines 100` — последние логи web-сервиса (аналогично для `worker`, `beat`, `flower`).
-  - `railway variables --service <service>` — просмотр переменных окружения.
-- **Деплой**:
-  - Деплой производится **только через GitHub**: коммит → `git push origin main` → Railway автоматически строит и выкатывает все сервисы.
-  - Ручные загрузки (`railway up`, `railway deploy`, любые команды, меняющие код минуя GitHub) **запрещены**. Railway CLI используем лишь для диагностики (status/logs/variables).
-- **Миграции**:
-  - Перед пушем убедитесь, что необходимые миграции присутствуют в `botapp/migrations/`.
-  - На Railway веб-сервис стартует командой, в которой автоматически выполняется `python manage.py migrate` перед запуском Gunicorn.
-
-### 3. GitHub репозиторий
-
+### 1.1 Репозиторий и стек
 - Репозиторий: `https://github.com/berikbekishev-source/tg-nanobanana`.
-- Рабочая ветка по умолчанию — `main`.
-- Любое значимое изменение (код, миграции, конфигурация) обязательно оформляется коммитом.
-- После завершения задачи:
-  1. Проверьте, что тесты/линтеры (если есть) пройдены.
-  2. Сделайте коммит с осмысленным сообщением.
-  3. Выполните `git push origin main`.
-- Только после пуша на GitHub произойдёт продакшн-деплой на Railway. Не обходите этот процесс.
-- Personal access tokens (classic) публикуем **только** в Secrets GitHub (`ADMIN_GH_TOKEN`). Хранить значение в репозитории запрещено.
+- Основной стек: Python 3.12, Django 5.2, Celery, Redis, PostgreSQL (Supabase), Railway, Telegram Bot API.
+- Web-сервис и воркеры запускаются в Railway. Для разработки используйте Docker (`docker-compose.yml`) или локальный Python.
 
-## Общие рекомендации
+### 1.2 Основные каталоги
+- `botapp/` — бизнес-логика бота, API (`api.py`), задачи Celery (`tasks.py`), обработчики Telegram (`handlers/`), интеграции (`providers/`).
+- `config/` — настройки Django (ASGI, Celery, URL, env-профили).
+- `manage.py` — точка входа Django.
+- `Dockerfile.web`, `Dockerfile.worker`, `Dockerfile.beat`, `docker-compose.yml` — контейнеры и локальный запуск.
+- `templates/`, `lavatop/`, `dashboard/` — вспомогательные UI-модули.
+- `Документация/` — все инструкции проекта (добавляйте новые документы сюда).
 
-- Перед редактированием файлов убедитесь, что локальная ветка синхронизирована с `origin/main`.
-- Перед стартом правок всегда выполняйте `git fetch --all && git pull --rebase origin main`, а перед пушем повторно синхронизируйтесь и проверьте состояние деревьев через `git status`. Это устраняет лишние конфликты и поддерживает требование актуальной локальной ветки (`origin/main`).
-- Не используйте форс-пуши — достаточно регулярно подтягивать изменения коллег.
-- Не удаляйте и не меняйте чужие секреты и переменные без согласования.
-- Делайте короткие, атомарные коммиты сразу после локальной проверки (линтеры, миграции, тесты). Так Railway чаще выкатывает небольшие патчи, и при сбое проще найти и откатить виновный коммит.
-- Фиксируйте в документации процессы, которые могут понадобиться другим агентам.
-- Проверяйте логи Railway и Supabase при любом инциденте (ошибки миграций, Celery, внешние API).
+### 1.3 Railway сервисы и окружения
+- Railway Workspace: **Berik's Projects**, Project ID `866bc61a-0ef1-41d1-af53-26784f6e5f06` (`Telegram_bot`).
+- Сопоставление веток и окружений:
 
-Следуйте инструкции, чтобы поддерживать стабильность сервиса и прозрачность процессов развёртывания.
+| Git ветка | Railway окружение | ENV_ID | Назначение |
+|-----------|-------------------|--------|------------|
+| `staging` | `staging`         | `9e15b55d-8220-4067-a47e-191a57c2bcca` | Автотесты, тестовый Telegram-бот.
+| `main`    | `production`      | `2eee50d8-402e-44bf-9035-8298efef91bc` | Продакшн и основной бот.
 
----
+- Сервисы и команды:
+  - `web` (`29038dc3-c812-4b0d-9749-23cdd1b91863`) — `gunicorn config.asgi:application --worker-class uvicorn.workers.UvicornWorker --bind 0.0.0.0:$PORT --workers 2` (Dockerfile.web).
+  - `worker` (`aeb9b998-c05b-41a0-865c-5b58b26746d2`) — `celery -A config worker -l info --pool=prefork --concurrency=2` (Dockerfile.worker).
+  - `beat` (`4e7336b6-89b9-4385-b0d2-3832cab482e0`) — `celery -A config beat -l info --scheduler django_celery_beat.schedulers:DatabaseScheduler` (Dockerfile.beat).
+  - `redis` (`e8f15267-93da-42f2-a1da-c79ad8399d0f`) — управляемый сервис Railway.
 
-## Схема веток и деплоя (staging/main)
+### 1.4 Документация и служебные файлы
+- Все инструкции размещайте в `Документация/*.md`. Текущий файл — эталон процесса.
+- Журнал действий агентов ведётся в `Документация/AGENTS_LOGS.md`. Если файла нет — создайте, добавляйте туда дату, задачу, сделанный шаг и ссылку на коммит.
+- Любые новые регламенты или чек-листы добавляйте только после согласования с человеком.
 
-Цель: безопасная выкладка без простоя продакшена при параллельной работе ИИ‑агентов.
+## 2. Доступы к инструментам
 
-- Ветки: `staging` (препрод) и `main` (прод). Прямые пуши запрещены, только PR.
-- Порядок работы: feature-ветки → PR в `staging` → автодеплой в Staging → ручные смоки → **только после явного подтверждения человека** агент создаёт PR `staging` → `main` → автодеплой в Prod.
-- Railway: 2 окружения/проекта (Staging ↔ `staging`, Production ↔ `main`) с разными переменными окружения и отдельным Telegram‑ботом для Staging.
-- CI: на PR и push выполняются проверки Python/Django, сборка Docker, после деплоя — smoke `/api/health` с таймаутом ожидания.
+### 2.1 GitHub
+- Репозиторий: `git@github.com:berikbekishev-source/tg-nanobanana.git` (доступ по SSH) или HTTPS.
+- Personal access token (classic) хранится у человека и в защищённом хранилище (1Password). Перед началом работы попросите его и установите в `GITHUB_PAT`, не коммитьте токены в репозиторий.
+- Авторизация в GitHub CLI:
+  ```bash
+  echo "$GITHUB_PAT" | gh auth login --with-token
+  ```
+- Критичные секреты репозитория: `ADMIN_GH_TOKEN`, `RAILWAY_API_TOKEN`, `PRODUCTION_BASE_URL`, `TELEGRAM_NOTIFY_TOKEN`, `TELEGRAM_NOTIFY_CHAT_ID`. Не меняйте их названия.
 
-Обязательные переменные для каждого окружения:
+### 2.2 Railway
+- API токен / CLI токен: `47a20fbb-1f26-402d-8e66-ba38660ef1d4`.
+- Быстрый вход:
+  ```bash
+  export RAILWAY_TOKEN="47a20fbb-1f26-402d-8e66-ba38660ef1d4"
+  railway login --token $RAILWAY_TOKEN
+  railway link --project 866bc61a-0ef1-41d1-af53-26784f6e5f06
+  ```
+- Основные команды (допустимы только для диагностики):
+  ```bash
+  railway status --json
+  railway logs --service web --tail 200
+  railway logs --service worker --tail 200
+  railway variables --service web
+  ```
+- GraphQL API: `https://backboard.railway.app/graphql/v2` (Bearer `RAILWAY_API_TOKEN`). Используйте его для автоматических проверок и просмотра истории деплоев.
+- Любые действия, меняющие код (ручной deploy, up, redeploy) запрещены — код выкатывается только через GitHub Actions.
 
-```bash
-# Telegram
-TELEGRAM_BOT_TOKEN=<token для окружения>
-TG_WEBHOOK_SECRET=<секрет заголовка webhook>
-PUBLIC_BASE_URL=https://<домен окружения>
+### 2.3 Supabase (PostgreSQL + Storage)
+- Подключение к БД:
+  `postgresql://postgres.eqgcrggbksouurhjxvzs:3ZVyk8a27nT4lHMh@aws-1-eu-north-1.pooler.supabase.com:5432/postgres`
+- REST/Storage:
+  - `SUPABASE_URL = https://eqgcrggbksouurhjxvzs.supabase.co`
+  - `SUPABASE_SERVICE_ROLE_KEY = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVxZ2NyZ2dia3NvdXVyaGp4dnpzIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1NTUxNDc5OSwiZXhwIjoyMDcxMDkwNzk5fQ.MPnkmxqucGWASbifVoBN80d4k_fIGeo0XTWWdNf1AU0`
+  - `SUPABASE_BUCKET = video`
+  - `SUPABASE_VIDEO_BUCKET = video_veo3`
+- CLI:
+  ```bash
+  supabase login --token $SUPABASE_SERVICE_ROLE_KEY
+  supabase db remote connect --db-url "$DATABASE_URL"
+  ```
+- Для REST-запросов добавляйте заголовки `apikey` и `Authorization` со значением сервисного ключа.
 
-# БД/Supabase/Redis — отдельные для Staging и Prod
-DATABASE_URL=...
-SUPABASE_URL=...
-SUPABASE_SERVICE_ROLE_KEY=...
-SUPABASE_BUCKET=...
-SUPABASE_VIDEO_BUCKET=...
-REDIS_URL=...
+### 2.4 Telegram-боты
+- Тестовый бот (staging): `@test_integer_ai_bot`, токен `7869572156:AAGZ1_83Vpuw8wg7ma1HhEpTnxFfjTHh3M4`.
+- Продакшн бот: `@tg_nanobanana_bot` (название условно), токен `8238814681:AAEXaV8GPwsFne2sr8uTOcgCWcdDs0k3Ewk`.
+- Никогда не путайте токены между окружениями. В staging проверяются новые функции; production — только после успешного релиза.
 
-# Наблюдаемость (рекомендуется)
-SENTRY_DSN=...
-SENTRY_ENVIRONMENT=staging|production
-```
+### 2.5 Обязательные переменные окружения
+Минимальный набор для каждого окружения (хранится в Railway variables):
+- `TELEGRAM_BOT_TOKEN`, `TG_WEBHOOK_SECRET`, `PUBLIC_BASE_URL`.
+- `DATABASE_URL`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_BUCKET`, `SUPABASE_VIDEO_BUCKET`.
+- `REDIS_URL` (Railway выдаёт автоматически, но проконтролируйте).
+- `SENTRY_DSN`, `SENTRY_ENVIRONMENT` (опционально, но желательно для мониторинга).
+- `GEMINI_API_KEY` + `USE_VERTEX_AI` / `GOOGLE_APPLICATION_CREDENTIALS` при необходимости.
+- `RAILWAY_API_TOKEN` для workflow, `TELEGRAM_NOTIFY_TOKEN`, `TELEGRAM_NOTIFY_CHAT_ID` для уведомлений о релизах.
 
-Требования к PR:
-- Нет незакоммиченных миграций (`manage.py makemigrations --check`).
-- Новые фичи — под фичефлагами (по умолчанию выключены на проде).
-- Смоки на Staging пройдены (бот и `/api/health`).
+## 3. Правила работы ИИ агента
 
-# Продакшн релиз (main)
+### 3.1 Основные принципы
+1. Всю коммуникацию ведите только на русском языке. Комментарии в коде пишите исключительно на русском.
+2. Выполняйте задачи максимально самостоятельно, используя доступы и инструкции из этого файла. Не перекладывайте работу на человека без веской причины.
+3. Каждое значимое изменение фиксируйте отдельным коммитом и пушьте в GitHub. Так проще найти и откатить правки.
+4. Работайте пошагово: делайте один шаг, фиксируйте результат, пишите краткий отчёт, затем переходите к следующему.
+5. После каждого шага вносите запись в `Документация/AGENTS_LOGS.md` (дата, ветка, сделанное действие, ссылка на PR/коммит).
+6. Если требований не хватает — уточните детали до начала работы, чтобы не переделывать.
+7. Не делайте ничего «на своё усмотрение». Все изменения (фичи, настройки, миграции) согласовывайте с человеком и следуйте полученным инструкциям.
 
-1. После одобрения человека создайте PR `staging → main`. Если появляется конфликт, заводите временную ветку `release/...`, в неё мерджите `main` (разрешая конфликты), и уже её отправляйте в `main`. После релиза подтяните `main` обратно в `staging`, чтобы ветки снова имели общий базовый коммит.
-2. Ветки `staging` и `main` защищены и требуют линейной истории. GitHub Actions автоматически открывают PR из feature-веток и ставят апрув, но при необходимости агент обязан дожать merge через CLI (`gh pr merge --admin`), чтобы не блокировать деплой.
-3. Workflow `CI` (раньше назывался `CI and Smoke`) должен пройти на PR и на push в `main`. Railway ожидает check suite с именем `CI`; не меняйте название workflow без веской причины.
-4. После merge в `main` стартует push-пайплайн `CI`. Он строит docker-образы, ожидает автодеплой Railway и запускает `production-smoke` (HTTP `/api/health`). Дождитесь зелёного статуса.
-5. Workflow `Post Deploy Monitor and Rollback` слушает успешные запуски `CI` на `main`: он собирает логи Railway, проверяет `/api/health` и, при сбое, делает `railway rollback/git revert` + уведомление в Telegram.
-6. Всегда проверяйте продакшн в Railway:
-   ```bash
-   railway environment production
-   railway status --json | jq '.services.edges[].node.serviceInstances.edges[] | select(.environmentId=="2eee50d8-402e-44bf-9035-8298efef91bc") | {serviceName, commit: .latestDeployment.meta.commitHash, status: .latestDeployment.status}'
-   ```
-   Если видите `skippedReason: "CI check suite failed"`, значит Railway не увидел успешный чек `CI`. Убедитесь, что workflow `CI` прошёл (можно перезапустить `gh run rerun <id>`), затем повторно откройте PR или создайте новый коммит и дайте пайплайну докрутиться.
-7. Не перезапускайте push-пайплайн `CI` на `main`, если коммит уже помечен успехом: повторный rerun создаёт дополнительный check suite со статусом `failure`, Railway увидит его и пометит деплой как `skipped`. Если нужен повторный деплой, делайте новый технический коммит (например, обновление доки) и проведите его по полному циклу.
-7. После релиза сообщите человеку: какие коммиты попали, какие проверки пройдены, какие действия предпринимать, если нужно катить назад.
+### 3.2 Рабочий процесс
+- Перед началом работы синхронизируйтесь с нужной веткой (`staging` для фич, `main` для хотфиксов).
+- Перед каждым деплоем бронируйте стенд через `STAGING_STATUS.md` (см. гайд ниже) и освобождайте его сразу после проверок.
+- Стройте план действий и проговаривайте его.
+- При работе с кодом запускайте доступные тесты/линтеры. Если тесты не предусмотрены, объясните, как вручную проверили результат.
+- Всегда проверяйте логи (web, worker, beat) и `/api/health` перед тем как отчитаться об успехе.
+- Соблюдайте чистоту репозитория: не коммитьте артефакты (`__pycache__`, `.env`, дампы`).
 
+### 3.3 Отчётность и диагностика
+- Для каждого релиза фиксируйте: какие ветки задействованы, какие проверки прошли, какие команды Railway/`curl` выполнялись.
+- Для деплоя на `staging` обязательно записывайте в `Документация/AGENTS_LOGS.md`: время бронирования, PR/коммит, команды (`railway status/logs`, `curl /api/health`), результат и факт уведомления человека.
+- Если пайплайн сломался, собирайте факты (ID workflow, выдержки из логов, команды) и прикладывайте в отчёт человеку.
+- Никогда не скрывайте ошибки: лучше сразу описать проблему и предложить план её устранения.
 
-# Railway Deployment Guide
+### 3.4 Безопасность
+- Не публикуйте токены за пределами приватного репозитория.
+- Не запускайте `railway up/deploy` руками, не редактируйте переменные окружения без необходимости.
+- Rollback или git revert выполняйте только после подтверждения человека или если этого требует автоматический workflow.
 
-Документация по работе с Railway для проекта Telegram NanoBanana Bot.
+## 4. Правила работы с GitHub и Railway
 
-## Содержание
+### 4.1 Ветки и защита
+| Ветка | Назначение | Правила |
+|-------|------------|---------|
+| `feature/*` | Работа ИИ-агента над задачей | Ветка создаётся из `staging`. Пуши запускают `CI and Smoke` и автогенерацию PR в `staging`.
+| `staging` | Тестовое окружение и тестовый бот | Защищена. Merge делается **вручную через `gh pr merge --squash`** только после зелёного CI и бронирования стенда в `STAGING_STATUS.md`.
+| `main` | Продакшн | Защищена. Merge разрешён только человеку через веб-интерфейс GitHub; авто-merge отключён.
 
-1. [Структура проекта](#структура-проекта)
-2. [Идентификаторы](#идентификаторы)
-3. [Railway CLI](#railway-cli)
-4. [Railway API](#railway-api)
-5. [Переменные окружения](#переменные-окружения)
-6. [Типичные задачи](#типичные-задачи)
+### 4.2 GitHub Actions
+- `pr-from-feature.yml` — создаёт/обновляет PR `feature/* → staging` сразу после push.
+- `CI and Smoke` — линтеры, тесты, сборка и смоки. Запускается на push в feature, на PR к `staging`, на push в `staging` и `main`.
+- `auto-approve.yml` — выполняет машинное ревью и ставит approve от `github-actions[bot]`, но **не включает auto-merge**.
+- `auto-merge-staging.yml` — отключён. Merge выполняет агент вручную через CLI после бронирования стенда.
+- `setup-branch-protection.yml` — поддерживает настройки защищённых веток (идёт в режиме `continue-on-error`, не ломайте его).
+- `post-deploy-monitor.yml` — после успешного push в `main` собирает Railway логи, пингует `/api/health`, при сбое делает rollback/`git revert` и шлёт уведомление в Telegram.
 
----
+### 4.3 Цикл feature → staging
+1. Создайте ветку `feature/<task>` от `staging`, коммитьте мелкими порциями.
+2. `git push origin feature/<task>` автоматически создаёт/обновляет PR `feature → staging`; CI прогоняется на пуше и на PR.
+3. Перед выкладкой дождитесь зелёного `CI and Smoke` (`gh pr checks <PR#>`). Если хотя бы один шаг красный — фиксите, пока всё не станет зелёным.
+4. Забронируйте стенд: откройте `STAGING_STATUS.md`, убедитесь, что он свободен, обновите блок «Сейчас» на статус `Занят`, закоммитьте `chore: занял staging` и запушьте.
+5. Выполните merge через CLI: `gh pr merge <PR#> --squash (--admin, если доступен)`. Кнопки в UI не используем.
+6. Дождитесь автодеплоя Railway (пуш в `staging` запускает короткий run `CI and Smoke` + deploy). После этого **обязательные проверки**:
+   - `railway status --json | jq '... environmentId=="9e15b55d-8220-4067-a47e-191a57c2bcca"'`
+   - `railway logs --service web|worker|beat --lines 100`
+   - `curl -sf "$STAGING_BASE_URL/api/health"`
+7. Внесите подробную запись в `Документация/AGENTS_LOGS.md`, обновите `STAGING_STATUS.md` обратно на `Свободен` (укажите коммит/время) и только после этого сообщите человеку: “Staging готов, проверил status/logs/health”.
+8. Человек проводит сценарий в тестовом Telegram-боте и даёт “Go/Need fixes”. При необходимости повторяем цикл с фиксом.
 
-## Структура проекта
+### 4.4 Проверка стейджинга
+- Команды для проверки:
+  ```bash
+  railway status --json | jq '.services.edges[].node.serviceInstances.edges[] | select(.environmentId=="9e15b55d-8220-4067-a47e-191a57c2bcca") | {serviceName, status: .latestDeployment.status, commit: .latestDeployment.meta.commitHash}'
+  railway logs --service web --tail 200
+  railway logs --service worker --tail 200
+  curl -sf "$STAGING_BASE_URL/api/health"
+  ```
+- Эти проверки выполняет ИИ-агент. Как только они зелёные, агент уведомляет человека.
+- Ручные смоки в тестовом Telegram-боте `@test_integer_ai_bot` проводит только человек. Агент обязан предоставить ссылку на коммит и список проверок.
+- Все результаты (команды, timestamp, статус стенда) фиксируйте в `AGENTS_LOGS` и упомянутом отчёте.
 
-**Проект:** Telegram_bot
-**Workspace:** Berik's Projects
-**Repository:** https://github.com/berikbekishev-source/tg-nanobanana
+### 4.5 Продвижение в main и прод-окружение
+1. Никакого автоматического деплоя в `main` нет. После ручного теста человек явно даёт добро.
+2. Получив добро, агент создаёт PR `staging → main` (при необходимости через временную ветку `release/...`).
+3. `CI and Smoke` снова гоняет тесты. Merge выполняет **только человек** через кнопку GitHub (auto-merge выключен). Агент ждёт подтверждения.
+4. Merge в `main` → Railway production автодеплой. Следите за run `CI and Smoke` на push в `main` и за логами Railway.
+5. Workflow `post-deploy-monitor` проверяет `/api/health` и логи (web/worker/beat). При сбое он сам делает rollback через Railway API и `git revert`, а затем отправляет сообщение в Telegram. Агент обязан проанализировать уведомление и подготовить отчёт.
+6. Никогда не перезапускайте push-ран `CI and Smoke` на `main`, если он уже завершился успехом: повторный rerun создаёт новый check со статусом `failure`, и Railway пометит деплой как `skipped`. Для повторного релиза делайте новый коммит.
+7. После успешного релиза подтяните `main` в `staging`, чтобы ветки не расходились.
 
-### Сервисы
+### 4.6 Действия при сбоях
+- **Авто-PR завис** — проверьте `gh pr checks <num>`, если все проверки зелёные, поставьте approve и смержите вручную. Если проверки красные, разбирайтесь в логах, фиксите, пушьте обновление.
+- **CI упал** — изучите логи job, исправьте код и повторите push. Не отключайте проверки.
+- **Railway деплой не стартовал** — посмотрите `railway status --json` и `Railway dashboard`. Частая причина — нет зелёного `CI` на соответствующем коммите; прогоните `CI` на нужной ветке заново.
+- **Staging/production нездоров** — соберите логи (`railway logs`), проверьте `/api/health`, при критических ошибках уведомите человека и предложите rollback (только после подтверждения).
 
-Проект состоит из 4 сервисов:
-
-1. **web** - Django приложение с веб-сервером (Gunicorn + Uvicorn)
-2. **worker** - Celery worker для асинхронной генерации изображений
-3. **beat** - Celery beat для периодических задач
-4. **REDIS_URL** - Redis база данных для Celery и кеширования
-
-### Конфигурация сервисов
-
-#### Web Service
-- **Dockerfile:** `Dockerfile.web`
-- **Custom Start Command:** `gunicorn config.asgi:application --worker-class uvicorn.workers.UvicornWorker --bind 0.0.0.0:$PORT --workers 2`
-- **Port:** Переменная `$PORT` (автоматически от Railway)
-- **Region:** europe-west4
-
-#### Worker Service
-- **Dockerfile:** `Dockerfile.worker`
-- **Command:** `celery -A config worker -l info --pool=prefork --concurrency=2`
-- **Autoscaling:** Нет
-
-#### Beat Service
-- **Dockerfile:** `Dockerfile.beat`
-- **Command:** `celery -A config beat -l info --scheduler django_celery_beat.schedulers:DatabaseScheduler`
-
-#### Redis Service
-- **Type:** Railway Plugin (managed service)
-- **Version:** Redis 7.x
-
----
-
-## Идентификаторы
-
-### Project & Environment
-
-```bash
-PROJECT_ID="866bc61a-0ef1-41d1-af53-26784f6e5f06"
-# production
-PROD_ENV_ID="2eee50d8-402e-44bf-9035-8298efef91bc"
-# staging
-STAGING_ENV_ID="9e15b55d-8220-4067-a47e-191a57c2bcca"
-```
-
-### Service IDs
-
-```bash
-WEB_SERVICE_ID="29038dc3-c812-4b0d-9749-23cdd1b91863"
-WORKER_SERVICE_ID="aeb9b998-c05b-41a0-865c-5b58b26746d2"
-BEAT_SERVICE_ID="4e7336b6-89b9-4385-b0d2-3832cab482e0"
-REDIS_SERVICE_ID="e8f15267-93da-42f2-a1da-c79ad8399d0f"
-```
-
-### API Token
-
-```bash
-RAILWAY_API_TOKEN="47a20fbb-1f26-402d-8e66-ba38660ef1d4"
-```
-
-⚠️ **ВАЖНО:** Этот токен дает полный доступ к проекту. Не публикуйте его в GitHub!
-
----
-
-### Сопоставление веток GitHub и Railway окружений
-
-| Git ветка | Railway окружение | Триггер деплоя             | Автоматизация                                                                            |
-|-----------|--------------------|----------------------------|------------------------------------------------------------------------------------------|
-| `staging` | `staging`          | Merge/Push в `staging`     | `auto-merge-staging.yml` мержит PR → `staging`, Railway автодеплойт web/worker/beat.     |
-| `main`    | `production`       | Merge в `main`             | После merge Railway выкатывает прод, `post-deploy-monitor.yml` проверяет health/logs.    |
-
-**Важно:** никаких прямых запусков `railway deploy` или правок через Railway UI. Всё делаем через Git + GitHub Actions.
-
-### Чек-лист агента после автодеплоя в Staging
-
-1. Убедиться, что PR → `staging` смержился (если нет — выполнить merge через CLI).  
-2. Проверить статус Railway:
-   ```bash
-   railway status --service web --environment staging
-   railway deployment list --service web --environment staging
-   ```
-3. Просмотреть логи:
-   ```bash
-   railway logs --service web --tail 200
-   railway logs --service worker --tail 200
-   ```
-4. Проверить `/api/health`:
-   ```bash
-   curl -s -o /dev/null -w "%{http_code}" "$STAGING_BASE_URL/api/health"
-   ```
-5. Если что-то упало — описать проблему (какой шаг, лог, ошибка) и отправить отчёт человеку. Если всё зелёное — сообщить, что стейджинг готов к ручным смокам.
-
-### Продакшн-деплой
-
-1. PR `staging → main` создаётся **только после подтверждения человека**.
-2. `CI and Smoke` снова гоняет тесты, `auto-approve.yml` ставит approve и включает auto-merge.
-3. Railway выкатывает `main`.  
-4. `post-deploy-monitor.yml` 30 попыток пингует `/api/health`, скачивает логи web/worker/beat, отправляет статус в Telegram. При ошибке workflow сам делает `git revert` + push в `main` и уведомляет всех.
+### 4.7 Работа с Railway
+- Допустимые команды: `status`, `logs`, `variables`, `deployment list`, `run` для чтения. Нельзя выполнять `deploy`, `up`, `rollback` самостоятельно без явного распоряжения или автоматического workflow.
+- Чтобы убедиться, что нужный коммит задеплоился, используйте:
+  ```bash
+  railway status --json | jq '.services.edges[].node.serviceInstances.edges[] | {serviceName, env: .environmentId, commit: .latestDeployment.meta.commitHash}'
+  ```
+- Для health-check используйте `/api/health` соответствующего домена (`STAGING_BASE_URL`, `PRODUCTION_BASE_URL`).
+- Rollback вручную допускается только по указанию человека. В штатном режиме rollback выполняет workflow `post-deploy-monitor`.
 
 ---
-
-## Railway CLI
-
-### Установка
-
-```bash
-# macOS/Linux
-curl -fsSL https://railway.app/install.sh | sh
-
-# Проверка версии
-railway version
-```
-
-Текущая версия: `4.11.0`
-
-### Аутентификация
-
-```bash
-# Через браузер
-railway login
-
-# Или через токен
-export RAILWAY_TOKEN="47a20fbb-1f26-402d-8e66-ba38660ef1d4"
-```
-
-### Привязка к проекту
-
-```bash
-# Из директории проекта
-cd /Users/berik/Desktop/tg-nanobanana
-
-# Линковка уже выполнена, конфиг в ~/.railway/config.json
-railway status
-```
-
-### Основные команды
-
-#### Просмотр статуса
-
-```bash
-# Статус всех сервисов
-railway status
-
-# Статус в JSON формате
-railway status --json
-
-# Статус конкретного сервиса
-railway status --service worker
-```
-
-#### Логи
-
-```bash
-# Логи worker (последние 100 строк)
-railway logs --service worker
-
-# Следить за логами в реальном времени
-railway logs --service worker --tail 50
-
-# Логи всех сервисов
-railway logs
-```
-
-#### Переменные окружения
-
-```bash
-# Просмотр всех переменных для worker
-railway variables --service worker
-
-# Установка переменной
-railway variables --set KEY=value --service worker
-
-# Установка нескольких переменных
-railway variables --set VAR1=value1 VAR2=value2 --service worker
-
-# Удаление переменной
-railway variables --unset KEY --service worker
-```
-
-#### Деплой
-
-```bash
-# Ручной редеплой сервиса
-railway redeploy --service worker --yes
-
-# Редеплой всех сервисов
-railway redeploy --yes
-
-# Деплой после git push (автоматический)
-git push origin main
-```
-
-#### Другие команды
-
-```bash
-# Открыть проект в браузере
-railway open
-
-# Открыть логи в браузере
-railway logs --service worker --open
-
-# Запустить команду в Railway окружении
-railway run python manage.py migrate
-
-# Shell доступ (если поддерживается)
-railway shell --service worker
-```
-
----
-
-## Railway API
-
-Railway использует GraphQL API для всех операций.
-
-### Endpoint
-
-```
-https://backboard.railway.app/graphql/v2
-```
-
-### Аутентификация
-
-Все запросы требуют Bearer токен:
-
-```bash
-Authorization: Bearer 47a20fbb-1f26-402d-8e66-ba38660ef1d4
-```
-
-### Примеры запросов
-
-#### 1. Получить информацию о сервисе
-
-```bash
-curl -X POST https://backboard.railway.app/graphql/v2 \
-  -H "Authorization: Bearer 47a20fbb-1f26-402d-8e66-ba38660ef1d4" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "query": "query { service(id: \"aeb9b998-c05b-41a0-865c-5b58b26746d2\") { name updatedAt deployments(first: 3) { edges { node { id status createdAt staticUrl } } } } }"
-  }'
-```
-
-#### 2. Установить переменную окружения
-
-```bash
-curl -X POST https://backboard.railway.app/graphql/v2 \
-  -H "Authorization: Bearer 47a20fbb-1f26-402d-8e66-ba38660ef1d4" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "query": "mutation { variableUpsert(input: { environmentId: \"2eee50d8-402e-44bf-9035-8298efef91bc\", name: \"GEMINI_API_KEY\", serviceId: \"aeb9b998-c05b-41a0-865c-5b58b26746d2\", value: \"your-api-key-here\" }) }"
-  }'
-```
-
-**Для установки переменных на всех сервисах:**
-
-```bash
-# Web
-curl -X POST https://backboard.railway.app/graphql/v2 \
-  -H "Authorization: Bearer 47a20fbb-1f26-402d-8e66-ba38660ef1d4" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "query": "mutation { variableUpsert(input: { environmentId: \"2eee50d8-402e-44bf-9035-8298efef91bc\", name: \"YOUR_VAR\", serviceId: \"29038dc3-c812-4b0d-9749-23cdd1b91863\", value: \"value\" }) }"
-  }'
-
-# Worker
-curl -X POST https://backboard.railway.app/graphql/v2 \
-  -H "Authorization: Bearer 47a20fbb-1f26-402d-8e66-ba38660ef1d4" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "query": "mutation { variableUpsert(input: { environmentId: \"2eee50d8-402e-44bf-9035-8298efef91bc\", name: \"YOUR_VAR\", serviceId: \"aeb9b998-c05b-41a0-865c-5b58b26746d2\", value: \"value\" }) }"
-  }'
-
-# Beat
-curl -X POST https://backboard.railway.app/graphql/v2 \
-  -H "Authorization: Bearer 47a20fbb-1f26-402d-8e66-ba38660ef1d4" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "query": "mutation { variableUpsert(input: { environmentId: \"2eee50d8-402e-44bf-9035-8298efef91bc\", name: \"YOUR_VAR\", serviceId: \"4e7336b6-89b9-4385-b0d2-3832cab482e0\", value: \"value\" }) }"
-  }'
-```
-
-#### 3. Триггернуть редеплой
-
-```bash
-curl -X POST https://backboard.railway.app/graphql/v2 \
-  -H "Authorization: Bearer 47a20fbb-1f26-402d-8e66-ba38660ef1d4" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "query": "mutation { serviceInstanceRedeploy(environmentId: \"2eee50d8-402e-44bf-9035-8298efef91bc\", serviceId: \"aeb9b998-c05b-41a0-865c-5b58b26746d2\") }"
-  }'
-```
-
-#### 4. Получить логи
-
-```bash
-curl -X POST https://backboard.railway.app/graphql/v2 \
-  -H "Authorization: Bearer 47a20fbb-1f26-402d-8e66-ba38660ef1d4" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "query": "query { deploymentLogs(deploymentId: \"your-deployment-id\", limit: 100) { edges { node { message timestamp } } } }"
-  }'
-```
-
-#### 5. Получить все переменные сервиса
-
-```bash
-curl -X POST https://backboard.railway.app/graphql/v2 \
-  -H "Authorization: Bearer 47a20fbb-1f26-402d-8e66-ba38660ef1d4" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "query": "query { variables(environmentId: \"2eee50d8-402e-44bf-9035-8298efef91bc\", serviceId: \"aeb9b998-c05b-41a0-865c-5b58b26746d2\") { edges { node { name value } } } }"
-  }'
-```
-
-### Python скрипт для работы с API
-
-```python
-import requests
-import json
-
-RAILWAY_API_URL = "https://backboard.railway.app/graphql/v2"
-RAILWAY_TOKEN = "47a20fbb-1f26-402d-8e66-ba38660ef1d4"
-ENVIRONMENT_ID = "2eee50d8-402e-44bf-9035-8298efef91bc"
-
-def railway_query(query):
-    """Выполнить GraphQL запрос к Railway API"""
-    headers = {
-        "Authorization": f"Bearer {RAILWAY_TOKEN}",
-        "Content-Type": "application/json"
-    }
-    response = requests.post(
-        RAILWAY_API_URL,
-        headers=headers,
-        json={"query": query}
-    )
-    return response.json()
-
-def set_variable(service_id, name, value):
-    """Установить переменную окружения"""
-    query = f"""
-    mutation {{
-      variableUpsert(input: {{
-        environmentId: "{ENVIRONMENT_ID}",
-        name: "{name}",
-        serviceId: "{service_id}",
-        value: "{value}"
-      }})
-    }}
-    """
-    return railway_query(query)
-
-def redeploy_service(service_id):
-    """Перезапустить сервис"""
-    query = f"""
-    mutation {{
-      serviceInstanceRedeploy(
-        environmentId: "{ENVIRONMENT_ID}",
-        serviceId: "{service_id}"
-      )
-    }}
-    """
-    return railway_query(query)
-
-# Пример использования
-SERVICE_IDS = {
-    "web": "29038dc3-c812-4b0d-9749-23cdd1b91863",
-    "worker": "aeb9b998-c05b-41a0-865c-5b58b26746d2",
-    "beat": "4e7336b6-89b9-4385-b0d2-3832cab482e0"
-}
-
-# Установить переменную на worker
-result = set_variable(SERVICE_IDS["worker"], "DEBUG", "false")
-print(json.dumps(result, indent=2))
-
-# Перезапустить worker
-result = redeploy_service(SERVICE_IDS["worker"])
-print(json.dumps(result, indent=2))
-```
-
----
-
-## Переменные окружения
-
-### Общие переменные (все сервисы)
-
-```bash
-# Django
-SECRET_KEY=<random-secret-key>
-DEBUG=false
-ALLOWED_HOSTS=web-production-<hash>.up.railway.app,localhost,127.0.0.1
-
-# Database (Supabase)
-SUPABASE_URL=https://<project>.supabase.co
-SUPABASE_KEY=<anon-key>
-SUPABASE_SERVICE_ROLE_KEY=<service-role-key>
-DATABASE_URL=postgresql://postgres.<project>:<password>@aws-0-<region>.pooler.supabase.com:6543/postgres
-
-# Redis (автоматически от Railway)
-REDIS_URL=redis://<host>:<port>
-
-# Telegram Bot
-TELEGRAM_BOT_TOKEN=<bot-token>
-TG_WEBHOOK_SECRET=<random-webhook-secret>
-
-# Sentry (опционально)
-SENTRY_DSN=<sentry-dsn>
-SENTRY_ENVIRONMENT=production
-
-# Gemini API
-GEMINI_API_KEY=AIzaSyDjPIgc9s2J7seJAwFejV-R4skGFcTyxqw
-GEMINI_IMAGE_MODEL=gemini-2.5-flash-image-preview
-GEMINI_IMAGE_MODEL_FALLBACK=gemini-2.5-flash-image-preview
-
-# Google Vertex AI (опционально, если USE_VERTEX_AI=true)
-USE_VERTEX_AI=false
-GCP_PROJECT_ID=gen-lang-client-0838548551
-GCP_LOCATION=us-central1
-GOOGLE_APPLICATION_CREDENTIALS_JSON=<service-account-json>
-```
-
-### Web Service специфичные
-
-```bash
-PORT=<auto-assigned-by-railway>
-RAILWAY_PUBLIC_DOMAIN=web-production-<hash>.up.railway.app
-```
-
-### Worker Service специфичные
-
-```bash
-# Worker не требует дополнительных переменных
-# Использует общие переменные
-```
-
-### Текущая конфигурация
-
-**AI модель:** Gemini API (NanoBanana)
-**Модель:** `gemini-2.5-flash-image-preview`
-**Vertex AI:** Отключен (`USE_VERTEX_AI=false`)
-
----
-
-## Типичные задачи
-
-### 1. Сменить API ключ Gemini
-
-```bash
-# Через CLI (рекомендуется)
-railway variables --set GEMINI_API_KEY="new-key-here" --service worker
-railway variables --set GEMINI_API_KEY="new-key-here" --service web
-railway variables --set GEMINI_API_KEY="new-key-here" --service beat
-
-# Перезапустить worker для применения изменений
-railway redeploy --service worker --yes
-```
-
-### 2. Переключиться на Vertex AI
-
-```bash
-# Включить Vertex AI
-railway variables --set USE_VERTEX_AI=true --service worker
-
-# Установить Service Account JSON
-railway variables --set GOOGLE_APPLICATION_CREDENTIALS_JSON='{"type":"service_account",...}' --service worker
-
-# Установить GCP параметры
-railway variables --set GCP_PROJECT_ID="your-project-id" --service worker
-railway variables --set GCP_LOCATION="us-central1" --service worker
-
-# Перезапустить worker
-railway redeploy --service worker --yes
-```
-
-### 3. Вернуться на Gemini API
-
-```bash
-# Отключить Vertex AI
-railway variables --set USE_VERTEX_AI=false --service worker
-
-# Убедиться что модель установлена
-railway variables --set GEMINI_IMAGE_MODEL="gemini-2.5-flash-image-preview" --service worker
-
-# Перезапустить worker
-railway redeploy --service worker --yes
-```
-
-### 4. Проверить логи после деплоя
-
-```bash
-# Следить за логами worker в реальном времени
-railway logs --service worker --tail 50
-
-# Проверить логи web (Django)
-railway logs --service web --tail 50
-
-# Проверить логи beat (Celery Beat)
-railway logs --service beat --tail 50
-```
-
-### 5. Обновить код (git push)
-
-```bash
-# Коммит изменений
-git add .
-git commit -m "Your commit message"
-
-# Пуш в GitHub (автоматически триггерит деплой)
-git push origin main
-
-# Проверить статус деплоя
-railway status
-
-# Следить за логами
-railway logs --service worker
-```
-
-### 6. Запустить миграции Django
-
-```bash
-# Через Railway run
-railway run python manage.py migrate
-
-# Или через web service
-railway run --service web python manage.py migrate
-```
-
-### 7. Создать суперпользователя Django
-
-```bash
-railway run python manage.py createsuperuser
-```
-
-### 8. Проверить здоровье всех сервисов
-
-```bash
-# Статус
-railway status
-
-# Логи всех сервисов (последние 20 строк каждого)
-for service in web worker beat; do
-  echo "=== $service ==="
-  railway logs --service $service --tail 20
-  echo ""
-done
-```
-
-### 9. Массовая установка переменных
-
-```bash
-# Создать файл env.txt
-cat > env.txt << 'EOF'
-DEBUG=false
-SENTRY_ENVIRONMENT=production
-LOG_LEVEL=info
-EOF
-
-# Применить на все сервисы
-for service in web worker beat; do
-  while IFS='=' read -r key value; do
-    railway variables --set "$key=$value" --service "$service"
-  done < env.txt
-done
-```
-
-### 10. Откатиться на предыдущий деплой
-
-```bash
-# 1. Посмотреть историю деплоев в Railway dashboard
-railway open
-
-# 2. Или через API получить список деплоев и выбрать нужный
-# 3. Откатиться через dashboard или пересобрать из конкретного коммита
-
-# Альтернатива - откатить git и пушнуть
-git revert HEAD
-git push origin main
-```
-
----
-
-## Мониторинг и отладка
-
-### Проверка webhook Telegram
-
-```bash
-# Посмотреть логи web сервиса
-railway logs --service web --tail 100
-
-# Искать ошибки webhook
-railway logs --service web | grep -i "webhook\|telegram\|error"
-```
-
-### Проверка генерации изображений
-
-```bash
-# Логи worker (где происходит генерация)
-railway logs --service worker --tail 50
-
-# Искать ошибки Gemini API
-railway logs --service worker | grep -i "gemini\|error\|generate"
-
-# Проверить статус Celery задач
-railway run --service worker celery -A config inspect active
-```
-
-### Проверка Redis подключения
-
-```bash
-# Логи worker/web
-railway logs --service worker | grep -i "redis\|connected"
-
-# Проверить переменную REDIS_URL
-railway variables --service worker | grep REDIS_URL
-```
-
-### Мониторинг ресурсов
-
-Railway автоматически мониторит:
-- CPU usage
-- Memory usage
-- Network traffic
-- Request count
-
-Все метрики доступны в Railway Dashboard: https://railway.app/project/866bc61a-0ef1-41d1-af53-26784f6e5f06
-
----
-
-## Полезные ссылки
-
-- **Railway Dashboard:** https://railway.app/project/866bc61a-0ef1-41d1-af53-26784f6e5f06
-- **GitHub Repo:** https://github.com/berikbekishev-source/tg-nanobanana
-- **Railway Docs:** https://docs.railway.app/
-- **Railway API Docs:** https://docs.railway.app/reference/public-api
-- **Gemini API Console:** https://aistudio.google.com/app/apikey
-- **Google Cloud Console:** https://console.cloud.google.com/
-
----
-
-## Troubleshooting
-
-### Worker не подхватывает новые переменные
-
-**Решение:** Перезапустить сервис после изменения переменных
-
-```bash
-railway redeploy --service worker --yes
-```
-
-### 429 Quota exceeded (Vertex AI)
-
-**Причина:** Квоты на Imagen 3.0 не настроены или регион не поддерживается
-
-**Решение:**
-1. Переключиться на Gemini API (`USE_VERTEX_AI=false`)
-2. Или запросить квоты в Google Cloud Console
-3. Или попробовать другой регион (`GCP_LOCATION`)
-
-### Gemini API errors
-
-**Решение:** Проверить API ключ
-
-```bash
-# Проверить текущий ключ
-railway variables --service worker | grep GEMINI_API_KEY
-
-# Обновить ключ
-railway variables --set GEMINI_API_KEY="new-key" --service worker
-railway redeploy --service worker --yes
-```
-
-### Redis connection errors
-
-**Решение:** Redis service должен быть запущен
-
-```bash
-railway status | grep -i redis
-```
-
-Если Redis не запущен - перезапустить через Railway dashboard.
-
-### Django migrations не применяются
-
-**Решение:** Запустить вручную
-
-```bash
-railway run python manage.py migrate
-railway redeploy --service web --yes
-```
-
----
-
-## Безопасность
-
-⚠️ **НЕ КОММИТИТЬ В GIT:**
-
-- `.env` файлы
-- `RAILWAY_API_TOKEN`
-- `GEMINI_API_KEY`
-- `TELEGRAM_BOT_TOKEN`
-- `SUPABASE_SERVICE_ROLE_KEY`
-- Service Account JSON файлы
-
-✅ **Используйте:**
-
-- Railway environment variables
-- `.gitignore` для секретных файлов
-- Railway Secrets для чувствительных данных
-
----
-
-## Доступ к GitHub для агентов
-
-Эта секция описывает, как ИИ‑агенты получают и используют доступ к управлению репозиторием GitHub (ветки, PR, защита веток, автодеплой).
-
-### Модель доступа
-
-- Используется отдельный бот‑аккаунт GitHub с Fine‑grained PAT.
-- Токен бота хранится в секретах репозитория под именем `ADMIN_GH_TOKEN` и доступен только в GitHub Actions.
-- Все операции выполняются через GitHub Actions (авто‑PR, авто‑ревью, авто‑мерж, защита веток, установка вебхуков).
-
-### Права PAT (fine‑grained)
-
-- Repository access: только для репозитория `tg-nanobanana`.
-- Permissions (Repository): Administration (RW), Contents (RW), Pull requests (RW), Actions (RW), Workflows (RW).
-
-### Обязательные настройки репозитория
-
-- Settings → Actions → General:
-  - Workflow permissions: Read and write
-  - Allow GitHub Actions to create and approve pull requests: On
-- Settings → General: Allow auto‑merge: On
-- Settings → Branches: защита `main` и `staging` (PR only, ≥1 approval, required check: “CI and Smoke / build-test”, linear history, conversation resolution).
-
-### Secrets/Variables репозитория
-
-- Secrets → Actions:
-  - `ADMIN_GH_TOKEN` — PAT бот‑аккаунта
-  - `TELEGRAM_MONITOR_BOT_TOKEN`, `TELEGRAM_MONITOR_CHAT_ID` — Telegram бот/чат для уведомлений post-deploy мониторинга
-  - (опционально для вебхуков) `STAGING_TELEGRAM_BOT_TOKEN`, `STAGING_TG_WEBHOOK_SECRET`, `PROD_TELEGRAM_BOT_TOKEN`, `PROD_TG_WEBHOOK_SECRET`
-- Variables → Actions:
-  - `RAILWAY_API_TOKEN` — токен Railway для автоматизаций
-  - `PRODUCTION_BASE_URL` — домен прод веб‑сервиса
-  - `STAGING_BASE_URL` — домен staging веб‑сервиса
-
-### Воркфлоу, которые уже настроены
-
-- `.github/workflows/ci.yml` — CI + smoke `/api/health` на `staging`/`main`
-- `.github/workflows/setup-branch-protection.yml` — защита веток (push + ручной запуск)
-- `.github/workflows/pr-from-feature.yml` — автосоздание PR → `staging` при пуше в feature‑ветку
-- `.github/workflows/auto-approve.yml` — авто‑ревью (github‑actions bot) и включение auto‑merge при зелёном CI
-- `.github/workflows/set-telegram-webhook.yml` — установка вебхука Telegram
-- `.github/workflows/post-deploy-monitor.yml` — смоки и анализ логов после деплоя `main`; при ошибках откатывает коммит и шлёт уведомления
-
-Агентам достаточно пушить изменения в feature‑ветку — PR в `staging` создаётся и мёрджится автоматически после CI. PR `staging → main` создаём вручную после ручных смоков; дальнейшее ревью/merge обрабатывает `auto-approve.yml`. Для ручной установки вебхука запустите соответствующий workflow из Actions.
-
-### Ротация токена и восстановление
-
-- При замене PAT обновите `ADMIN_GH_TOKEN` в Secrets.
-- Если защита веток блокирует технический PR (например, фиксы CI): временно ослабьте правила через `setup-branch-protection.yml` (Run workflow), замержите фиксы, затем снова примените строгие правила.
-
-
-## Changelog
-
-**2025-10-23**
-- Добавлена поддержка Vertex AI Imagen
-- Переключено обратно на Gemini API (NanoBanana model)
-- Обновлен API ключ Gemini
-- Создана документация по Railway
-
----
-
-**Автор:** Claude Code
-**Последнее обновление:** 2025-10-23
+Соблюдайте эти правила, оперативно обновляйте журнал действий и не забывайте согласовывать любые нетипичные шаги. Это гарантирует предсказуемые деплои и быстрый отклик на инциденты.
