@@ -61,3 +61,24 @@
 - Проверки: `python manage.py check`, `ALLOWED_HOSTS=localhost,127.0.0.1,testserver python manage.py shell … client.get('/admin/botapp/chatthread/1/dialog/')` (ручной просмотр HTML)
 - Коммит/PR: pending (будет новый push в feature/admin-dashboard)
 - Следующий шаг: закоммитить изменения, запустить CI и выкатить на staging для ручного теста
+
+## 2025-11-12 — бронирование стенда под историю чатов
+- Ветка: feature/admin-dashboard
+- Шаг: подтянул `origin/staging`, решил конфликты, поставил статус `Занят` в `STAGING_STATUS.md` (PR #38) перед деплоем
+- Проверки: `git merge origin/staging`, визуальная проверка `STAGING_STATUS.md`
+- Коммит/PR: chore: занял staging (feature/admin-dashboard)
+- Следующий шаг: дождаться CI и смержить PR #38 в staging
+
+## 2025-11-12 — деплой истории чатов на staging
+- Ветка: feature/admin-dashboard → staging
+- Шаг: смержил PR #38, дождался `CI` (run 19296962688), проверил Railway (`railway status --json`, `railway logs --service web|worker|beat --tail 200`), health-чек `curl https://web-staging-70d1.up.railway.app/api/health`
+- Проверки: см. выше + GitHub Actions (`gh pr checks 38`)
+- Коммит/PR: https://github.com/berikbekishev-source/tg-nanobanana/pull/38
+- Следующий шаг: ручное тестирование истории чатов на staging
+
+## 2025-11-12 — освобождение стенда
+- Ветка: chore/staging-status-free-20251112 → staging
+- Шаг: обновил `STAGING_STATUS.md` на «Свободен», прокатил через отдельный PR #45
+- Проверки: `gh run list --workflow CI` для PR #45
+- Коммит/PR: https://github.com/berikbekishev-source/tg-nanobanana/pull/45
+- Следующий шаг: стенд свободен, ожидает ручного теста
