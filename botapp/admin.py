@@ -406,11 +406,23 @@ class ChatThreadAdmin(admin.ModelAdmin):
 
     def dialog_view(self, request, thread_id: int):
         thread = get_object_or_404(ChatThread.objects.select_related('user'), pk=thread_id)
-        messages = thread.messages.select_related('user').order_by('message_date')
+        messages_qs = thread.messages.select_related('user').order_by('message_date')
+        chat_messages = list(messages_qs)
+
+        display_name = (thread.user.first_name or thread.user.username or "").strip()
+        if not display_name:
+            display_name = f"ID {thread.user.chat_id}"
+        avatar_letter = display_name[0].upper()
+
         context = {
             **self.admin_site.each_context(request),
             "thread": thread,
-            "messages": messages,
+            "chat_messages": chat_messages,
+            "messages_total": len(chat_messages),
+            "user_display_name": display_name,
+            "user_avatar": avatar_letter,
+            "bot_display_name": "NanoBanana бот",
+            "bot_avatar": "NB",
             "title": f"Диалог с {thread.user.username or thread.user.chat_id}",
         }
         return TemplateResponse(request, "admin/botapp/chatthread/dialog.html", context)

@@ -48,3 +48,10 @@
 - Проверки: `gh run list` (CI №19293752415 — success), `railway status --json` (commit 9711117 для web/worker/beat), `railway logs --service web|worker|beat --tail 200`, `curl https://web-staging-70d1.up.railway.app/api/health`
 - Коммит/PR: https://github.com/berikbekishev-source/tg-nanobanana/pull/37
 - Следующий шаг: ручное тестирование истории чатов в админке
+
+## 2025-11-12 — редизайн страницы диалога
+- Ветка: feature/admin-dashboard
+- Шаг: обновил шаблон/стили истории чатов (баблы, превью медиа, кнопки навигации, новая палитра), переименовал контекст `messages` → `chat_messages`, добавил отображение аватаров/меток и расширил тест `AdminChatThreadViewTests`
+- Проверки: `python manage.py check`, `ALLOWED_HOSTS=localhost,127.0.0.1,testserver python manage.py shell … client.get('/admin/botapp/chatthread/1/dialog/')` (просмотр HTML)
+- Коммит/PR: pending (готовлю новый push)
+- Следующий шаг: закоммитить правки, прогнать CI и задеплоить на staging для ручного теста

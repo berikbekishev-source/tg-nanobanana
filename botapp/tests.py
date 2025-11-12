@@ -796,6 +796,13 @@ class AdminChatThreadViewTests(TestCase):
             message_type=ChatMessage.MessageType.TEXT,
             text="Здравствуйте",
         )
+        ChatMessage.objects.create(
+            thread=self.thread,
+            user=self.tg_user,
+            direction=ChatMessage.Direction.OUTGOING,
+            message_type=ChatMessage.MessageType.TEXT,
+            text="Готов помогать!",
+        )
 
     def test_dialog_view_renders_messages(self):
         self.client.force_login(self.admin)
@@ -806,3 +813,7 @@ class AdminChatThreadViewTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertTemplateUsed(response, "admin/botapp/chatthread/dialog.html")
         self.assertContains(response, "Здравствуйте")
+        self.assertContains(response, "Готов помогать!")
+        self.assertContains(response, "NanoBanana бот")
+        self.assertIn("chat_messages", response.context)
+        self.assertEqual(len(response.context["chat_messages"]), 2)
