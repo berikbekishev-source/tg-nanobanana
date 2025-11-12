@@ -13,3 +13,31 @@
 ```
 
 Фиксируйте даже промежуточные действия (например, «дождался auto-merge PR #12», «проверил railway logs web»). Это обязательная часть процесса.
+
+## 2025-11-12 — проверка незадеплоенных изменений
+- Ветка: feature/admin-dashboard
+- Шаг: изучил Документация/AGENTS.md и собрал diff ветки относительно origin/staging (`git log origin/staging..HEAD`)
+- Проверки: локальный git лог
+- Коммит/PR: n/a
+- Следующий шаг: при появлении доступа сверить деплой через Railway и подготовить обновление стейджинга
+
+## 2025-11-12 — фиксация коммита деплоя staging
+- Ветка: feature/admin-dashboard
+- Шаг: запросил деплой через Railway GraphQL (`curl`/`python3`) и сверил с веткой (`git fetch origin staging`)
+- Проверки: Railway GraphQL (serviceInstances.latestDeployment.meta.commitHash), git ревизия `origin/staging`
+- Коммит/PR: n/a
+- Следующий шаг: нет — окружение уже на последнем коммите `c4fa51a`
+
+## 2025-11-12 — починка истории чатов в админке
+- Ветка: feature/admin-dashboard
+- Шаг: изучил причину 500 при открытии `История`, подключил каталог `templates/` в настройках, добавил тест на вью
+- Проверки: `python manage.py shell` (загрузка шаблона), `manage.py test botapp.tests.AdminChatThreadViewTests` (не прошёл из-за отсутствия зависимостей aiogram/Pillow в окружении)
+- Коммит/PR: n/a
+- Следующий шаг: подготовить коммит с фиксом и дождаться ревью/CI
+
+## 2025-11-12 — перезапуск CI для admin-dashboard
+- Ветка: feature/admin-dashboard
+- Шаг: закрыл и снова открыл PR #37, чтобы перезапустить auto-approve/CI перед выкатом на staging
+- Проверки: `gh pr status` (контроль наличия PR и статуса проверок)
+- Коммит/PR: https://github.com/berikbekishev-source/tg-nanobanana/pull/37
+- Следующий шаг: дождаться merge в `staging`, проверить деплой и подготовить ручное тестирование
