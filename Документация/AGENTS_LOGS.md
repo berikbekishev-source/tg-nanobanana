@@ -34,3 +34,10 @@
 - Проверки: `python manage.py shell` (загрузка шаблона), `manage.py test botapp.tests.AdminChatThreadViewTests` (не прошёл из-за отсутствия зависимостей aiogram/Pillow в окружении)
 - Коммит/PR: n/a
 - Следующий шаг: подготовить коммит с фиксом и дождаться ревью/CI
+
+## 2025-11-12 — перезапуск CI для admin-dashboard
+- Ветка: feature/admin-dashboard
+- Шаг: закрыл и снова открыл PR #37, чтобы перезапустить auto-approve/CI перед выкатом на staging
+- Проверки: `gh pr status` (контроль наличия PR и статуса проверок)
+- Коммит/PR: https://github.com/berikbekishev-source/tg-nanobanana/pull/37
+- Следующий шаг: дождаться merge в `staging`, проверить деплой и подготовить ручное тестирование
