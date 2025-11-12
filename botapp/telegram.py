@@ -5,6 +5,7 @@ from aiogram.types import Message
 import redis.asyncio as aioredis
 
 from botapp.chat_logger import ChatLogger
+from botapp.aiogram_errors import aiogram_error_handler
 
 
 class LoggingBot(Bot):
@@ -49,6 +50,7 @@ class LoggingBot(Bot):
 _bot = LoggingBot(token=settings.TELEGRAM_BOT_TOKEN)
 _storage = RedisStorage(redis=aioredis.from_url(settings.CELERY_BROKER_URL))  # тот же Redis
 dp = Dispatcher(storage=_storage)
+dp.errors.register(aiogram_error_handler)
 
 bot = _bot  # re-export
 
