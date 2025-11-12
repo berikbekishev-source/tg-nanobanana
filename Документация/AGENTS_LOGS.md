@@ -75,3 +75,10 @@
 - Проверки: локальная попытка `python3 manage.py migrate` (падает на старом SQLite из-за SQL `DROP INDEX IF EXISTS`, что не влияет на PostgreSQL окружения)
 - Коммит/PR: pending
 - Следующий шаг: подготовить деплой на staging после ревью
+
+## 2025-11-12 — автоматический collectstatic на web-сервисе
+- Ветка: feature/admin-static
+- Шаг: обновил `railway.json`, чтобы web-сервис перед миграциями запускал `./.venv/bin/python manage.py collectstatic --noinput`; теперь WhiteNoise видит стили до старта gunicorn
+- Проверки: `railway ssh --service web "python manage.py collectstatic --noinput"` (ручной прогон на текущем деплое), `railway status --json` (commit df1ceb6 для web/worker/beat), `curl https://web-staging-70d1.up.railway.app/api/health`
+- Коммит/PR: pending
+- Следующий шаг: задеплоить фикс на staging, убедиться, что history view загружается без 500 и со стилями
