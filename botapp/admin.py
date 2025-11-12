@@ -412,7 +412,8 @@ class ChatThreadAdmin(admin.ModelAdmin):
         display_name = (thread.user.first_name or thread.user.username or "").strip()
         if not display_name:
             display_name = f"ID {thread.user.chat_id}"
-        avatar_letter = display_name[0].upper()
+        normalized_name = display_name.strip()
+        avatar_letter = normalized_name[0].upper() if normalized_name else "#"
 
         context = {
             **self.admin_site.each_context(request),
