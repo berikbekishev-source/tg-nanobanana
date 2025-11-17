@@ -213,7 +213,7 @@ jobs:
           while true; do
             json=$(curl -fsS -H "Authorization: Bearer ${RAILWAY_API_TOKEN}" -H 'Content-Type: application/json' \
               -d '{"query":"query($id:ID!){ project(id:$id){ services{ edges{ node{ name serviceInstances{ edges{ node{ environmentId latestDeployment{ status meta{ commitHash branch } } } } } } } } }","variables":{"id":"'"$RAILWAY_PROJECT_ID"'"}}' "$RAILWAY_GRAPHQL")
-            statuses=$(echo "$json" | jq -r '.data.project.services.edges[].node | select(.name=="web" or .name=="worker" or .name=="beat") | .serviceInstances.edges[] | select(.node.environmentId==env.STAGING_ENV_ID) | .node.latestDeployment.status' --arg env "$STAGING_ENV_ID") || true
+            statuses=$(echo "$json" | jq -r --arg EID "$STAGING_ENV_ID" '.data.project.services.edges[].node | select(.name=="web" or .name=="worker" or .name=="beat") | .serviceInstances.edges[] | select(.node.environmentId==$EID) | .node.latestDeployment.status') || true
             all_ok=true
             for s in $statuses; do
               if [[ "$s" != "SUCCESS" ]]; then all_ok=false; fi
@@ -344,4 +344,3 @@ EOF
               issue_number: Number('${{ needs.parse.outputs.pr }}'),
               body: `🟢 Стенд освобождён.`
             });
-
