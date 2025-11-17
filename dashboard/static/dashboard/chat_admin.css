@@ -241,6 +241,52 @@
     display: none !important;
 }
 
+.inline-keyboard {
+    margin-top: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.inline-keyboard-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.inline-keyboard-button {
+    padding: 6px 12px;
+    border-radius: 10px;
+    border: 1px solid rgba(37, 99, 235, 0.35);
+    background: rgba(255, 255, 255, 0.7);
+    color: #1d4ed8;
+    font-size: 13px;
+    font-weight: 600;
+}
+
+.message-row.outgoing .inline-keyboard-button {
+    border-color: rgba(255, 255, 255, 0.4);
+    background: rgba(37, 99, 235, 0.25);
+    color: #fff;
+}
+
+.button-click {
+    margin-top: 14px;
+    font-size: 13px;
+    color: #475569;
+}
+
+.button-chip {
+    display: inline-flex;
+    align-items: center;
+    padding: 4px 10px;
+    border-radius: 999px;
+    background: rgba(248, 113, 113, 0.18);
+    color: #b91c1c;
+    font-weight: 600;
+    margin-left: 6px;
+}
+
 .badge {
     font-size: 11px;
     text-transform: uppercase;
