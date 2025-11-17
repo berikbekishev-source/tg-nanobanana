@@ -5,7 +5,7 @@ on:
     types: [created]
 
 permissions:
-  contents: read
+  contents: write
   actions: write
   issues: read
   pull-requests: read
@@ -44,7 +44,7 @@ jobs:
               core.info('No matching command'); return;
             }
 
-            await github.repos.createDispatchEvent({
+            await github.rest.repos.createDispatchEvent({
               owner: context.repo.owner,
               repo: context.repo.repo,
               event_type: evt,
