@@ -125,3 +125,10 @@
 - CI: https://github.com/berikbekishev-source/tg-nanobanana/actions/runs/19424475208 (build-test success, job `open-pr` ожидаемо fail)
 - После merge: `railway status --json | jq '…'` → web/worker/beat на `d706878f94728be3fd1edbd99ed48a6cc666fb2a`, `railway logs --service web|worker|beat --lines 200`, `curl -sSf https://web-staging-70d1.up.railway.app/api/health`, `curl -I /admin/login/`, `curl -I /static/dashboard/chat_admin.css`
 - Следующий шаг: дождаться ручного теста, затем освободить стенд (PR #61 всё ещё нуждается в фиксе NinjaAPI, поэтому статус «занят» держим вручную)
+
+## 2025-11-17 — inline-кнопки и клики в истории чатов
+- Ветка: feature/admin-inline-buttons → staging (PR #65)
+- Шаги: сохранили inline-keyboard в payload исходящих сообщений, логируем нажатия callback-кнопок через middleware, обновили UI/стили админки и статус стенда (PR #65)
+- Проверки: `DJANGO_SETTINGS_MODULE=config.settings_sqlite python manage.py check`; тест `botapp.tests.AdminChatThreadViewTests` по-прежнему падает на sqlite (raw SQL) — зелёный на CI; CI run https://github.com/berikbekishev-source/tg-nanobanana/actions/runs/19425306526 (успех, open-pr job красный by design)
+- После merge: `railway status --json | jq '…commit'` (web/worker/beat commit `d1b84e8af117caf641358989dc4843fd97f2f366`), `railway logs --service web|worker|beat --lines 200`, `curl -sSf https://web-staging-70d1.up.railway.app/api/health`, `curl -I /admin/login/`, `curl -I /static/dashboard/chat_admin.css`
+- Следующий шаг: дождаться ручного теста новых inline UI и зафиксировать освобождение стенда
