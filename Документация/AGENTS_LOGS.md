@@ -103,3 +103,13 @@
 - Проверки: `python3 manage.py check`, `python3 manage.py makemigrations --check --dry-run`
 - Коммит/PR: pending
 - Следующий шаг: подготовить PR → staging, после деплоя проверить логи web/worker/beat и health, затем передать стенд на ручные тесты
+## 2025-11-17 — e2e тест деплоя на staging
+- Ветка: feature/staging-deploy-test-20251117
+- Шаг: обновил docstring в `botapp/__init__.py`, добавил комментарий в `Документация/AGENTS.md`, починил совместимость `NinjaAPI` через `config/ninja_api.py`, после зелёного CI занял стенд (`bin/staging-status reserve --agent "Codex" --ref "PR #59, f5aa73b"`), смержил PR `#59` через `bin/deploy-staging 59`
+- Проверки: 
+  - `bin/deploy-staging 59` (первый прогон упал на health-check 502, сразу повторил проверки вручную после окончания деплоя)
+  - `railway status --json | jq '…select(.environmentId=="9e15b55d-8220-4067-a47e-191a57c2bcca")…'` — web/worker/beat = SUCCESS, commit `9312cf6`
+  - `railway logs --service web|worker|beat --environment staging --lines 80` — web: единичный `Telegram webhook error` (JSONDecodeError на пустом body), worker/beat без ошибок
+  - `curl -fsS https://web-staging-70d1.up.railway.app/api/health | jq '.'` → `{"ok": true}`
+- Коммит/PR: https://github.com/berikbekishev-source/tg-nanobanana/pull/59 (merge commit 9312cf6 в staging)
+- Следующий шаг: освободить стенд и передать на ручное тестирование
