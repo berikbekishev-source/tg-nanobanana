@@ -4,12 +4,13 @@ from typing import Any, Dict, Optional
 
 from django.conf import settings
 from django.http import HttpResponse, JsonResponse
-from ninja import NinjaAPI
 
 from botapp.error_tracker import ErrorTracker
 from botapp.models import BotErrorEvent
+from config.ninja_api import build_ninja_api
 
-api = NinjaAPI(csrf=False)
+
+api = build_ninja_api()
 logger = logging.getLogger(__name__)
 
 
