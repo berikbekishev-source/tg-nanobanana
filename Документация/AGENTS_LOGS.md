@@ -127,3 +127,9 @@
 - CI: https://github.com/berikbekishev-source/tg-nanobanana/actions/runs/19424475208 (build-test success, job `open-pr` ожидаемо fail)
 - После merge: `railway status --json | jq '…'` → web/worker/beat на `d706878f94728be3fd1edbd99ed48a6cc666fb2a`, `railway logs --service web|worker|beat --lines 200`, `curl -sSf https://web-staging-70d1.up.railway.app/api/health`, `curl -I /admin/login/`, `curl -I /static/dashboard/chat_admin.css`
 - Следующий шаг: дождаться ручного теста, затем освободить стенд (PR #61 всё ещё нуждается в фиксе NinjaAPI, поэтому статус «занят» держим вручную)
+## 2025-11-17 — ErrorTracker для handler'ов генерации
+- Ветка: feature/error-logging-monitoring → staging (PR #69)
+- Шаги: добавил `ErrorTracker` в `image_generation.receive_image_prompt` и `video_generation.receive_video_prompt/extend_video_prompt`, чтобы любые необработанные исключения из Telegram-обработчиков фиксировались как `BotErrorEvent` + (для critical) слали алерты в Телеграм.
+- Проверки: `python3 manage.py check`, `gh pr checks 69` (дождался `CI / build-test`), `railway status --json | jq '.services...commit'` (web/worker/beat на `689d9224`), `railway logs --service web|worker|beat --lines 200`, `curl -sSf https://web-staging-70d1.up.railway.app/api/health`, `curl -X POST https://web-staging-70d1.up.railway.app/api/telegram/webhook -H 'x-telegram-bot-api-secret-token: test-webhook-secret' -H 'Content-Type: application/json' -d 'this-is-not-json'` (проверил, что критическая ошибка всё ещё логируется и шлёт алерт).
+- Деплой: `gh pr merge 69 --squash --admin`, Railway автодеплой (commit `689d9224`), руками проверил health/logs.
+- Следующий шаг: человек проверяет, что новые ошибки генерации появляются в разделе “Операции → Ошибки бота” и что критические уведомления приходят в чат 283738604; если ок — можно тестировать сценарии “Сочный манго” и т.п. вручную.
