@@ -78,6 +78,8 @@ class ChatLogger:
         text, message_type = ChatLogger._extract_text_and_type(message)
         media_payload = ChatLogger._extract_media_payload(message, message_type)
         message_date = ChatLogger._extract_message_date(message)
+        if direction == ChatMessage.Direction.OUTGOING:
+            message_date = timezone.now()
 
         payload: dict[str, object] = {
             'content_type': message.content_type,
