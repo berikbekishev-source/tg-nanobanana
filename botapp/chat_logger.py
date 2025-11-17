@@ -95,6 +95,15 @@ class ChatLogger:
             'has_media': bool(media_payload.file_id),
         }
 
+        if message.message_id:
+            exists = ChatMessage.objects.filter(
+                thread=thread,
+                telegram_message_id=message.message_id,
+                direction=direction,
+            ).exists()
+            if exists:
+                return
+
         ChatMessage.objects.create(
             thread=thread,
             user=user,

@@ -47,6 +47,21 @@ class LoggingBot(Bot):
         return response
 
 
+_original_message_answer = Message.answer
+
+
+async def _answer_with_logging(self: Message, *args, **kwargs) -> Message:
+    response = await _original_message_answer(self, *args, **kwargs)
+    try:
+        await ChatLogger.log_outgoing(response)
+    except Exception:
+        pass
+    return response
+
+
+Message.answer = _answer_with_logging
+
+
 _bot = LoggingBot(token=settings.TELEGRAM_BOT_TOKEN)
 _storage = RedisStorage(redis=aioredis.from_url(settings.CELERY_BROKER_URL))  # тот же Redis
 dp = Dispatcher(storage=_storage)

@@ -45,20 +45,6 @@
                 });
             });
         });
-
-        const botLinks = document.querySelectorAll("[data-scroll-target]");
-        botLinks.forEach((link) => {
-            link.addEventListener("click", (event) => {
-                const targetId = link.dataset.scrollTarget;
-                if (!targetId) return;
-                const target = document.getElementById(targetId);
-                if (!target) return;
-                event.preventDefault();
-                target.scrollIntoView({ behavior: "smooth", block: "start" });
-                target.classList.add("message-row--highlight");
-                setTimeout(() => target.classList.remove("message-row--highlight"), 1600);
-            });
-        });
     });
 </script>
 <div class="chat-dialog-card">
@@ -91,30 +77,9 @@
         </div>
     </div>
 
-    {% if bot_messages %}
-    <div class="bot-responses-panel">
-        <div class="bot-responses-header">
-            <div>
-                <div class="panel-title">Ответы бота</div>
-                <div class="panel-subtitle">Всего {{ bot_messages|length }} сообщений</div>
-            </div>
-        </div>
-        <div class="bot-responses-list">
-            {% for bot_message in bot_messages %}
-                <a href="#message-{{ bot_message.pk }}" data-scroll-target="message-{{ bot_message.pk }}" class="bot-response-chip">
-                    <div class="chip-time">{{ bot_message.message_date|date:"d.m.Y H:i" }}</div>
-                    <div class="chip-preview">
-                        {{ bot_message.text|default:"(без текста)"|truncatechars:120 }}
-                    </div>
-                </a>
-            {% endfor %}
-        </div>
-    </div>
-    {% endif %}
-
     <div class="chat-dialog-body">
         {% for message in chat_messages %}
-            <div id="message-{{ message.pk }}" class="message-row {% if message.direction == 'outgoing' %}outgoing{% else %}incoming{% endif %}" data-direction="{{ message.direction }}">
+            <div class="message-row {% if message.direction == 'outgoing' %}outgoing{% else %}incoming{% endif %}" data-direction="{{ message.direction }}">
                 <div class="message-avatar {% if message.direction == 'outgoing' %}bot{% endif %}">
                     {% if message.direction == 'outgoing' %}
                         {{ bot_avatar }}
