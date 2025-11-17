@@ -89,7 +89,47 @@ jobs:
           echo "now_utc=$now_utc" >> $GITHUB_OUTPUT
           echo "exp_human=$exp_human" >> $GITHUB_OUTPUT
 
+      - name: Direct update STAGING_STATUS.md (Занят)
+        id: directreserve
+        shell: bash
+        env:
+          AGENT: ${{ needs.parse.outputs.actor }}
+          PR_NUMBER: ${{ needs.parse.outputs.pr }}
+          NOW: ${{ steps.ts.outputs.now_utc }}
+          ETA: ${{ steps.ts.outputs.exp_human }}
+          REASON: ${{ needs.parse.outputs.reason }}
+          PUSH_TOKEN: ${{ secrets.ADMIN_GH_TOKEN || github.token }}
+        run: |
+          set -euo pipefail
+          sha7=$(git rev-parse --short HEAD || echo none)
+          tmp=$(mktemp)
+          awk -v agent="$AGENT" -v pr="PR #$PR_NUMBER, $sha7" -v now="$NOW" -v eta="$ETA" -v reason="$REASON" '
+            BEGIN{RS=""; ORS="\n\n"}
+            /^# Статус стенда staging/ {
+              n=split($0, a, /\n\n/);
+              for (i=1;i<=n;i++){
+                if (a[i] ~ /^## Сейчас/){
+                  a[i] = "## Сейчас\n- Статус: Занят\n- Агент: " agent "\n- PR / коммит: " pr "\n- Обновлено: " now "\n- ETA: " eta "\n- Комментарий: " reason;
+                }
+              }
+              for (i=1;i<=n;i++) print a[i];
+              next
+            }
+            {print}
+          ' STAGING_STATUS.md > "$tmp"
+          mv "$tmp" STAGING_STATUS.md
+          git add STAGING_STATUS.md
+          git -c user.name="staging-bot" -c user.email="staging-bot@users.noreply.github.com" commit -m "chore(staging): занял стенд (PR #$PR_NUMBER)"
+          set +e
+          git config --global http.https://github.com/.extraheader ""
+          git remote set-url origin https://x-access-token:${PUSH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git
+          git push origin HEAD:staging
+          code=$?
+          set -e
+          if [ "$code" -eq 0 ]; then echo "ok=true" >> $GITHUB_OUTPUT; else echo "ok=false" >> $GITHUB_OUTPUT; fi
+
       - name: Prepare branch with STAGING_STATUS.md (Занят)
+        if: ${{ steps.directreserve.outputs.ok != 'true' }}
         id: prepreserve
         shell: bash
         env:
@@ -124,6 +164,7 @@ jobs:
           echo "branch=$BR" >> $GITHUB_OUTPUT
 
       - name: Push branch and open PR → staging
+        if: ${{ steps.directreserve.outputs.ok != 'true' }}
         id: openreserve
         uses: actions/github-script@v7
         env:
@@ -146,6 +187,7 @@ jobs:
             core.setOutput('sha', pr.data.head.sha);
 
       - name: Wait for docs-only CI then merge
+        if: ${{ steps.directreserve.outputs.ok != 'true' }}
         uses: actions/github-script@v7
         with:
           github-token: ${{ secrets.ADMIN_GH_TOKEN || github.token }}
@@ -244,13 +286,42 @@ jobs:
           set -euo pipefail
           curl -fsS "$STAGING_BASE_URL/api/health" | jq '.'
 
+      - name: Direct append to AGENTS_LOGS.md
+        id: directlog
+        shell: bash
+        env:
+          PR_NUMBER: ${{ needs.parse.outputs.pr }}
+          PUSH_TOKEN: ${{ secrets.ADMIN_GH_TOKEN || github.token }}
+        run: |
+          set -euo pipefail
+          ts=$(date -u +"%Y-%m-%d %H:%M UTC")
+          git fetch origin staging
+          git switch staging
+          cat >> "Документация/AGENTS_LOGS.md" <<EOF
+## ${ts} — ChatOps deploy-staging (PR #$PR_NUMBER)
+- Команды: /deploy-staging
+- Проверки: Railway=SUCCESS (web/worker/beat), health=ok
+- Ссылки: ${STAGING_BASE_URL}/api/health
+EOF
+          git add "Документация/AGENTS_LOGS.md"
+          git -c user.name="staging-bot" -c user.email="staging-bot@users.noreply.github.com" commit -m "docs(staging): лог деплоя PR #$PR_NUMBER"
+          set +e
+          git config --global http.https://github.com/.extraheader ""
+          git remote set-url origin https://x-access-token:${PUSH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git
+          git push origin HEAD:staging
+          code=$?
+          set -e
+          if [ "$code" -eq 0 ]; then echo "ok=true" >> $GITHUB_OUTPUT; else echo "ok=false" >> $GITHUB_OUTPUT; fi
+
       - name: Append to AGENTS_LOGS (prepare branch)
+        if: ${{ steps.directlog.outputs.ok != 'true' }}
         id: preplog
         uses: actions/checkout@v4
         with:
           ref: staging
           fetch-depth: 0
       - name: Commit log entry on branch
+        if: ${{ steps.directlog.outputs.ok != 'true' }}
         id: writelog
         shell: bash
         env:
@@ -270,6 +341,7 @@ EOF
           git -c user.name="staging-bot" -c user.email="staging-bot@users.noreply.github.com" commit -m "docs(staging): лог деплоя PR #$PR_NUMBER"
           echo "branch=$BR" >> $GITHUB_OUTPUT
       - name: Push branch & PR for log
+        if: ${{ steps.directlog.outputs.ok != 'true' }}
         id: openlog
         uses: actions/github-script@v7
         env:
@@ -284,6 +356,7 @@ EOF
             core.setOutput('pr', String(pr.data.number));
             core.setOutput('sha', pr.data.head.sha);
       - name: Wait CI and merge log PR
+        if: ${{ steps.directlog.outputs.ok != 'true' }}
         uses: actions/github-script@v7
         with:
           github-token: ${{ secrets.ADMIN_GH_TOKEN || github.token }}
@@ -322,7 +395,44 @@ EOF
         with:
           ref: staging
           fetch-depth: 0
+      - name: Direct update STAGING_STATUS.md (Свободен)
+        id: directfree
+        shell: bash
+        env:
+          AGENT: ${{ needs.parse.outputs.actor }}
+          PR_NUMBER: ${{ needs.parse.outputs.pr }}
+          PUSH_TOKEN: ${{ secrets.ADMIN_GH_TOKEN || github.token }}
+        run: |
+          set -euo pipefail
+          now_utc=$(date -u +"%Y-%m-%d %H:%M UTC")
+          sha7=$(git rev-parse --short HEAD || echo none)
+          tmp=$(mktemp)
+          awk -v agent="$AGENT" -v pr="PR #$PR_NUMBER, $sha7" -v now="$now_utc" '
+            BEGIN{RS=""; ORS="\n\n"}
+            /^# Статус стенда staging/ {
+              n=split($0, a, /\n\n/);
+              for (i=1;i<=n;i++){
+                if (a[i] ~ /^## Сейчас/){
+                  a[i] = "## Сейчас\n- Статус: Свободен\n- Агент: " agent "\n- PR / коммит: " pr "\n- Обновлено: " now "\n- Комментарий: освобождён через ChatOps";
+                }
+              }
+              for (i=1;i<=n;i++) print a[i];
+              next
+            }
+            {print}
+          ' STAGING_STATUS.md > "$tmp"
+          mv "$tmp" STAGING_STATUS.md
+          git add STAGING_STATUS.md
+          git -c user.name="staging-bot" -c user.email="staging-bot@users.noreply.github.com" commit -m "chore(staging): освободил стенд (PR #$PR_NUMBER)"
+          set +e
+          git config --global http.https://github.com/.extraheader ""
+          git remote set-url origin https://x-access-token:${PUSH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git
+          git push origin HEAD:staging
+          code=$?
+          set -e
+          if [ "$code" -eq 0 ]; then echo "ok=true" >> $GITHUB_OUTPUT; else echo "ok=false" >> $GITHUB_OUTPUT; fi
       - name: Prepare branch with STAGING_STATUS.md (Свободен)
+        if: ${{ steps.directfree.outputs.ok != 'true' }}
         id: prepfree
         shell: bash
         env:
@@ -354,6 +464,7 @@ EOF
           git -c user.name="staging-bot" -c user.email="staging-bot@users.noreply.github.com" commit -m "chore(staging): освободил стенд (PR #$PR_NUMBER)"
           echo "branch=$BR" >> $GITHUB_OUTPUT
       - name: Push branch and open PR → staging (release)
+        if: ${{ steps.directfree.outputs.ok != 'true' }}
         id: openfree
         uses: actions/github-script@v7
         env:
@@ -368,6 +479,7 @@ EOF
             core.setOutput('pr', String(pr.data.number));
             core.setOutput('sha', pr.data.head.sha);
       - name: Wait CI and merge release PR
+        if: ${{ steps.directfree.outputs.ok != 'true' }}
         uses: actions/github-script@v7
         with:
           github-token: ${{ secrets.ADMIN_GH_TOKEN || github.token }}
