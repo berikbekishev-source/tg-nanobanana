@@ -104,6 +104,20 @@
                         <div class="message-text">{{ message.text|linebreaksbr }}</div>
                     {% endif %}
 
+                    {% if message.payload.inline_keyboard %}
+                        <div class="inline-keyboard">
+                            {% for row in message.payload.inline_keyboard %}
+                                <div class="inline-keyboard-row">
+                                    {% for button in row %}
+                                        <div class="inline-keyboard-button">
+                                            {{ button.text }}
+                                        </div>
+                                    {% endfor %}
+                                </div>
+                            {% endfor %}
+                        </div>
+                    {% endif %}
+
                     {% if message.media_file_id %}
                         {% with mime=message.media_mime_type|default:"" %}
                         <div class="message-media {% if mime|slice:":5" == "image" %}image{% else %}file{% endif %}">
@@ -130,6 +144,15 @@
                             {% if message.direction == 'outgoing' %}Исходящее{% else %}Входящее{% endif %}
                         </span>
                     </div>
+
+                    {% if message.payload and (message.payload.button_text or message.payload.button_data) %}
+                        <div class="button-click">
+                            Пользователь нажал:
+                            <span class="button-chip">
+                                {{ message.payload.button_text|default:message.payload.button_data }}
+                            </span>
+                        </div>
+                    {% endif %}
                 </div>
             </div>
         {% empty %}

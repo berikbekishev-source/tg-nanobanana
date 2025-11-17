@@ -2,9 +2,21 @@ from __future__ import annotations
 
 import mimetypes
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, List
 
-from aiogram.types import Message, PhotoSize, Document, Video, Audio, Voice, Animation, Sticker
+from aiogram.types import (
+    Message,
+    PhotoSize,
+    Document,
+    Video,
+    Audio,
+    Voice,
+    Animation,
+    Sticker,
+    CallbackQuery,
+    InlineKeyboardMarkup,
+    InlineKeyboardButton,
+)
 from asgiref.sync import sync_to_async
 from django.utils import timezone
 
@@ -61,39 +73,20 @@ class ChatLogger:
         if tg_entity is None:
             return
 
-        defaults = {
-            'username': getattr(tg_entity, 'username', '') or '',
-            'first_name': getattr(tg_entity, 'first_name', '') or '',
-            'last_name': getattr(tg_entity, 'last_name', '') or '',
-            'language_code': getattr(tg_entity, 'language_code', '') or 'ru',
-        }
-
-        user, _ = TgUser.objects.get_or_create(
-            chat_id=tg_entity.id,
-            defaults=defaults,
-        )
-        updated = False
-        for field in ['username', 'first_name', 'last_name']:
-            value = defaults[field]
-            if value and getattr(user, field) != value:
-                setattr(user, field, value)
-                updated = True
-        if updated:
-            user.save(update_fields=['username', 'first_name', 'last_name'])
-
-        thread, _ = ChatThread.objects.get_or_create(
-            user=user,
-            defaults={'last_message_at': timezone.now()},
-        )
+        user, thread = ChatLogger._get_or_create_user_and_thread(tg_entity)
 
         text, message_type = ChatLogger._extract_text_and_type(message)
         media_payload = ChatLogger._extract_media_payload(message, message_type)
         message_date = ChatLogger._extract_message_date(message)
 
-        payload = {
+        payload: dict[str, object] = {
             'content_type': message.content_type,
             'has_media': bool(media_payload.file_id),
         }
+
+        inline_keyboard = ChatLogger._extract_inline_keyboard(message)
+        if inline_keyboard:
+            payload['inline_keyboard'] = inline_keyboard
 
         if message.message_id:
             exists = ChatMessage.objects.filter(
@@ -224,3 +217,119 @@ class ChatLogger:
         if len(preview) > 160:
             return preview[:157] + "..."
         return preview
+
+    @staticmethod
+    def _get_or_create_user_and_thread(tg_entity):
+        defaults = {
+            'username': getattr(tg_entity, 'username', '') or '',
+            'first_name': getattr(tg_entity, 'first_name', '') or '',
+            'last_name': getattr(tg_entity, 'last_name', '') or '',
+            'language_code': getattr(tg_entity, 'language_code', '') or 'ru',
+        }
+        user, _ = TgUser.objects.get_or_create(
+            chat_id=tg_entity.id,
+            defaults=defaults,
+        )
+        updated = False
+        for field in ['username', 'first_name', 'last_name']:
+            value = defaults[field]
+            if value and getattr(user, field) != value:
+                setattr(user, field, value)
+                updated = True
+        if updated:
+            user.save(update_fields=['username', 'first_name', 'last_name'])
+
+        thread, _ = ChatThread.objects.get_or_create(
+            user=user,
+            defaults={'last_message_at': timezone.now()},
+        )
+        return user, thread
+
+    @staticmethod
+    def _extract_inline_keyboard(message: Message) -> Optional[List[List[dict]]]:
+        markup = getattr(message, "reply_markup", None)
+        if not isinstance(markup, InlineKeyboardMarkup):
+            return None
+        keyboard = []
+        for row in markup.inline_keyboard or []:
+            row_buttons = []
+            for button in row:
+                row_buttons.append({
+                    "text": button.text,
+                    "callback_data": button.callback_data,
+                    "url": button.url,
+                })
+            if row_buttons:
+                keyboard.append(row_buttons)
+        return keyboard or None
+
+    @staticmethod
+    async def log_callback(callback: CallbackQuery) -> None:
+        await sync_to_async(
+            ChatLogger._save_callback,
+            thread_sensitive=True,
+        )(callback)
+
+    @staticmethod
+    def _save_callback(callback: CallbackQuery) -> None:
+        tg_user = callback.from_user
+        if tg_user is None:
+            return
+        user, thread = ChatLogger._get_or_create_user_and_thread(tg_user)
+
+        if callback.id:
+            exists = ChatMessage.objects.filter(
+                thread=thread,
+                payload__callback_id=callback.id,
+            ).exists()
+            if exists:
+                return
+
+        button_text = ChatLogger._find_button_text(callback)
+        text_part = button_text or callback.data or "неизвестная кнопка"
+        message_text = f"Нажал кнопку: «{text_part}»"
+        payload = {
+            "button_text": button_text,
+            "button_data": callback.data,
+            "callback_id": callback.id,
+            "source_message_id": getattr(callback.message, "message_id", None),
+        }
+
+        ChatMessage.objects.create(
+            thread=thread,
+            user=user,
+            direction=ChatMessage.Direction.INCOMING,
+            message_type=ChatMessage.MessageType.TEXT,
+            text=message_text,
+            payload=payload,
+            message_date=timezone.now(),
+        )
+
+        thread.last_message_text = message_text
+        thread.last_message_type = ChatMessage.MessageType.TEXT
+        thread.last_message_direction = ChatMessage.Direction.INCOMING
+        thread.last_message_at = timezone.now()
+        thread.unread_count = thread.unread_count + 1
+        thread.save(update_fields=[
+            'last_message_text',
+            'last_message_type',
+            'last_message_direction',
+            'last_message_at',
+            'unread_count',
+            'updated_at',
+        ])
+
+    @staticmethod
+    def _find_button_text(callback: CallbackQuery) -> Optional[str]:
+        message = callback.message
+        if not message:
+            return None
+        markup = getattr(message, "reply_markup", None)
+        if not isinstance(markup, InlineKeyboardMarkup):
+            return None
+        data = callback.data
+        for row in markup.inline_keyboard or []:
+            for button in row:
+                if data and button.callback_data == data:
+                    return button.text
+        return None
