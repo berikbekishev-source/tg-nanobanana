@@ -16,13 +16,14 @@ from botapp.keyboards import (
     get_generation_complete_message,
     get_image_mode_keyboard,
 )
-from botapp.models import TgUser, AIModel
+from botapp.models import TgUser, AIModel, BotErrorEvent
 from botapp.business.generation import GenerationService
 from botapp.business.balance import BalanceService, InsufficientBalanceError
 from botapp.business.pricing import get_base_price_tokens
 from botapp.tasks import generate_image_task
 from asgiref.sync import sync_to_async
 import uuid
+from botapp.error_tracker import ErrorTracker
 
 router = Router()
 
@@ -220,6 +221,20 @@ async def receive_image_prompt(message: Message, state: FSMContext):
         await message.answer(
             f"❌ Произошла ошибка: {str(e)}",
             reply_markup=get_main_menu_inline_keyboard()
+        )
+        await ErrorTracker.alog(
+            origin=BotErrorEvent.Origin.TELEGRAM,
+            severity=BotErrorEvent.Severity.WARNING,
+            handler="image_generation.receive_image_prompt",
+            chat_id=message.chat.id,
+            payload={
+                "mode": mode,
+                "model_id": data.get("model_id"),
+                "prompt_length": len(prompt) if prompt else 0,
+                "has_remix_images": bool(remix_images),
+                "has_edit_base": bool(edit_base_id),
+            },
+            exc=e,
         )
         await state.clear()
 
