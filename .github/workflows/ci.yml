@@ -31,27 +31,61 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Detect docs-only change (PR)
+        id: changes
+        if: ${{ github.event_name == 'pull_request' }}
+        uses: actions/github-script@v7
+        with:
+          script: |
+            // Default: not docs-only
+            core.setOutput('only_docs', 'false');
+            if (context.eventName !== 'pull_request') return;
+            const files = await github.paginate(github.pulls.listFiles, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.payload.pull_request.number,
+              per_page: 100
+            });
+            const isDocs = files.every(f => (
+              f.filename.startsWith('.github/workflows/') ||
+              f.filename.startsWith('Документация/') ||
+              f.filename === 'STAGING_STATUS.md' ||
+              f.filename.toLowerCase().startsWith('readme')
+            ));
+            core.setOutput('only_docs', String(isDocs));
+
+      - name: Short-circuit for docs-only PR
+        if: ${{ steps.changes.outputs.only_docs == 'true' }}
+        run: |
+          echo "Docs-only/workflows-only changes detected. Skipping Django checks and Docker builds."
+
       - name: Setup Python
+        if: ${{ steps.changes.outputs.only_docs != 'true' }}
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
           cache: 'pip'
 
       - name: Install dependencies
+        if: ${{ steps.changes.outputs.only_docs != 'true' }}
         run: pip install -r requirements.txt
 
       - name: Compile sources
+        if: ${{ steps.changes.outputs.only_docs != 'true' }}
         run: python -m compileall -q .
 
       - name: Django checks
+        if: ${{ steps.changes.outputs.only_docs != 'true' }}
         run: |
           python manage.py check
           python manage.py makemigrations --check --dry-run
 
       - name: Build web image
+        if: ${{ steps.changes.outputs.only_docs != 'true' }}
         run: docker build -f Dockerfile.web -t tg-nanobanana-web:ci .
 
       - name: Build worker image
+        if: ${{ steps.changes.outputs.only_docs != 'true' }}
         run: docker build -f Dockerfile.worker -t tg-nanobanana-worker:ci .
 
       - name: Report commit status
