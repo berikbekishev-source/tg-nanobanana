@@ -139,3 +139,15 @@
 - CI: https://github.com/berikbekishev-source/tg-nanobanana/actions/runs/19424475208 (build-test success, job `open-pr` ожидаемо fail)
 - После merge: `railway status --json | jq '…'` → web/worker/beat на `d706878f94728be3fd1edbd99ed48a6cc666fb2a`, `railway logs --service web|worker|beat --lines 200`, `curl -sSf https://web-staging-70d1.up.railway.app/api/health`, `curl -I /admin/login/`, `curl -I /static/dashboard/chat_admin.css`
 - Следующий шаг: дождаться ручного теста, затем освободить стенд (PR #61 всё ещё нуждается в фиксе NinjaAPI, поэтому статус «занят» держим вручную)
+## 2025-11-17 — ChatOps e2e round 2 (PR #80)
+- Ветка: feature/chatops-e2e-20251117-2 → staging
+- Шаги:
+  - Резерв через doc-only PR #81 (статус «Занят», ETA 20мин)
+  - Мерж PR #80 (squash), Railway SUCCESS, health ok
+  - Фиксация результата в журнале (этот блок)
+- Проверки:
+  - CI: `CI / build-test` — success
+  - Railway: web/worker/beat — SUCCESS, commit aeaf4f5
+  - Health: `curl -fsS https://web-staging-70d1.up.railway.app/api/health` → `{ "ok": true }`
+- Коммит/PR: PR #80 (squash), doc-only PR #81
+- Следующий шаг: `/release-staging` (освободить стенд)
