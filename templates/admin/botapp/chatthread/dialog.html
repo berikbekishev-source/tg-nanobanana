@@ -145,13 +145,15 @@
                         </span>
                     </div>
 
-                    {% if message.payload and (message.payload.button_text or message.payload.button_data) %}
-                        <div class="button-click">
-                            Пользователь нажал:
-                            <span class="button-chip">
-                                {{ message.payload.button_text|default:message.payload.button_data }}
-                            </span>
-                        </div>
+                    {% if message.payload %}
+                        {% if message.payload.button_text or message.payload.button_data %}
+                            <div class="button-click">
+                                Пользователь нажал:
+                                <span class="button-chip">
+                                    {{ message.payload.button_text|default:message.payload.button_data }}
+                                </span>
+                            </div>
+                        {% endif %}
                     {% endif %}
                 </div>
             </div>
