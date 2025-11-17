@@ -1,4 +1,4 @@
-from ninja import NinjaAPI, Schema
+from ninja import Schema
 from django.http import JsonResponse
 from django.conf import settings
 from django.utils import timezone
@@ -13,9 +13,11 @@ import uuid
 from asgiref.sync import async_to_sync
 import base64
 
+from config.ninja_api import build_ninja_api
+
 logger = logging.getLogger(__name__)
 
-miniapp_api = NinjaAPI(urls_namespace='miniapp', csrf=False)
+miniapp_api = build_ninja_api(urls_namespace='miniapp')
 
 
 class CreatePaymentRequest(Schema):
