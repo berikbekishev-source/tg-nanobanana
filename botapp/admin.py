@@ -456,6 +456,10 @@ class ChatThreadAdmin(admin.ModelAdmin):
         thread = get_object_or_404(ChatThread.objects.select_related('user'), pk=thread_id)
         messages_qs = thread.messages.select_related('user').order_by('message_date')
         chat_messages = list(messages_qs)
+        bot_messages = [
+            message for message in chat_messages
+            if message.direction == ChatMessage.Direction.OUTGOING
+        ]
 
         display_name = (thread.user.first_name or thread.user.username or "").strip()
         if not display_name:
@@ -467,6 +471,7 @@ class ChatThreadAdmin(admin.ModelAdmin):
             **self.admin_site.each_context(request),
             "thread": thread,
             "chat_messages": chat_messages,
+            "bot_messages": bot_messages,
             "messages_total": len(chat_messages),
             "user_display_name": display_name,
             "user_avatar": avatar_letter,
