@@ -89,7 +89,8 @@ jobs:
           echo "now_utc=$now_utc" >> $GITHUB_OUTPUT
           echo "exp_human=$exp_human" >> $GITHUB_OUTPUT
 
-      - name: Update STAGING_STATUS.md (Занят)
+      - name: Prepare branch with STAGING_STATUS.md (Занят)
+        id: prepreserve
         shell: bash
         env:
           AGENT: ${{ needs.parse.outputs.actor }}
@@ -100,11 +101,12 @@ jobs:
         run: |
           set -euo pipefail
           sha7=$(git rev-parse --short HEAD || echo none)
+          BR=chore/staging-reserve-${PR_NUMBER}-$(date -u +%Y%m%d%H%M%S)
+          git switch -c "$BR"
           tmp=$(mktemp)
           awk -v agent="$AGENT" -v pr="PR #$PR_NUMBER, $sha7" -v now="$NOW" -v eta="$ETA" -v reason="$REASON" '
             BEGIN{RS=""; ORS="\n\n"}
             /^# Статус стенда staging/ {
-              # split paragraphs, replace the block starting with "## Сейчас"
               n=split($0, a, /\n\n/);
               for (i=1;i<=n;i++){
                 if (a[i] ~ /^## Сейчас/){
@@ -119,34 +121,46 @@ jobs:
           mv "$tmp" STAGING_STATUS.md
           git add STAGING_STATUS.md
           git -c user.name="staging-bot" -c user.email="staging-bot@users.noreply.github.com" commit -m "chore(staging): занял стенд (PR #$PR_NUMBER)"
+          echo "branch=$BR" >> $GITHUB_OUTPUT
 
-      - name: Push to staging
+      - name: Push branch and open PR → staging
+        id: openreserve
+        uses: actions/github-script@v7
         env:
-          PUSH_TOKEN: ${{ secrets.ADMIN_GH_TOKEN || github.token }}
-        run: |
-          set -euo pipefail
-          git config --global http.https://github.com/.extraheader ""
-          git remote set-url origin https://x-access-token:${PUSH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git
-          git push origin HEAD:staging
+          BRANCH: ${{ steps.prepreserve.outputs.branch }}
+        with:
+          github-token: ${{ secrets.ADMIN_GH_TOKEN || github.token }}
+          script: |
+            const cp = require('child_process');
+            cp.execSync(`git config --global http.https://github.com/.extraheader ""`);
+            cp.execSync(`git push origin ${process.env.BRANCH}`, {stdio: 'inherit'});
+            const pr = await github.pulls.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              head: process.env.BRANCH,
+              base: 'staging',
+              title: `chore(staging): занял стенд (PR #${{ needs.parse.outputs.pr }})`,
+              body: 'Docs-only: update STAGING_STATUS.md via ChatOps.'
+            });
+            core.setOutput('pr', String(pr.data.number));
+            core.setOutput('sha', pr.data.head.sha);
 
-      - name: Set STAGING_BUSY status
+      - name: Wait for docs-only CI then merge
         uses: actions/github-script@v7
         with:
+          github-token: ${{ secrets.ADMIN_GH_TOKEN || github.token }}
           script: |
-            const { data: branch } = await github.repos.getBranch({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              branch: 'staging'
-            });
-            await github.repos.createCommitStatus({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              sha: branch.commit.sha,
-              state: 'success',
-              context: 'STAGING_BUSY',
-              description: 'staging зарезервирован',
-              target_url: `${process.env["GITHUB_SERVER_URL"] || 'https://github.com'}/${context.repo.owner}/${context.repo.repo}/tree/staging`
-            });
+            const prNumber = Number('${{ steps.openreserve.outputs.pr }}');
+            const started = Date.now();
+            while (Date.now() - started < 180000) { // 3 minutes
+              const pr = await github.pulls.get({ owner: context.repo.owner, repo: context.repo.repo, pull_number: prNumber });
+              const ref = pr.data.head.sha;
+              const checks = await github.checks.listForRef({ owner: context.repo.owner, repo: context.repo.repo, ref });
+              const build = checks.data.check_runs.filter(r => r.name.includes('build-test'));
+              if (build.length && build.every(r => r.conclusion === 'success')) break;
+              await new Promise(r => setTimeout(r, 5000));
+            }
+            await github.pulls.merge({ owner: context.repo.owner, repo: context.repo.repo, pull_number: prNumber, merge_method: 'squash' });
 
       - name: Comment back
         uses: actions/github-script@v7
@@ -230,17 +244,21 @@ jobs:
           set -euo pipefail
           curl -fsS "$STAGING_BASE_URL/api/health" | jq '.'
 
-      - name: Append to AGENTS_LOGS and push (staging)
+      - name: Append to AGENTS_LOGS (prepare branch)
+        id: preplog
         uses: actions/checkout@v4
         with:
           ref: staging
           fetch-depth: 0
-      - name: Write log entry
+      - name: Commit log entry on branch
+        id: writelog
         shell: bash
         env:
           PR_NUMBER: ${{ needs.parse.outputs.pr }}
         run: |
           set -euo pipefail
+          BR=chore/staging-log-${PR_NUMBER}-$(date -u +%Y%m%d%H%M%S)
+          git switch -c "$BR"
           ts=$(date -u +"%Y-%m-%d %H:%M UTC")
           cat >> "Документация/AGENTS_LOGS.md" <<EOF
 ## ${ts} — ChatOps deploy-staging (PR #$PR_NUMBER)
@@ -250,14 +268,37 @@ jobs:
 EOF
           git add "Документация/AGENTS_LOGS.md"
           git -c user.name="staging-bot" -c user.email="staging-bot@users.noreply.github.com" commit -m "docs(staging): лог деплоя PR #$PR_NUMBER"
-      - name: Push docs to staging
+          echo "branch=$BR" >> $GITHUB_OUTPUT
+      - name: Push branch & PR for log
+        id: openlog
+        uses: actions/github-script@v7
         env:
-          PUSH_TOKEN: ${{ secrets.ADMIN_GH_TOKEN || github.token }}
-        run: |
-          set -euo pipefail
-          git config --global http.https://github.com/.extraheader ""
-          git remote set-url origin https://x-access-token:${PUSH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git
-          git push origin HEAD:staging
+          BRANCH: ${{ steps.writelog.outputs.branch }}
+        with:
+          github-token: ${{ secrets.ADMIN_GH_TOKEN || github.token }}
+          script: |
+            const cp = require('child_process');
+            cp.execSync(`git config --global http.https://github.com/.extraheader ""`);
+            cp.execSync(`git push origin ${process.env.BRANCH}`, {stdio: 'inherit'});
+            const pr = await github.pulls.create({ owner: context.repo.owner, repo: context.repo.repo, head: process.env.BRANCH, base: 'staging', title: `docs(staging): лог деплоя PR #${{ needs.parse.outputs.pr }}`, body: 'Docs-only: update AGENTS_LOGS.' });
+            core.setOutput('pr', String(pr.data.number));
+            core.setOutput('sha', pr.data.head.sha);
+      - name: Wait CI and merge log PR
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.ADMIN_GH_TOKEN || github.token }}
+          script: |
+            const prNumber = Number('${{ steps.openlog.outputs.pr }}');
+            const started = Date.now();
+            while (Date.now() - started < 180000) {
+              const pr = await github.pulls.get({ owner: context.repo.owner, repo: context.repo.repo, pull_number: prNumber });
+              const ref = pr.data.head.sha;
+              const checks = await github.checks.listForRef({ owner: context.repo.owner, repo: context.repo.repo, ref });
+              const build = checks.data.check_runs.filter(r => r.name.includes('build-test'));
+              if (build.length && build.every(r => r.conclusion === 'success')) break;
+              await new Promise(r => setTimeout(r, 5000));
+            }
+            await github.pulls.merge({ owner: context.repo.owner, repo: context.repo.repo, pull_number: prNumber, merge_method: 'squash' });
 
       - name: Comment report
         uses: actions/github-script@v7
@@ -281,7 +322,8 @@ EOF
         with:
           ref: staging
           fetch-depth: 0
-      - name: Update STAGING_STATUS.md (Свободен)
+      - name: Prepare branch with STAGING_STATUS.md (Свободен)
+        id: prepfree
         shell: bash
         env:
           AGENT: ${{ needs.parse.outputs.actor }}
@@ -290,6 +332,8 @@ EOF
           set -euo pipefail
           now_utc=$(date -u +"%Y-%m-%d %H:%M UTC")
           sha7=$(git rev-parse --short HEAD || echo none)
+          BR=chore/staging-release-${PR_NUMBER}-$(date -u +%Y%m%d%H%M%S)
+          git switch -c "$BR"
           tmp=$(mktemp)
           awk -v agent="$AGENT" -v pr="PR #$PR_NUMBER, $sha7" -v now="$now_utc" '
             BEGIN{RS=""; ORS="\n\n"}
@@ -308,32 +352,37 @@ EOF
           mv "$tmp" STAGING_STATUS.md
           git add STAGING_STATUS.md
           git -c user.name="staging-bot" -c user.email="staging-bot@users.noreply.github.com" commit -m "chore(staging): освободил стенд (PR #$PR_NUMBER)"
-      - name: Push
+          echo "branch=$BR" >> $GITHUB_OUTPUT
+      - name: Push branch and open PR → staging (release)
+        id: openfree
+        uses: actions/github-script@v7
         env:
-          PUSH_TOKEN: ${{ secrets.ADMIN_GH_TOKEN || github.token }}
-        run: |
-          set -euo pipefail
-          git config --global http.https://github.com/.extraheader ""
-          git remote set-url origin https://x-access-token:${PUSH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git
-          git push origin HEAD:staging
-      - name: Set STAGING_FREE status
+          BRANCH: ${{ steps.prepfree.outputs.branch }}
+        with:
+          github-token: ${{ secrets.ADMIN_GH_TOKEN || github.token }}
+          script: |
+            const cp = require('child_process');
+            cp.execSync(`git config --global http.https://github.com/.extraheader ""`);
+            cp.execSync(`git push origin ${process.env.BRANCH}`, {stdio: 'inherit'});
+            const pr = await github.pulls.create({ owner: context.repo.owner, repo: context.repo.repo, head: process.env.BRANCH, base: 'staging', title: `chore(staging): освободил стенд (PR #${{ needs.parse.outputs.pr }})`, body: 'Docs-only: update STAGING_STATUS.md via ChatOps.' });
+            core.setOutput('pr', String(pr.data.number));
+            core.setOutput('sha', pr.data.head.sha);
+      - name: Wait CI and merge release PR
         uses: actions/github-script@v7
         with:
+          github-token: ${{ secrets.ADMIN_GH_TOKEN || github.token }}
           script: |
-            const { data: branch } = await github.repos.getBranch({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              branch: 'staging'
-            });
-            await github.repos.createCommitStatus({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              sha: branch.commit.sha,
-              state: 'success',
-              context: 'STAGING_FREE',
-              description: 'staging свободен',
-              target_url: `${process.env["GITHUB_SERVER_URL"] || 'https://github.com'}/${context.repo.owner}/${context.repo.repo}/tree/staging`
-            });
+            const prNumber = Number('${{ steps.openfree.outputs.pr }}');
+            const started = Date.now();
+            while (Date.now() - started < 180000) {
+              const pr = await github.pulls.get({ owner: context.repo.owner, repo: context.repo.repo, pull_number: prNumber });
+              const ref = pr.data.head.sha;
+              const checks = await github.checks.listForRef({ owner: context.repo.owner, repo: context.repo.repo, ref });
+              const build = checks.data.check_runs.filter(r => r.name.includes('build-test'));
+              if (build.length && build.every(r => r.conclusion === 'success')) break;
+              await new Promise(r => setTimeout(r, 5000));
+            }
+            await github.pulls.merge({ owner: context.repo.owner, repo: context.repo.repo, pull_number: prNumber, merge_method: 'squash' });
       - name: Comment
         uses: actions/github-script@v7
         with:
