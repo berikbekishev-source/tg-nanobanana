@@ -30,6 +30,35 @@
 <script>
     document.addEventListener("DOMContentLoaded", function () {
         document.body.classList.add("chat-history-mode");
+
+        const filterButtons = document.querySelectorAll("[data-message-filter]");
+        const messageRows = document.querySelectorAll(".message-row");
+        filterButtons.forEach((button) => {
+            button.addEventListener("click", () => {
+                const target = button.dataset.messageFilter;
+                filterButtons.forEach((btn) => btn.classList.toggle("active", btn === button));
+                messageRows.forEach((row) => {
+                    row.classList.remove("message-row--hidden");
+                    if (target !== "all" && row.dataset.direction !== target) {
+                        row.classList.add("message-row--hidden");
+                    }
+                });
+            });
+        });
+
+        const botLinks = document.querySelectorAll("[data-scroll-target]");
+        botLinks.forEach((link) => {
+            link.addEventListener("click", (event) => {
+                const targetId = link.dataset.scrollTarget;
+                if (!targetId) return;
+                const target = document.getElementById(targetId);
+                if (!target) return;
+                event.preventDefault();
+                target.scrollIntoView({ behavior: "smooth", block: "start" });
+                target.classList.add("message-row--highlight");
+                setTimeout(() => target.classList.remove("message-row--highlight"), 1600);
+            });
+        });
     });
 </script>
 <div class="chat-dialog-card">
@@ -51,9 +80,41 @@
         </div>
     </div>
 
+    <div class="chat-toolbar">
+        <div class="message-filters" role="tablist" aria-label="Фильтр сообщений">
+            <button type="button" class="filter-pill active" data-message-filter="all">Все сообщения</button>
+            <button type="button" class="filter-pill" data-message-filter="incoming">Пользователь</button>
+            <button type="button" class="filter-pill" data-message-filter="outgoing">Бот</button>
+        </div>
+        <div class="toolbar-meta">
+            Сообщений: {{ messages_total }}
+        </div>
+    </div>
+
+    {% if bot_messages %}
+    <div class="bot-responses-panel">
+        <div class="bot-responses-header">
+            <div>
+                <div class="panel-title">Ответы бота</div>
+                <div class="panel-subtitle">Всего {{ bot_messages|length }} сообщений</div>
+            </div>
+        </div>
+        <div class="bot-responses-list">
+            {% for bot_message in bot_messages %}
+                <a href="#message-{{ bot_message.pk }}" data-scroll-target="message-{{ bot_message.pk }}" class="bot-response-chip">
+                    <div class="chip-time">{{ bot_message.message_date|date:"d.m.Y H:i" }}</div>
+                    <div class="chip-preview">
+                        {{ bot_message.text|default:"(без текста)"|truncatechars:120 }}
+                    </div>
+                </a>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
     <div class="chat-dialog-body">
         {% for message in chat_messages %}
-            <div class="message-row {% if message.direction == 'outgoing' %}outgoing{% else %}incoming{% endif %}">
+            <div id="message-{{ message.pk }}" class="message-row {% if message.direction == 'outgoing' %}outgoing{% else %}incoming{% endif %}" data-direction="{{ message.direction }}">
                 <div class="message-avatar {% if message.direction == 'outgoing' %}bot{% endif %}">
                     {% if message.direction == 'outgoing' %}
                         {{ bot_avatar }}

@@ -817,3 +817,5 @@ class AdminChatThreadViewTests(TestCase):
         self.assertContains(response, "NanoBanana бот")
         self.assertIn("chat_messages", response.context)
         self.assertEqual(len(response.context["chat_messages"]), 2)
+        self.assertIn("bot_messages", response.context)
+        self.assertEqual(len(response.context["bot_messages"]), 1)
