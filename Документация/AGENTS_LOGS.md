@@ -110,3 +110,18 @@
 - Проверки: `DJANGO_SETTINGS_MODULE=config.settings_sqlite python manage.py check`, попытка `python manage.py test botapp.tests.AdminChatThreadViewTests` (падает на sqlite из-за raw SQL в миграциях — пояснение в отчёте)
 - Коммит/PR: pending
 - Следующий шаг: задеплоить фикс на staging, убедиться в наличии всех ответов бота и уведомить о готовности к ручному тесту
+
+## 2025-11-17 — деплой admin bot timeline на staging
+- Ветка: feature/admin-bot-history → staging (PR #60)
+- Шаг: занял стенд (PR #61 — CI падает из-за устаревшего `NinjaAPI(csrf=...)`, статус фиксируется вручную), смержил PR #60 и дождался Railway деплоя
+- Проверки: `railway status --json | jq '…commit'` (web/worker/beat на `13a4e080`), `railway logs --service web|worker|beat --lines 200`, `curl -sSf https://web-staging-70d1.up.railway.app/api/health`, `curl -I /admin/login/`, `curl -I /static/dashboard/chat_admin.css`
+- Коммит/PR: staging@13a4e080 (merge #60)
+- Следующий шаг: ручной тест + освобождение стенда (требуется чинить CI для PR #61)
+
+## 2025-11-17 — фикc отображения текстовых ответов бота
+- Ветка: feature/admin-chat-fix → staging (PR #63)
+- Шаг: убрал панель «Ответы бота», оставил только фильтры, пропатчил `Message.answer` для логирования всех исходящих и ввёл дедуп по `telegram_message_id`; STAGING_STATUS.md обновил на «занят»
+- Проверки до merge: `DJANGO_SETTINGS_MODULE=config.settings_sqlite python manage.py check` (успех), `DJANGO_SETTINGS_MODULE=config.settings_sqlite python manage.py test botapp.tests.AdminChatThreadViewTests` (падает на sqlite из-за raw SQL, покрывается CI)
+- CI: https://github.com/berikbekishev-source/tg-nanobanana/actions/runs/19424475208 (build-test success, job `open-pr` ожидаемо fail)
+- После merge: `railway status --json | jq '…'` → web/worker/beat на `d706878f94728be3fd1edbd99ed48a6cc666fb2a`, `railway logs --service web|worker|beat --lines 200`, `curl -sSf https://web-staging-70d1.up.railway.app/api/health`, `curl -I /admin/login/`, `curl -I /static/dashboard/chat_admin.css`
+- Следующий шаг: дождаться ручного теста, затем освободить стенд (PR #61 всё ещё нуждается в фиксе NinjaAPI, поэтому статус «занят» держим вручную)
