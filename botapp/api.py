@@ -1,3 +1,4 @@
+import inspect
 import json
 import logging
 from typing import Any, Dict, Optional
@@ -9,7 +10,20 @@ from ninja import NinjaAPI
 from botapp.error_tracker import ErrorTracker
 from botapp.models import BotErrorEvent
 
-api = NinjaAPI(csrf=False)
+
+def _build_api() -> NinjaAPI:
+    """Создаём NinjaAPI и отключаем CSRF вне зависимости от версии пакета."""
+    params = inspect.signature(NinjaAPI.__init__).parameters
+    if "csrf" in params:
+        return NinjaAPI(csrf=False)
+
+    api_instance = NinjaAPI()
+    # Для старых версий просто выставляем атрибут; они всё равно читают его позже.
+    setattr(api_instance, "csrf", False)
+    return api_instance
+
+
+api = _build_api()
 logger = logging.getLogger(__name__)
 
 
