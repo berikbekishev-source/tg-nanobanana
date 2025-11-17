@@ -105,6 +105,18 @@
 - Проверки: `python3 manage.py check`, `python3 manage.py makemigrations --check --dry-run`
 - Коммит/PR: pending
 - Следующий шаг: подготовить PR → staging, после деплоя проверить логи web/worker/beat и health, затем передать стенд на ручные тесты
+## 2025-11-17 — ChatOps e2e (PR #75)
+- Ветка: feature/chatops-e2e-20251117 → staging
+- Шаги:
+  - Резерв через doc-only PR #76 (статус «Занят», ETA 20мин)
+  - Мерж PR #75 (squash), ожидание Railway до SUCCESS, health ok
+  - Фиксация результата в журнале (этот блок)
+- Проверки:
+  - CI: `CI / build-test` — success
+  - Railway: web/worker/beat — SUCCESS, commit ba93056
+  - Health: `curl -fsS https://web-staging-70d1.up.railway.app/api/health` → `{ "ok": true }`
+- Коммит/PR: PR #75 (squash), doc-only PR #76
+- Следующий шаг: `/release-staging` (освободить стенд)
 
 ## 2025-11-17 — панель ответов бота в истории чата
 - Ветка: feature/admin-dialog-ui
