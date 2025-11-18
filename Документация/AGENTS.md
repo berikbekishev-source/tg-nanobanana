@@ -214,3 +214,6 @@
 Замечания:
 - Бронь и журнал вносятся ботом прямо в ветку `staging` коммитами по `STAGING_STATUS.md` и `Документация/AGENTS_LOGS.md` (doc-only, исключение защиты ветки)
 - Время полного цикла: обычно 2–5 минут: merge (<10с) → Railway (1–3 мин) → health (<10с)
+
+
+<!-- e2e: ChatOps test marker (safe, no behavior change) -->
