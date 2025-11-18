@@ -1,0 +1,164 @@
+name: Deploy to Production (Railway)
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: read
+
+env:
+  RAILWAY_GRAPHQL: https://backboard.railway.app/graphql/v2
+  RAILWAY_PROJECT_ID: 866bc61a-0ef1-41d1-af53-26784f6e5f06
+  PRODUCTION_ENV_ID: 2eee50d8-402e-44bf-9035-8298efef91bc
+
+jobs:
+  deploy:
+    if: ${{ github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main' && vars.RAILWAY_API_TOKEN != '' && vars.PRODUCTION_BASE_URL != '' }}
+    runs-on: ubuntu-latest
+    env:
+      RAILWAY_TOKEN: ${{ vars.RAILWAY_API_TOKEN }}
+      PRODUCTION_BASE_URL: ${{ vars.PRODUCTION_BASE_URL }}
+      COMMIT_SHA: ${{ github.event.workflow_run.head_sha }}
+    steps:
+      - name: Install Railway CLI
+        run: |
+          curl -sSL https://railway.app/install.sh | sh
+          echo "$HOME/.railway/bin" >> "$GITHUB_PATH"
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 0
+
+      - name: Trigger Railway deployment
+        id: deploy
+        run: |
+          set -euo pipefail
+          
+          echo "🚀 Запуск деплоя на Railway для коммита ${COMMIT_SHA:0:7}"
+          
+          # Railway автоматически деплоит при пуше в подключенную ветку через GitHub integration
+          # Но мы можем явно проверить и при необходимости запустить деплой через API
+          
+          # Получаем список сервисов
+          SERVICES_QUERY='query($id:ID!){ project(id:$id){ services{ edges{ node{ id name serviceInstances{ edges{ node{ id environmentId } } } } } } } }'
+          
+          SERVICES_RESPONSE=$(curl -s -X POST "$RAILWAY_GRAPHQL" \
+            -H "Authorization: Bearer $RAILWAY_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "{\"query\":\"$SERVICES_QUERY\",\"variables\":{\"id\":\"$RAILWAY_PROJECT_ID\"}}")
+          
+          echo "Services response: $SERVICES_RESPONSE" | head -c 500
+          
+          # Извлекаем ID сервисов для production environment
+          WEB_SERVICE_ID=$(echo "$SERVICES_RESPONSE" | jq -r --arg EID "$PRODUCTION_ENV_ID" '.data.project.services.edges[].node | select(.name=="web") | .serviceInstances.edges[] | select(.node.environmentId==$EID) | .node.id' | head -1)
+          WORKER_SERVICE_ID=$(echo "$SERVICES_RESPONSE" | jq -r --arg EID "$PRODUCTION_ENV_ID" '.data.project.services.edges[].node | select(.name=="worker") | .serviceInstances.edges[] | select(.node.environmentId==$EID) | .node.id' | head -1)
+          BEAT_SERVICE_ID=$(echo "$SERVICES_RESPONSE" | jq -r --arg EID "$PRODUCTION_ENV_ID" '.data.project.services.edges[].node | select(.name=="beat") | .serviceInstances.edges[] | select(.node.environmentId==$EID) | .node.id' | head -1)
+          
+          echo "Web service instance ID: $WEB_SERVICE_ID"
+          echo "Worker service instance ID: $WORKER_SERVICE_ID"
+          echo "Beat service instance ID: $BEAT_SERVICE_ID"
+          
+          # Railway обычно деплоит автоматически через GitHub webhook
+          # Но если этого не произошло, можно использовать Railway CLI для явного деплоя
+          # Или просто проверить что деплой запустился
+          
+          echo "⏳ Ожидание автоматического деплоя Railway (макс 2 минуты)..."
+          deadline=$(( $(date +%s) + 120 ))
+          
+          while true; do
+            # Проверяем статус последнего деплоя
+            DEPLOY_QUERY='query($id:ID!){ project(id:$id){ services{ edges{ node{ name serviceInstances{ edges{ node{ environmentId latestDeployment{ status createdAt meta{ commitHash } } } } } } } } } }'
+            
+            DEPLOY_RESPONSE=$(curl -s -X POST "$RAILWAY_GRAPHQL" \
+              -H "Authorization: Bearer $RAILWAY_TOKEN" \
+              -H "Content-Type: application/json" \
+              -d "{\"query\":\"$DEPLOY_QUERY\",\"variables\":{\"id\":\"$RAILWAY_PROJECT_ID\"}}")
+            
+            # Проверяем что деплой для нужного коммита запущен или завершен
+            CURRENT_COMMIT=$(echo "$DEPLOY_RESPONSE" | jq -r --arg EID "$PRODUCTION_ENV_ID" '.data.project.services.edges[].node | select(.name=="web") | .serviceInstances.edges[] | select(.node.environmentId==$EID) | .node.latestDeployment.meta.commitHash' | head -1)
+            DEPLOY_STATUS=$(echo "$DEPLOY_RESPONSE" | jq -r --arg EID "$PRODUCTION_ENV_ID" '.data.project.services.edges[].node | select(.name=="web") | .serviceInstances.edges[] | select(.node.environmentId==$EID) | .node.latestDeployment.status' | head -1)
+            
+            echo "Текущий коммит в Railway: ${CURRENT_COMMIT:0:7}, статус: $DEPLOY_STATUS"
+            
+            if [ "${CURRENT_COMMIT:0:7}" = "${COMMIT_SHA:0:7}" ] && [ "$DEPLOY_STATUS" = "SUCCESS" ]; then
+              echo "✅ Деплой завершен успешно!"
+              echo "deployed=true" >> $GITHUB_OUTPUT
+              break
+            fi
+            
+            if [ "${CURRENT_COMMIT:0:7}" = "${COMMIT_SHA:0:7}" ] && [ "$DEPLOY_STATUS" = "BUILDING" ] || [ "$DEPLOY_STATUS" = "DEPLOYING" ]; then
+              echo "⏳ Деплой в процессе..."
+            fi
+            
+            if (( $(date +%s) > deadline )); then
+              echo "⚠️ Таймаут ожидания деплоя. Railway должен деплоить автоматически через GitHub webhook."
+              echo "deployed=timeout" >> $GITHUB_OUTPUT
+              break
+            fi
+            
+            sleep 10
+          done
+
+      - name: Wait for Railway deployment to complete
+        if: steps.deploy.outputs.deployed == 'true'
+        run: |
+          set -euo pipefail
+          echo "⏳ Ожидание завершения деплоя всех сервисов..."
+          deadline=$(( $(date +%s) + 300 ))
+          
+          while true; do
+            DEPLOY_QUERY='query($id:ID!){ project(id:$id){ services{ edges{ node{ name serviceInstances{ edges{ node{ environmentId latestDeployment{ status meta{ commitHash } } } } } } } } } }'
+            
+            DEPLOY_RESPONSE=$(curl -s -X POST "$RAILWAY_GRAPHQL" \
+              -H "Authorization: Bearer $RAILWAY_TOKEN" \
+              -H "Content-Type: application/json" \
+              -d "{\"query\":\"$DEPLOY_QUERY\",\"variables\":{\"id\":\"$RAILWAY_PROJECT_ID\"}}")
+            
+            STATUSES=$(echo "$DEPLOY_RESPONSE" | jq -r --arg EID "$PRODUCTION_ENV_ID" '.data.project.services.edges[].node | select(.name=="web" or .name=="worker" or .name=="beat") | .serviceInstances.edges[] | select(.node.environmentId==$EID) | .node.latestDeployment.status' | head -3)
+            
+            all_success=true
+            for status in $STATUSES; do
+              if [ "$status" != "SUCCESS" ]; then
+                all_success=false
+                break
+              fi
+            done
+            
+            if $all_success; then
+              echo "✅ Все сервисы задеплоены успешно!"
+              break
+            fi
+            
+            if (( $(date +%s) > deadline )); then
+              echo "⚠️ Таймаут ожидания завершения деплоя"
+              exit 1
+            fi
+            
+            echo "Статусы деплоя: $STATUSES"
+            sleep 10
+          done
+
+      - name: Health check
+        run: |
+          set -euo pipefail
+          echo "🏥 Проверка health endpoint..."
+          
+          for i in $(seq 1 30); do
+            code=$(curl -s -o /dev/null -w "%{http_code}" "$PRODUCTION_BASE_URL/api/health" || true)
+            echo "Попытка $i: HTTP $code"
+            if [ "$code" = "200" ]; then
+              echo "✅ Health check успешен!"
+              curl -s "$PRODUCTION_BASE_URL/api/health" | jq '.'
+              exit 0
+            fi
+            sleep 10
+          done
+          
+          echo "❌ Health check не прошел"
+          exit 1
+
