@@ -108,7 +108,6 @@
 
 ### 3.2 Рабочий процесс
 - Перед началом работы синхронизируйтесь с нужной веткой (`staging` для фич, `main` для хотфиксов).
-- Перед каждым деплоем бронируйте стенд через `STAGING_STATUS.md` (см. гайд ниже) и освобождайте его сразу после проверок.
 - Стройте план действий и проговаривайте его.
 - При работе с кодом запускайте доступные тесты/линтеры. Если тесты не предусмотрены, объясните, как вручную проверили результат.
 - Всегда проверяйте логи (web, worker, beat) и `/api/health` перед тем как отчитаться об успехе.
@@ -116,7 +115,7 @@
 
 ### 3.3 Отчётность и диагностика
 - Для каждого релиза фиксируйте: какие ветки задействованы, какие проверки прошли, какие команды Railway/`curl` выполнялись.
-- Для деплоя на `staging` обязательно записывайте в `Документация/AGENTS_LOGS.md`: время бронирования, PR/коммит, команды (`railway status/logs`, `curl /api/health`), результат и факт уведомления человека.
+- После деплоя на `staging` записывайте в `Документация/AGENTS_LOGS.md`: дату, PR/коммит, команды проверки, результат и факт уведомления человека.
 - Если пайплайн сломался, собирайте факты (ID workflow, выдержки из логов, команды) и прикладывайте в отчёт человеку.
 - Никогда не скрывайте ошибки: лучше сразу описать проблему и предложить план её устранения.
 
@@ -125,17 +124,21 @@
 - Не запускайте `railway up/deploy` руками, не редактируйте переменные окружения без необходимости.
 - Rollback или git revert выполняйте только после подтверждения человека или если этого требует автоматический workflow.
 
-### 3.5 Скрипты для быстрого деплоя
-- `bin/staging-status reserve|release` — обновляет `STAGING_STATUS.md`, следит, чтобы стенд не заняли параллельно, и автоматически создаёт коммиты `chore: занял/освободил staging`.
-- `bin/deploy-staging <PR#>` — проверяет, что PR направлен в `staging`, убеждается в зелёном CI, мержит `--squash --admin`, запускает `railway status`, логи web/worker/beat и `curl "$STAGING_BASE_URL/api/health"`. Весь цикл занимает ~2 минуты.
-- Перед началом сессии выполните:
-  ```bash
-  gh auth status || echo "$GITHUB_PAT" | gh auth login --with-token
-  export RAILWAY_TOKEN="47a20fbb-1f26-402d-8e66-ba38660ef1d4"
-  railway login --token "$RAILWAY_TOKEN" && railway link --project 866bc61a-0ef1-41d1-af53-26784f6e5f06
-  export STAGING_BASE_URL="https://web-staging-70d1.up.railway.app"
-  ```
-  Тогда оба скрипта работают без лишних вопросов, и деплой на `staging` укладывается в ≤5 минут.
+### 3.5 Настройка окружения
+Перед началом работы выполните:
+```bash
+# GitHub CLI
+gh auth status || echo "$GITHUB_PAT" | gh auth login --with-token
+
+# Railway CLI
+export RAILWAY_TOKEN="47a20fbb-1f26-402d-8e66-ba38660ef1d4"
+railway login --token "$RAILWAY_TOKEN"
+railway link --project 866bc61a-0ef1-41d1-af53-26784f6e5f06
+
+# Environment URLs
+export STAGING_BASE_URL="https://web-staging-70d1.up.railway.app"
+export PRODUCTION_BASE_URL="<production-url>"
+```
 
 ## 4. Правила работы с GitHub и Railway
 
@@ -143,42 +146,134 @@
 | Ветка | Назначение | Правила |
 |-------|------------|---------|
 | `feature/*` | Работа ИИ-агента над задачей | Ветка создаётся из `staging`. Пуши запускают `CI and Smoke` и автогенерацию PR в `staging`.
-| `staging` | Тестовое окружение и тестовый бот | Защищена. Merge делается **вручную через `gh pr merge --squash`** только после зелёного CI и бронирования стенда в `STAGING_STATUS.md`.
-| `main` | Продакшн | Защищена. Merge разрешён только человеку через веб-интерфейс GitHub; авто-merge отключён.
+| `staging` | Тестовое окружение и тестовый бот | Защищена. Merge выполняется **автоматически** через `auto-merge-staging.yml` после зелёного CI.
+| `main` | Продакшн | Защищена. Merge разрешён **только человеку** через веб-интерфейс GitHub; авто-merge отключён.
 
 ### 4.2 GitHub Actions
-- `pr-from-feature.yml` — создаёт/обновляет PR `feature/* → staging` сразу после push.
-- `CI and Smoke` — линтеры, тесты, сборка и смоки. Запускается на push в feature, на PR к `staging`, на push в `staging` и `main`.
-- `auto-approve.yml` — выполняет машинное ревью и ставит approve от `github-actions[bot]`, но **не включает auto-merge**.
-- `auto-merge-staging.yml` — отключён. Merge выполняет агент вручную через CLI после бронирования стенда.
-- `setup-branch-protection.yml` — поддерживает настройки защищённых веток (идёт в режиме `continue-on-error`, не ломайте его).
-- `post-deploy-monitor.yml` — после успешного push в `main` собирает Railway логи, пингует `/api/health`, при сбое делает rollback/`git revert` и шлёт уведомление в Telegram.
+- **`pr-from-feature.yml`** — создаёт/обновляет PR `feature/* → staging` сразу после push.
+- **`CI and Smoke`** — линтеры, тесты, сборка и смоки. Запускается на push в feature, на PR к `staging`, на push в `staging` и `main`.
+- **`auto-approve.yml`** — ставит approve от `github-actions[bot]` через `ADMIN_GH_TOKEN`.
+- **`auto-merge-staging.yml`** — автоматически мержит PR в `staging` после успешного CI. Использует concurrency control и обновляет `STAGING_DEPLOYED.json` через GitHub Contents API.
+- **`staging-health-check.yml`** — проверяет Railway deployment, health endpoint и обновляет `AGENTS_LOGS.md`.
+- **`create-release-pr.yml`** — создаёт PR `staging → main` по команде человека.
+- **`setup-branch-protection.yml`** — поддерживает настройки защищённых веток (режим `continue-on-error`).
+- **`post-deploy-monitor.yml`** — после push в `main` проверяет здоровье production, при сбое делает rollback и шлёт уведомление в Telegram.
 
-### 4.3 Цикл feature → staging
-1. Создайте ветку `feature/<task>` от `staging`, пуш — создаст PR `feature → staging`; дождитесь зелёного `CI / build-test`.
-2. Забронируйте стенд через ChatOps в PR: `/reserve-staging 15m reason: <текст>` — бот обновит `STAGING_STATUS.md` в `staging` коммитом `chore(staging): занял стенд`.
-3. Выполните `/deploy-staging` — бот сам смержит PR (squash), подождёт Railway до `SUCCESS`, снимет логи/health и оставит отчёт.
-4. Освободите стенд `/release-staging` — бот обновит `STAGING_STATUS.md` на «Свободен» и допишет журнал.
-5. Сообщите человеку: “Staging готов, проверил status/logs/health”.
+### 4.3 Цикл feature → staging (полностью автоматический)
+
+**Шаг 1: Создание feature ветки**
+```bash
+git checkout staging
+git pull origin staging
+git checkout -b feature/<task>
+```
+
+**Шаг 2: Разработка и коммиты**
+```bash
+# Вносите изменения
+git add .
+git commit -m "feat: описание изменения"
+```
+
+**Шаг 3: Push**
+```bash
+git push origin feature/<task>
+```
+Автоматически создаётся PR `feature → staging` и запускается CI.
+
+**Шаг 4: Ожидание CI (автоматически)**
+- ✅ `CI and Smoke` должен пройти успешно
+- ✅ `auto-approve.yml` поставит approve
+
+**Шаг 5: Auto-merge (автоматически)**
+После зелёного CI workflow `auto-merge-staging.yml`:
+- Мержит PR в `staging` (squash merge)
+- Обновляет `STAGING_DEPLOYED.json` с информацией о PR
+- Создаёт коммит: `ci: update staging deployment marker (PR #N)`
+
+**Шаг 6: Railway deployment (автоматически)**
+Railway автоматически деплоит в staging environment (web/worker/beat).
+
+**Шаг 7: Health check (автоматически)**
+Workflow `staging-health-check.yml`:
+- Проверяет Railway deployment status
+- Проверяет `/api/health` endpoint
+- Обновляет `AGENTS_LOGS.md`
+
+**Шаг 8: Проверка агентом**
+```bash
+# Убедитесь что на staging ваш PR
+git checkout staging && git pull origin staging
+cat STAGING_DEPLOYED.json | jq '.pr'
+
+# Проверьте Railway status
+railway deployment list --service web | head -5
+
+# Проверьте health
+curl "$STAGING_BASE_URL/api/health"
+
+# Проверьте логи
+railway logs --service web --tail 50
+```
+
+**Шаг 9: Отчёт человеку**
+Сообщите: "✅ Staging deployment завершён. PR #X смерджен, Railway status: SUCCESS, health: OK. Готов к ручному тестированию в @test_integer_ai_bot"
 
 ### 4.4 Проверка стейджинга
-- Быстрее всего использовать ChatOps `/deploy-staging` — бот сам соберёт Railway статус, снимет логи `web/worker/beat` (при наличии CLI) и сделает `curl "$STAGING_BASE_URL/api/health"`. Итог попадёт в `Документация/AGENTS_LOGS.md`.
-- Команды для проверки:
-  ```bash
-  railway status --json | jq '.services.edges[].node.serviceInstances.edges[] | select(.node.environmentId=="9e15b55d-8220-4067-a47e-191a57c2bcca") | {serviceName: .node.serviceName, status: .node.latestDeployment.status, commit: .node.latestDeployment.meta.commitHash}'
-  railway logs --service web --tail 200
-  railway logs --service worker --tail 200
-  curl -sf "$STAGING_BASE_URL/api/health"
-  ```
-- Эти проверки выполняет ИИ-агент. Как только они зелёные, агент уведомляет человека.
-- Ручные смоки в тестовом Telegram-боте `@test_integer_ai_bot` проводит только человек. Агент обязан предоставить ссылку на коммит и список проверок.
-- Все результаты (команды, timestamp, статус стенда) фиксируйте в `AGENTS_LOGS` и упомянутом отчёте.
-> Комментарий 2025-11-17: во время текущего теста деплоя дополнительно сохранил полный вывод `bin/deploy-staging` и `railway status` в журнале, чтобы следующий агент видел последовательность шагов без поиска.
 
-### 4.8 ChatOps и защита веток
-- Doc-only коммиты в `staging` (только `STAGING_STATUS.md` и `Документация/*`) выполняет `github-actions[bot]`/`ADMIN_GH_TOKEN`.
-- Проверки `STAGING_BUSY`/`STAGING_FREE` выставляются ботом на последний коммит `staging` для видимости занятости стенда.
-- TTL брони — по умолчанию 15 минут; авто-освобождение по крону.
+**Шаг 1: Проверьте маркер деплоя**
+```bash
+# Убедитесь что на staging именно ваш PR
+git checkout staging && git pull origin staging
+cat STAGING_DEPLOYED.json | jq '.'
+# Проверьте что поле "pr" соответствует вашему PR номеру
+```
+
+**Шаг 2: Проверьте Railway status**
+```bash
+# Статус всех сервисов в staging
+railway deployment list --service web | head -5
+
+# Логи сервисов
+railway logs --service web --tail 50
+railway logs --service worker --tail 50
+railway logs --service beat --tail 30
+```
+
+**Шаг 3: Health check**
+```bash
+curl -sf "$STAGING_BASE_URL/api/health"
+# Ожидаемый ответ: {"ok": true}
+```
+
+**Шаг 4: Ручное тестирование**
+- Агент предоставляет человеку информацию о deployment
+- Человек тестирует в тестовом боте `@test_integer_ai_bot`
+- Агент фиксирует результаты в `Документация/AGENTS_LOGS.md`
+
+### 4.6 Deployment marker (STAGING_DEPLOYED.json)
+
+Файл `STAGING_DEPLOYED.json` показывает какой PR сейчас задеплоен на staging:
+
+```json
+{
+  "pr": 123,
+  "title": "feat: добавил новую фичу",
+  "actor": "agent-name",
+  "deployed_at": "2025-11-18T10:00:00Z",
+  "commit": "abc1234567...",
+  "commit_short": "abc1234"
+}
+```
+
+**Обновляется автоматически** через `auto-merge-staging.yml` используя GitHub Contents API (bypass branch protection).
+
+**Перед тестированием агент должен проверить:**
+```bash
+cat STAGING_DEPLOYED.json | jq '.pr'
+```
+
+Если PR не совпадает с вашим — кто-то другой задеплоил позже.
 
 ### 4.5 Продвижение в main и прод-окружение
 
@@ -273,13 +368,13 @@ git push origin staging
    - Telegram уведомление требует анализа
    - Человек должен быть проинформирован о любых проблемах
 
-### 4.6 Действия при сбоях
+### 4.7 Действия при сбоях
 - **Авто-PR завис** — проверьте `gh pr checks <num>`, если все проверки зелёные, поставьте approve и смержите вручную. Если проверки красные, разбирайтесь в логах, фиксите, пушьте обновление.
 - **CI упал** — изучите логи job, исправьте код и повторите push. Не отключайте проверки.
 - **Railway деплой не стартовал** — посмотрите `railway status --json` и `Railway dashboard`. Частая причина — нет зелёного `CI` на соответствующем коммите; прогоните `CI` на нужной ветке заново.
 - **Staging/production нездоров** — соберите логи (`railway logs`), проверьте `/api/health`, при критических ошибках уведомите человека и предложите rollback (только после подтверждения).
 
-### 4.7 Работа с Railway
+### 4.8 Работа с Railway
 - Допустимые команды: `status`, `logs`, `variables`, `deployment list`, `run` для чтения. Нельзя выполнять `deploy`, `up`, `rollback` самостоятельно без явного распоряжения или автоматического workflow.
 - Чтобы убедиться, что нужный коммит задеплоился, используйте:
   ```bash
@@ -289,15 +384,52 @@ git push origin staging
 - Rollback вручную допускается только по указанию человека. В штатном режиме rollback выполняет workflow `post-deploy-monitor`.
 
 ---
+
+## 5. Упрощённый staging пайплайн (актуально с ноября 2024)
+
+### 5.1 Принцип работы
+**Полностью автоматический пайплайн** без резервирования и ChatOps:
+
+```
+feature/task
+    ↓ push
+[CI and Smoke] ✅
+    ↓ auto
+PR создаётся → staging
+    ↓ CI pass
+Auto-merge (concurrency control)
+    ↓
+Railway auto-deploy
+    ↓
+Health-check + отчёт в PR
+    ↓
+✅ Готово для ручного теста
+```
+
+### 5.2 Ключевые компоненты
+- **`STAGING_DEPLOYED.json`** — маркер деплоя, показывает какой PR на staging
+- **`auto-merge-staging.yml`** — авто-мердж с concurrency group
+- **`staging-health-check.yml`** — post-deploy проверки и логирование
+- **GitHub Contents API** — bypass branch protection для автоматических обновлений
+
+### 5.3 Concurrency control
+```yaml
+concurrency:
+  group: staging-deploy
+  cancel-in-progress: false
+```
+
+Все мерджи в staging выполняются **последовательно**. Если два агента пушат одновременно, PR-ы обрабатываются по очереди.
+
+### 5.4 Временные рамки
+| Этап | Время |
+|------|-------|
+| Push → PR creation | ~10 сек |
+| CI checks | 3-5 мин |
+| Auto-merge | ~10 сек |
+| Railway deploy | 2-3 мин |
+| Health check | ~10 сек |
+| **Итого** | **~6-9 мин** |
+
+---
 Соблюдайте эти правила, оперативно обновляйте журнал действий и не забывайте согласовывать любые нетипичные шаги. Это гарантирует предсказуемые деплои и быстрый отклик на инциденты.
-## Быстрый путь (ChatOps)
-- Резерв стенда: в комментарии к PR напишите `/reserve-staging 15m reason: <что выкатываю>`
-- Деплой на staging: `/deploy-staging` — merge (squash) в `staging`, ожидание Railway и смоки — бот сделает сам и оставит отчёт
-- Освобождение стенда: `/release-staging`
-
-Замечания:
-- Бронь и журнал вносятся ботом прямо в ветку `staging` коммитами по `STAGING_STATUS.md` и `Документация/AGENTS_LOGS.md` (doc-only, исключение защиты ветки)
-- Время полного цикла: обычно 2–5 минут: merge (<10с) → Railway (1–3 мин) → health (<10с)
-
-
-<!-- e2e: ChatOps test marker (safe, no behavior change) -->
