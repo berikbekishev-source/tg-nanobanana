@@ -1,0 +1,63 @@
+name: ChatOps Router
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: write
+  actions: write
+  issues: read
+  pull-requests: read
+
+jobs:
+  route:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Route slash command
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.ADMIN_GH_TOKEN || github.token }}
+          script: |
+            const body = (context.payload.comment?.body || '').trim();
+            const isPR = !!context.payload.issue?.pull_request;
+            if (!isPR) return core.info('Not a PR comment, skipping');
+            const pr = context.payload.issue.number;
+            const actor = context.actor;
+
+            function parseReserve(s){
+              const m = s.match(/^\/reserve-staging\s+(\d+)(m|h)?/i);
+              const ttl = m ? `${m[1]}${m[2]||'m'}` : '15m';
+              const reason = (s.match(/reason:(.+)$/i)?.[1] || '').trim();
+              return {ttl, reason};
+            }
+
+            let evt = '';
+            let payload = {pr, actor};
+            if (/^\/reserve-staging\b/i.test(body)) {
+              const {ttl, reason} = parseReserve(body);
+              evt = 'reserve-staging'; payload = {...payload, ttl, reason};
+            } else if (/^\/deploy-staging\b/i.test(body)) {
+              evt = 'deploy-staging';
+            } else if (/^\/release-staging\b/i.test(body)) {
+              evt = 'release-staging';
+            } else {
+              core.info('No matching command'); return;
+            }
+
+            const workflow = 'staging-ops.yml';
+            const ref = context.payload.repository?.default_branch || 'main';
+            await github.rest.actions.createWorkflowDispatch({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: workflow,
+              ref,
+              inputs: {
+                action: evt.replace('-staging',''),
+                pr: String(pr),
+                ttl: String(payload.ttl || ''),
+                reason: String(payload.reason || ''),
+                actor
+              }
+            });
+            core.info(`Workflow dispatch sent: ${evt} for PR #${pr}`);
