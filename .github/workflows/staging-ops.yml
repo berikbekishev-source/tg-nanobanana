@@ -1,4 +1,5 @@
 name: Staging Ops (ChatOps)
+# touch: ensure GitHub indexes workflow_dispatch
 
 on:
   issue_comment:
