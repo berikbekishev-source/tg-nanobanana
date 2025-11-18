@@ -1,8 +1,8 @@
 {
-  "pr": 135,
-  "title": "feat: feature/release-pr-workflow → staging",
+  "pr": 136,
+  "title": "feat: feature/e2e-full-pipeline-test-20251118-172207 → staging",
   "actor": "berikbekishev-source",
-  "deployed_at": "2025-11-18T12:18:17.043Z",
+  "deployed_at": "2025-11-18T12:26:04.799Z",
   "commit": "unknown",
   "commit_short": "unknown"
 }
