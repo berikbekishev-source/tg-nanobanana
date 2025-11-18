@@ -9,8 +9,8 @@ https://docs.djangoproject.com/en/5.2/topics/settings/
 For the full list of settings and their values, see
 https://docs.djangoproject.com/en/5.2/ref/settings/
 
-E2E Test v2: Упрощённый staging пайплайн - 2025-11-18
-После исправления Railway GraphQL запроса
+E2E Test v3: Финальный тест с GitHub API bypass - 2025-11-18
+Проверяем обновление STAGING_DEPLOYED.json через Contents API
 """
 
 import os, dj_database_url
