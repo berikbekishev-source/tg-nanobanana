@@ -14,7 +14,8 @@ feature → staging → main → production
 7. ✅ Post-deploy monitor
 
 Дата создания: 2025-11-18
-Версия: 1.0.0
+Версия: 1.0.1
+Последний E2E тест: 2025-11-18 14:00 UTC
 """
 
 
