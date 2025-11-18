@@ -17,6 +17,7 @@ jobs:
       - name: Route slash command
         uses: actions/github-script@v7
         with:
+          github-token: ${{ secrets.ADMIN_GH_TOKEN || github.token }}
           script: |
             const body = (context.payload.comment?.body || '').trim();
             const isPR = !!context.payload.issue?.pull_request;
@@ -44,7 +45,7 @@ jobs:
               core.info('No matching command'); return;
             }
 
-            const workflow = '.github/workflows/staging-ops.yml';
+            const workflow = 'staging-ops.yml';
             const ref = context.payload.repository?.default_branch || 'main';
             await github.rest.actions.createWorkflowDispatch({
               owner: context.repo.owner,
