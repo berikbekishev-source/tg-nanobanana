@@ -17,13 +17,14 @@ from botapp.keyboards import (
     get_main_menu_inline_keyboard,
     get_generation_start_message
 )
-from botapp.models import TgUser, AIModel, GenRequest
+from botapp.models import TgUser, AIModel, GenRequest, BotErrorEvent
 from botapp.business.generation import GenerationService
 from botapp.business.balance import BalanceService, InsufficientBalanceError
 from botapp.business.pricing import get_base_price_tokens
 from botapp.tasks import generate_video_task, extend_video_task
 from botapp.providers.video.openai_sora import resolve_sora_dimensions
 from asgiref.sync import sync_to_async
+from botapp.error_tracker import ErrorTracker
 
 router = Router()
 
@@ -625,6 +626,20 @@ async def handle_video_prompt(message: Message, state: FSMContext):
             f"❌ Произошла ошибка: {exc}",
             reply_markup=get_main_menu_inline_keyboard()
         )
+        await ErrorTracker.alog(
+            origin=BotErrorEvent.Origin.TELEGRAM,
+            severity=BotErrorEvent.Severity.WARNING,
+            handler="video_generation.receive_video_prompt",
+            chat_id=message.chat.id,
+            payload={
+                "generation_type": generation_type,
+                "model_id": data.get("model_id"),
+                "duration": selected_duration,
+                "resolution": selected_resolution,
+                "aspect_ratio": selected_aspect_ratio,
+            },
+            exc=exc,
+        )
         await state.clear()
         return
 
@@ -821,6 +836,18 @@ async def handle_video_extension_prompt(message: Message, state: FSMContext):
         await message.answer(
             f"❌ Произошла ошибка: {exc}",
             reply_markup=get_main_menu_inline_keyboard()
+        )
+        await ErrorTracker.alog(
+            origin=BotErrorEvent.Origin.TELEGRAM,
+            severity=BotErrorEvent.Severity.WARNING,
+            handler="video_generation.extend_video_prompt",
+            chat_id=message.chat.id,
+            payload={
+                "parent_request_id": parent_request.id if parent_request else None,
+                "model_id": model.id if model else None,
+                "prompt_length": len(text) if text else 0,
+            },
+            exc=exc,
         )
         await state.clear()
         return

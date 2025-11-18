@@ -4,7 +4,9 @@ from decimal import Decimal
 from io import BytesIO
 from unittest.mock import MagicMock, patch
 
+from django.contrib.auth import get_user_model
 from django.test import TestCase, override_settings
+from django.urls import reverse
 from django.utils import timezone
 from PIL import Image
 from aiogram.types import Message
@@ -770,3 +772,48 @@ class ChatLoggerTests(TestCase):
         self.assertEqual(last_message.media_file_id, "photo-file")
         self.assertEqual(last_message.message_type, ChatMessage.MessageType.PHOTO)
         self.assertEqual(last_message.text, "Вот фото")
+
+
+class AdminChatThreadViewTests(TestCase):
+    def setUp(self):
+        User = get_user_model()
+        self.admin = User.objects.create_superuser(
+            username="admin",
+            email="admin@example.com",
+            password="adminpass",
+        )
+        self.tg_user = TgUser.objects.create(
+            chat_id=555001,
+            username="berik",
+            first_name="Берик",
+            language_code="ru",
+        )
+        self.thread = ChatThread.objects.create(user=self.tg_user)
+        ChatMessage.objects.create(
+            thread=self.thread,
+            user=self.tg_user,
+            direction=ChatMessage.Direction.INCOMING,
+            message_type=ChatMessage.MessageType.TEXT,
+            text="Здравствуйте",
+        )
+        ChatMessage.objects.create(
+            thread=self.thread,
+            user=self.tg_user,
+            direction=ChatMessage.Direction.OUTGOING,
+            message_type=ChatMessage.MessageType.TEXT,
+            text="Готов помогать!",
+        )
+
+    def test_dialog_view_renders_messages(self):
+        self.client.force_login(self.admin)
+        url = reverse("admin:botapp_chatthread_dialog", args=[self.thread.pk])
+
+        response = self.client.get(url)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTemplateUsed(response, "admin/botapp/chatthread/dialog.html")
+        self.assertContains(response, "Здравствуйте")
+        self.assertContains(response, "Готов помогать!")
+        self.assertContains(response, "NanoBanana бот")
+        self.assertIn("chat_messages", response.context)
+        self.assertEqual(len(response.context["chat_messages"]), 2)

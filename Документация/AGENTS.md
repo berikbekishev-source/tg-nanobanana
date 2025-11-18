@@ -125,6 +125,18 @@
 - Не запускайте `railway up/deploy` руками, не редактируйте переменные окружения без необходимости.
 - Rollback или git revert выполняйте только после подтверждения человека или если этого требует автоматический workflow.
 
+### 3.5 Скрипты для быстрого деплоя
+- `bin/staging-status reserve|release` — обновляет `STAGING_STATUS.md`, следит, чтобы стенд не заняли параллельно, и автоматически создаёт коммиты `chore: занял/освободил staging`.
+- `bin/deploy-staging <PR#>` — проверяет, что PR направлен в `staging`, убеждается в зелёном CI, мержит `--squash --admin`, запускает `railway status`, логи web/worker/beat и `curl "$STAGING_BASE_URL/api/health"`. Весь цикл занимает ~2 минуты.
+- Перед началом сессии выполните:
+  ```bash
+  gh auth status || echo "$GITHUB_PAT" | gh auth login --with-token
+  export RAILWAY_TOKEN="47a20fbb-1f26-402d-8e66-ba38660ef1d4"
+  railway login --token "$RAILWAY_TOKEN" && railway link --project 866bc61a-0ef1-41d1-af53-26784f6e5f06
+  export STAGING_BASE_URL="https://web-staging-70d1.up.railway.app"
+  ```
+  Тогда оба скрипта работают без лишних вопросов, и деплой на `staging` укладывается в ≤5 минут.
+
 ## 4. Правила работы с GitHub и Railway
 
 ### 4.1 Ветки и защита
@@ -143,22 +155,17 @@
 - `post-deploy-monitor.yml` — после успешного push в `main` собирает Railway логи, пингует `/api/health`, при сбое делает rollback/`git revert` и шлёт уведомление в Telegram.
 
 ### 4.3 Цикл feature → staging
-1. Создайте ветку `feature/<task>` от `staging`, коммитьте мелкими порциями.
-2. `git push origin feature/<task>` автоматически создаёт/обновляет PR `feature → staging`; CI прогоняется на пуше и на PR.
-3. Перед выкладкой дождитесь зелёного `CI and Smoke` (`gh pr checks <PR#>`). Если хотя бы один шаг красный — фиксите, пока всё не станет зелёным.
-4. Забронируйте стенд: откройте `STAGING_STATUS.md`, убедитесь, что он свободен, обновите блок «Сейчас» на статус `Занят`, закоммитьте `chore: занял staging` и запушьте.
-5. Выполните merge через CLI: `gh pr merge <PR#> --squash (--admin, если доступен)`. Кнопки в UI не используем.
-6. Дождитесь автодеплоя Railway (пуш в `staging` запускает короткий run `CI and Smoke` + deploy). После этого **обязательные проверки**:
-   - `railway status --json | jq '... environmentId=="9e15b55d-8220-4067-a47e-191a57c2bcca"'`
-   - `railway logs --service web|worker|beat --lines 100`
-   - `curl -sf "$STAGING_BASE_URL/api/health"`
-7. Внесите подробную запись в `Документация/AGENTS_LOGS.md`, обновите `STAGING_STATUS.md` обратно на `Свободен` (укажите коммит/время) и только после этого сообщите человеку: “Staging готов, проверил status/logs/health”.
-8. Человек проводит сценарий в тестовом Telegram-боте и даёт “Go/Need fixes”. При необходимости повторяем цикл с фиксом.
+1. Создайте ветку `feature/<task>` от `staging`, пуш — создаст PR `feature → staging`; дождитесь зелёного `CI / build-test`.
+2. Забронируйте стенд через ChatOps в PR: `/reserve-staging 15m reason: <текст>` — бот обновит `STAGING_STATUS.md` в `staging` коммитом `chore(staging): занял стенд`.
+3. Выполните `/deploy-staging` — бот сам смержит PR (squash), подождёт Railway до `SUCCESS`, снимет логи/health и оставит отчёт.
+4. Освободите стенд `/release-staging` — бот обновит `STAGING_STATUS.md` на «Свободен» и допишет журнал.
+5. Сообщите человеку: “Staging готов, проверил status/logs/health”.
 
 ### 4.4 Проверка стейджинга
+- Быстрее всего использовать ChatOps `/deploy-staging` — бот сам соберёт Railway статус, снимет логи `web/worker/beat` (при наличии CLI) и сделает `curl "$STAGING_BASE_URL/api/health"`. Итог попадёт в `Документация/AGENTS_LOGS.md`.
 - Команды для проверки:
   ```bash
-  railway status --json | jq '.services.edges[].node.serviceInstances.edges[] | select(.environmentId=="9e15b55d-8220-4067-a47e-191a57c2bcca") | {serviceName, status: .latestDeployment.status, commit: .latestDeployment.meta.commitHash}'
+  railway status --json | jq '.services.edges[].node.serviceInstances.edges[] | select(.node.environmentId=="9e15b55d-8220-4067-a47e-191a57c2bcca") | {serviceName: .node.serviceName, status: .node.latestDeployment.status, commit: .node.latestDeployment.meta.commitHash}'
   railway logs --service web --tail 200
   railway logs --service worker --tail 200
   curl -sf "$STAGING_BASE_URL/api/health"
@@ -166,6 +173,12 @@
 - Эти проверки выполняет ИИ-агент. Как только они зелёные, агент уведомляет человека.
 - Ручные смоки в тестовом Telegram-боте `@test_integer_ai_bot` проводит только человек. Агент обязан предоставить ссылку на коммит и список проверок.
 - Все результаты (команды, timestamp, статус стенда) фиксируйте в `AGENTS_LOGS` и упомянутом отчёте.
+> Комментарий 2025-11-17: во время текущего теста деплоя дополнительно сохранил полный вывод `bin/deploy-staging` и `railway status` в журнале, чтобы следующий агент видел последовательность шагов без поиска.
+
+### 4.8 ChatOps и защита веток
+- Doc-only коммиты в `staging` (только `STAGING_STATUS.md` и `Документация/*`) выполняет `github-actions[bot]`/`ADMIN_GH_TOKEN`.
+- Проверки `STAGING_BUSY`/`STAGING_FREE` выставляются ботом на последний коммит `staging` для видимости занятости стенда.
+- TTL брони — по умолчанию 15 минут; авто-освобождение по крону.
 
 ### 4.5 Продвижение в main и прод-окружение
 1. Никакого автоматического деплоя в `main` нет. После ручного теста человек явно даёт добро.
@@ -186,10 +199,18 @@
 - Допустимые команды: `status`, `logs`, `variables`, `deployment list`, `run` для чтения. Нельзя выполнять `deploy`, `up`, `rollback` самостоятельно без явного распоряжения или автоматического workflow.
 - Чтобы убедиться, что нужный коммит задеплоился, используйте:
   ```bash
-  railway status --json | jq '.services.edges[].node.serviceInstances.edges[] | {serviceName, env: .environmentId, commit: .latestDeployment.meta.commitHash}'
+  railway status --json | jq '.services.edges[].node.serviceInstances.edges[] | {serviceName: .node.serviceName, env: .node.environmentId, commit: .node.latestDeployment.meta.commitHash}'
   ```
 - Для health-check используйте `/api/health` соответствующего домена (`STAGING_BASE_URL`, `PRODUCTION_BASE_URL`).
 - Rollback вручную допускается только по указанию человека. В штатном режиме rollback выполняет workflow `post-deploy-monitor`.
 
 ---
 Соблюдайте эти правила, оперативно обновляйте журнал действий и не забывайте согласовывать любые нетипичные шаги. Это гарантирует предсказуемые деплои и быстрый отклик на инциденты.
+## Быстрый путь (ChatOps)
+- Резерв стенда: в комментарии к PR напишите `/reserve-staging 15m reason: <что выкатываю>`
+- Деплой на staging: `/deploy-staging` — merge (squash) в `staging`, ожидание Railway и смоки — бот сделает сам и оставит отчёт
+- Освобождение стенда: `/release-staging`
+
+Замечания:
+- Бронь и журнал вносятся ботом прямо в ветку `staging` коммитами по `STAGING_STATUS.md` и `Документация/AGENTS_LOGS.md` (doc-only, исключение защиты ветки)
+- Время полного цикла: обычно 2–5 минут: merge (<10с) → Railway (1–3 мин) → health (<10с)

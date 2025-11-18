@@ -48,6 +48,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    'whitenoise.middleware.WhiteNoiseMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -61,7 +62,7 @@ ROOT_URLCONF = 'config.urls'
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
-        'DIRS': [],
+        'DIRS': [BASE_DIR / 'templates'],
         'APP_DIRS': True,
         'OPTIONS': {
             'context_processors': [
@@ -142,11 +143,19 @@ USE_TZ = True
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/5.2/howto/static-files/
 
-STATIC_URL = 'static/'
+STATIC_URL = '/static/'
 STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
-STATICFILES_DIRS = [
-    os.path.join(BASE_DIR, 'miniapp', 'static'),
+os.makedirs(STATIC_ROOT, exist_ok=True)
+STATICFILES_DIRS = []
+_extra_static_dirs = [
+    BASE_DIR / 'miniapp' / 'static',
 ]
+for static_dir in _extra_static_dirs:
+    if static_dir.exists():
+        STATICFILES_DIRS.append(static_dir)
+
+WHITENOISE_USE_FINDERS = True
+WHITENOISE_AUTOREFRESH = DEBUG
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
@@ -262,3 +271,8 @@ if SENTRY_DSN:
         integrations=[DjangoIntegration(), CeleryIntegration(monitor_beat_tasks=True)],
         traces_sample_rate=0.2, send_default_pii=False,
     )
+
+# --- Error monitoring ---
+ERROR_ALERT_CHAT_ID = os.getenv("ERROR_ALERT_CHAT_ID") or LAVA_FALLBACK_CHAT_ID
+ERROR_ALERT_COOLDOWN = int(os.getenv("ERROR_ALERT_COOLDOWN", "300"))
+ERROR_LOG_RETENTION_DAYS = int(os.getenv("ERROR_LOG_RETENTION_DAYS", "30"))

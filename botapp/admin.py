@@ -1,10 +1,13 @@
 from django.contrib import admin
 from django.utils.html import format_html
 from django.db.models import Count, Sum
+from django.urls import path, reverse
+from django.shortcuts import get_object_or_404
+from django.template.response import TemplateResponse
 from .models import (
     TgUser, GenRequest, UserBalance, AIModel,
     Transaction, UserSettings, Promocode, PricingSettings,
-    ChatThread, ChatMessage,
+    ChatThread, ChatMessage, BotErrorEvent,
 )
 
 
@@ -267,6 +270,54 @@ class TransactionAdmin(admin.ModelAdmin):
     mark_as_pending.short_description = "Mark as pending"
 
 
+@admin.register(BotErrorEvent)
+class BotErrorEventAdmin(admin.ModelAdmin):
+    list_display = (
+        'occurred_at',
+        'origin',
+        'severity',
+        'status',
+        'chat_id',
+        'handler',
+        'short_message',
+    )
+    list_filter = ('origin', 'severity', 'status', 'occurred_at')
+    search_fields = ('message', 'handler', 'error_class', 'chat_id', 'user__username')
+    readonly_fields = ('occurred_at', 'created_at', 'updated_at', 'stacktrace', 'payload', 'extra')
+    raw_id_fields = ('user', 'gen_request')
+    ordering = ('-occurred_at',)
+    actions = ['mark_in_progress', 'mark_resolved']
+
+    fieldsets = (
+        ('Общее', {
+            'fields': ('origin', 'severity', 'status', 'occurred_at', 'handler', 'error_class')
+        }),
+        ('Сообщение', {
+            'fields': ('message', 'stacktrace')
+        }),
+        ('Связи', {
+            'fields': ('user', 'chat_id', 'username_snapshot', 'gen_request')
+        }),
+        ('Контекст', {
+            'fields': ('payload', 'extra', 'created_at', 'updated_at')
+        }),
+    )
+
+    def short_message(self, obj):
+        return (obj.message or obj.error_class)[:60]
+    short_message.short_description = "Message"
+
+    def mark_in_progress(self, request, queryset):
+        updated = queryset.update(status=BotErrorEvent.Status.IN_PROGRESS)
+        self.message_user(request, f"{updated} ошибке(ам) присвоен статус In progress")
+    mark_in_progress.short_description = "Отметить как in_progress"
+
+    def mark_resolved(self, request, queryset):
+        updated = queryset.update(status=BotErrorEvent.Status.RESOLVED)
+        self.message_user(request, f"{updated} ошибке(ам) присвоен статус Resolved")
+    mark_resolved.short_description = "Отметить как resolved"
+
+
 @admin.register(UserSettings)
 class UserSettingsAdmin(admin.ModelAdmin):
     list_display = ('user', 'interface_language', 'notifications_enabled',
@@ -373,7 +424,7 @@ class PromocodeAdmin(admin.ModelAdmin):
 @admin.register(ChatThread)
 class ChatThreadAdmin(admin.ModelAdmin):
     list_display = ('user', 'last_message_preview', 'last_message_direction',
-                    'last_message_at', 'unread_count')
+                    'last_message_at', 'unread_count', 'dialog_link')
     search_fields = ('user__username', 'user__chat_id', 'user__first_name', 'user__last_name')
     ordering = ('-last_message_at',)
     readonly_fields = ('created_at', 'updated_at')
@@ -383,6 +434,47 @@ class ChatThreadAdmin(admin.ModelAdmin):
     def last_message_preview(obj):
         preview = obj.last_message_text or ""
         return (preview[:50] + '...') if len(preview) > 53 else preview
+    last_message_preview.short_description = "Последнее сообщение"
+
+    def dialog_link(self, obj):
+        url = reverse('admin:botapp_chatthread_dialog', args=[obj.pk])
+        return format_html('<a class="button" href="{}">История</a>', url)
+    dialog_link.short_description = 'Диалог'
+
+    def get_urls(self):
+        urls = super().get_urls()
+        custom = [
+            path(
+                '<int:thread_id>/dialog/',
+                self.admin_site.admin_view(self.dialog_view),
+                name='botapp_chatthread_dialog',
+            ),
+        ]
+        return custom + urls
+
+    def dialog_view(self, request, thread_id: int):
+        thread = get_object_or_404(ChatThread.objects.select_related('user'), pk=thread_id)
+        messages_qs = thread.messages.select_related('user').order_by('message_date')
+        chat_messages = list(messages_qs)
+
+        display_name = (thread.user.first_name or thread.user.username or "").strip()
+        if not display_name:
+            display_name = f"ID {thread.user.chat_id}"
+        normalized_name = display_name.strip()
+        avatar_letter = normalized_name[0].upper() if normalized_name else "#"
+
+        context = {
+            **self.admin_site.each_context(request),
+            "thread": thread,
+            "chat_messages": chat_messages,
+            "messages_total": len(chat_messages),
+            "user_display_name": display_name,
+            "user_avatar": avatar_letter,
+            "bot_display_name": "NanoBanana бот",
+            "bot_avatar": "NB",
+            "title": f"Диалог с {thread.user.username or thread.user.chat_id}",
+        }
+        return TemplateResponse(request, "admin/botapp/chatthread/dialog.html", context)
 
 
 @admin.register(ChatMessage)

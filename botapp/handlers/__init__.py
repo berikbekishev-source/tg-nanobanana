@@ -18,5 +18,6 @@ main_router.include_router(video_router)
 main_router.include_router(payment_router)
 main_router.include_router(reference_prompt_router)
 main_router.message.middleware(ChatLoggingMiddleware())
+main_router.callback_query.middleware(ChatLoggingMiddleware())
 
 __all__ = ['main_router']

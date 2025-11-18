@@ -1,0 +1,59 @@
+{% extends "admin/base.html" %}
+{% load static %}
+
+{% block extrastyle %}
+    {{ block.super }}
+    <link rel="stylesheet" href="{% static 'dashboard/chat_admin.css' %}">
+    <style>
+        :root {
+            --nb-bg: #0f172a;
+            --nb-card: #ffffff;
+        }
+        body {
+            background: #eef2ff;
+        }
+        #header {
+            background: var(--nb-bg);
+            color: #fff;
+        }
+        #header .module h2, #header h1 {
+            color: #fff;
+            letter-spacing: 0.02em;
+        }
+        .module {
+            border-radius: 16px;
+            padding: 16px;
+            background: var(--nb-card);
+            box-shadow: 0 6px 20px rgba(15, 23, 42, 0.08);
+        }
+        .navigator {
+            display: flex;
+            gap: 16px;
+            margin: 16px 0;
+        }
+        .navigator a {
+            background: #1d4ed8;
+            color: #fff !important;
+            padding: 8px 16px;
+            border-radius: 999px;
+            text-decoration: none;
+        }
+    </style>
+{% endblock %}
+
+{% block branding %}
+<h1 id="site-name">NanoBanana · Панель администратора</h1>
+{% endblock %}
+
+{% block nav-global %}{% endblock %}
+
+{% block content %}
+<div class="navigator">
+    <a href="{% url 'admin:botapp_chatthread_changelist' %}">Чаты</a>
+    <a href="{% url 'admin:botapp_tguser_changelist' %}">Пользователи</a>
+    <a href="{% url 'admin:botapp_genrequest_changelist' %}">Генерации</a>
+    <a href="{% url 'admin:botapp_transaction_changelist' %}">Финансы</a>
+    <a href="{% url 'admin:botapp_aimodel_changelist' %}">AI модели</a>
+</div>
+{{ block.super }}
+{% endblock %}

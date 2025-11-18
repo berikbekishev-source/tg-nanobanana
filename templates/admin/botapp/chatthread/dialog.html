@@ -1,0 +1,167 @@
+{% extends "admin/base_site.html" %}
+{% load static %}
+
+{% block extrastyle %}
+    {{ block.super }}
+    <link rel="stylesheet" href="{% static 'dashboard/chat_admin.css' %}">
+    <style>
+        body.chat-history-mode {
+            background: #e3ecff;
+        }
+        body.chat-history-mode #header {
+            background: linear-gradient(90deg, #0f172a, #1d4ed8);
+            color: #fff;
+        }
+        body.chat-history-mode #header h1 {
+            color: #fff;
+        }
+    </style>
+{% endblock %}
+
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+    <a href="{% url 'admin:index' %}">Главная</a>
+    &rsaquo; <a href="{% url 'admin:botapp_chatthread_changelist' %}">Чаты</a>
+    &rsaquo; Диалог
+</div>
+{% endblock %}
+
+{% block content %}
+<script>
+    document.addEventListener("DOMContentLoaded", function () {
+        document.body.classList.add("chat-history-mode");
+
+        const filterButtons = document.querySelectorAll("[data-message-filter]");
+        const messageRows = document.querySelectorAll(".message-row");
+        filterButtons.forEach((button) => {
+            button.addEventListener("click", () => {
+                const target = button.dataset.messageFilter;
+                filterButtons.forEach((btn) => btn.classList.toggle("active", btn === button));
+                messageRows.forEach((row) => {
+                    row.classList.remove("message-row--hidden");
+                    if (target !== "all" && row.dataset.direction !== target) {
+                        row.classList.add("message-row--hidden");
+                    }
+                });
+            });
+        });
+    });
+</script>
+<div class="chat-dialog-card">
+    <div class="chat-dialog-header">
+        <div class="chat-user-meta">
+            <div class="chat-dialog-title">
+                {{ user_display_name }}
+                {% if thread.user.username %}
+                    <span class="chat-username">@{{ thread.user.username }}</span>
+                {% endif %}
+            </div>
+            <div class="chat-dialog-meta">
+                Chat ID: {{ thread.user.chat_id }} · Сообщений: {{ messages_total }} · Обновлён {{ thread.updated_at|date:"d.m.Y H:i" }}
+            </div>
+        </div>
+        <div class="chat-header-actions">
+            <a class="ghost-button" href="{% url 'admin:botapp_chatthread_change' thread.pk %}">Открыть карточку</a>
+            <a class="primary-button" href="{% url 'admin:botapp_chatthread_changelist' %}">← К списку</a>
+        </div>
+    </div>
+
+    <div class="chat-toolbar">
+        <div class="message-filters" role="tablist" aria-label="Фильтр сообщений">
+            <button type="button" class="filter-pill active" data-message-filter="all">Все сообщения</button>
+            <button type="button" class="filter-pill" data-message-filter="incoming">Пользователь</button>
+            <button type="button" class="filter-pill" data-message-filter="outgoing">Бот</button>
+        </div>
+        <div class="toolbar-meta">
+            Сообщений: {{ messages_total }}
+        </div>
+    </div>
+
+    <div class="chat-dialog-body">
+        {% for message in chat_messages %}
+            <div class="message-row {% if message.direction == 'outgoing' %}outgoing{% else %}incoming{% endif %}" data-direction="{{ message.direction }}">
+                <div class="message-avatar {% if message.direction == 'outgoing' %}bot{% endif %}">
+                    {% if message.direction == 'outgoing' %}
+                        {{ bot_avatar }}
+                    {% else %}
+                        {{ user_avatar }}
+                    {% endif %}
+                </div>
+                <div class="message-bubble">
+                    <div class="message-meta">
+                        <span class="message-author">
+                            {% if message.direction == 'outgoing' %}
+                                {{ bot_display_name }}
+                            {% else %}
+                                {{ user_display_name }}
+                            {% endif %}
+                        </span>
+                        <span class="message-dot">•</span>
+                        <span class="message-time">{{ message.message_date|date:"d.m.Y H:i" }}</span>
+                    </div>
+
+                    {% if message.text %}
+                        <div class="message-text">{{ message.text|linebreaksbr }}</div>
+                    {% endif %}
+
+                    {% if message.payload.inline_keyboard %}
+                        <div class="inline-keyboard">
+                            {% for row in message.payload.inline_keyboard %}
+                                <div class="inline-keyboard-row">
+                                    {% for button in row %}
+                                        <div class="inline-keyboard-button">
+                                            {{ button.text }}
+                                        </div>
+                                    {% endfor %}
+                                </div>
+                            {% endfor %}
+                        </div>
+                    {% endif %}
+
+                    {% if message.media_file_id %}
+                        {% with mime=message.media_mime_type|default:"" %}
+                        <div class="message-media {% if mime|slice:":5" == "image" %}image{% else %}file{% endif %}">
+                            {% if mime|slice:":5" == "image" %}
+                                <a href="{% url 'dashboard:message_media' message.pk %}" target="_blank" rel="noopener">
+                                    <img src="{% url 'dashboard:message_media' message.pk %}" alt="media preview">
+                                </a>
+                            {% else %}
+                                <a href="{% url 'dashboard:message_media' message.pk %}" target="_blank" rel="noopener">
+                                    <div class="file-icon">📎</div>
+                                    <div class="file-info">
+                                        <div class="file-name">{{ message.media_file_name|default:"Вложение" }}</div>
+                                        <div class="file-meta">{{ mime|default:"файл" }}</div>
+                                    </div>
+                                </a>
+                            {% endif %}
+                        </div>
+                        {% endwith %}
+                    {% endif %}
+
+                    <div class="message-tags">
+                        <span class="badge">{{ message.get_message_type_display }}</span>
+                        <span class="badge badge-direction">
+                            {% if message.direction == 'outgoing' %}Исходящее{% else %}Входящее{% endif %}
+                        </span>
+                    </div>
+
+                    {% if message.payload %}
+                        {% if message.payload.button_text or message.payload.button_data %}
+                            <div class="button-click">
+                                Пользователь нажал:
+                                <span class="button-chip">
+                                    {{ message.payload.button_text|default:message.payload.button_data }}
+                                </span>
+                            </div>
+                        {% endif %}
+                    {% endif %}
+                </div>
+            </div>
+        {% empty %}
+            <div class="chat-empty">
+                <p>Сообщения не найдены. Как только пользователь или бот напишут, история появится здесь.</p>
+            </div>
+        {% endfor %}
+    </div>
+</div>
+{% endblock %}

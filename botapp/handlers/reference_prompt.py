@@ -11,12 +11,14 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 from django.conf import settings
 
+from botapp.error_tracker import ErrorTracker
 from botapp.keyboards import (
     get_cancel_keyboard,
     get_main_menu_keyboard,
     get_reference_prompt_mods_keyboard,
     get_reference_prompt_models_keyboard,
 )
+from botapp.models import BotErrorEvent
 from botapp.reference_prompt import (
     REFERENCE_PROMPT_MODELS,
     ReferenceInputPayload,
@@ -259,6 +261,18 @@ async def _start_prompt_generation(message: Message, state: FSMContext, modifica
         await message.answer(
             f"❌ {error_message}",
             reply_markup=get_cancel_keyboard(),
+        )
+        await ErrorTracker.alog(
+            origin=BotErrorEvent.Origin.TELEGRAM,
+            severity=BotErrorEvent.Severity.WARNING,
+            handler="reference_prompt._start_prompt_generation",
+            chat_id=message.chat.id,
+            payload={
+                "model_slug": model_slug,
+                "has_reference": bool(reference_payload),
+                "modifications": modifications,
+            },
+            exc=exc,
         )
         await state.set_state(BotStates.reference_prompt_wait_reference)
         return
