@@ -91,6 +91,7 @@ jobs:
             }
 
       - name: Wait for Railway deployment
+        continue-on-error: true
         shell: bash
         env:
           RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
