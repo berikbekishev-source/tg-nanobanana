@@ -3,8 +3,30 @@ name: Staging Ops (ChatOps)
 on:
   issue_comment:
     types: [created]
-  repository_dispatch:
-    {}
+  repository_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      action:
+        description: reserve|deploy|release
+        required: true
+        type: string
+      pr:
+        description: PR number
+        required: true
+        type: string
+      ttl:
+        description: TTL for reservation (e.g. 15m)
+        required: false
+        type: string
+        default: '15m'
+      reason:
+        description: Reason comment
+        required: false
+        type: string
+      actor:
+        description: Initiator
+        required: false
+        type: string
 
 permissions:
   contents: write
@@ -34,7 +56,7 @@ jobs:
         uses: actions/github-script@v7
         with:
           script: |
-            // Support two entrypoints: issue_comment and repository_dispatch
+            // Support three entrypoints: issue_comment, repository_dispatch, workflow_dispatch
             if (context.eventName === 'repository_dispatch') {
               const action = context.payload?.action || '';
               const payload = context.payload?.client_payload || {};
@@ -43,6 +65,15 @@ jobs:
               core.setOutput('reason', payload.reason || '');
               core.setOutput('pr', String(payload.pr || ''));
               core.setOutput('actor', payload.actor || context.actor);
+              return;
+            }
+            if (context.eventName === 'workflow_dispatch') {
+              const inputs = context.payload?.inputs || {};
+              core.setOutput('cmd', (inputs.action || '').trim());
+              core.setOutput('ttl', inputs.ttl || '15m');
+              core.setOutput('reason', inputs.reason || '');
+              core.setOutput('pr', String(inputs.pr || ''));
+              core.setOutput('actor', inputs.actor || context.actor);
               return;
             }
             const body = (context.payload.comment?.body || '').trim();
