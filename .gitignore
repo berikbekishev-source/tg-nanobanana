@@ -10,6 +10,9 @@ db.sqlite3
 .env.railway
 .env.*
 
+# Railway CLI config
+.railway
+
 # macOS
 .DS_Store
 
