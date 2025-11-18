@@ -151,3 +151,8 @@
   - Health: `curl -fsS https://web-staging-70d1.up.railway.app/api/health` → `{ "ok": true }`
 - Коммит/PR: PR #80 (squash), doc-only PR #81
 - Следующий шаг: `/release-staging` (освободить стенд)
+
+## 2025-11-18 07:13 UTC — e2e ChatOps тест (PR #111)
+- Команды: /reserve-staging, /deploy-staging, /release-staging (ручной вызов через API)
+- Проверки: Railway=SUCCESS (web/worker/beat), health=ok
+- Ссылки: https://web-staging-70d1.up.railway.app/api/health
