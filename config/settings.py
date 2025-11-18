@@ -8,9 +8,6 @@ https://docs.djangoproject.com/en/5.2/topics/settings/
 
 For the full list of settings and their values, see
 https://docs.djangoproject.com/en/5.2/ref/settings/
-
-E2E Test v4: Тест с включённым bypass в GitHub Settings - 2025-11-18
-Проверка успешного обновления STAGING_DEPLOYED.json и AGENTS_LOGS.md
 """
 
 import os, dj_database_url
