@@ -1,0 +1,207 @@
+name: Create Release PR (staging → main)
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_title:
+        description: 'Release title (e.g., "Release v1.2.3" or "Hotfix: critical bug")'
+        required: true
+        type: string
+      release_notes:
+        description: 'Release notes (краткое описание изменений)'
+        required: false
+        type: string
+        default: 'Production release from staging'
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  create-pr:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
+      - name: Verify staging is ahead of main
+        id: check
+        run: |
+          git fetch origin main staging
+          
+          COMMITS_AHEAD=$(git rev-list --count origin/main..origin/staging)
+          echo "commits_ahead=$COMMITS_AHEAD" >> "$GITHUB_OUTPUT"
+          
+          if [ "$COMMITS_AHEAD" -eq 0 ]; then
+            echo "❌ Staging не имеет новых коммитов относительно main"
+            echo "has_changes=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          
+          echo "✅ Staging впереди main на $COMMITS_AHEAD коммитов"
+          echo "has_changes=true" >> "$GITHUB_OUTPUT"
+      
+      - name: Get staging info
+        if: steps.check.outputs.has_changes == 'true'
+        id: staging_info
+        run: |
+          # Получаем последние коммиты
+          RECENT_COMMITS=$(git log origin/main..origin/staging --oneline --max-count=10)
+          echo "recent_commits<<EOF" >> "$GITHUB_OUTPUT"
+          echo "$RECENT_COMMITS" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+          
+          # Получаем список PR
+          MERGED_PRS=$(git log origin/main..origin/staging --oneline --grep="→ staging" | grep -oP '#\d+' | sort -u | head -10)
+          echo "merged_prs<<EOF" >> "$GITHUB_OUTPUT"
+          echo "$MERGED_PRS" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+      
+      - name: Check for existing PR
+        if: steps.check.outputs.has_changes == 'true'
+        id: existing_pr
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { data: prs } = await github.rest.pulls.list({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              head: `${context.repo.owner}:staging`,
+              base: 'main'
+            });
+            
+            if (prs.length > 0) {
+              core.setOutput('exists', 'true');
+              core.setOutput('pr_number', prs[0].number);
+              core.setOutput('pr_url', prs[0].html_url);
+              return prs[0];
+            } else {
+              core.setOutput('exists', 'false');
+              return null;
+            }
+      
+      - name: Create or update PR
+        if: steps.check.outputs.has_changes == 'true'
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const existingPR = '${{ steps.existing_pr.outputs.exists }}' === 'true';
+            const prNumber = '${{ steps.existing_pr.outputs.pr_number }}';
+            const commitsAhead = '${{ steps.check.outputs.commits_ahead }}';
+            const recentCommits = `${{ steps.staging_info.outputs.recent_commits }}`;
+            const mergedPRs = `${{ steps.staging_info.outputs.merged_prs }}`;
+            
+            const releaseTitle = `${{ inputs.release_title }}`;
+            const releaseNotes = `${{ inputs.release_notes }}`;
+            
+            const body = `## 🚀 Production Release
+
+**Запрошено:** ${{ github.actor }}
+**Дата:** ${new Date().toISOString().split('T')[0]}
+**Коммитов:** ${commitsAhead}
+
+---
+
+### 📝 Описание:
+
+${releaseNotes}
+
+---
+
+### 📦 Включённые изменения:
+
+#### Последние коммиты:
+\`\`\`
+${recentCommits}
+\`\`\`
+
+#### Смерженные PR:
+${mergedPRs}
+
+---
+
+### ✅ Чек-лист перед мерджем:
+
+- [ ] Staging протестирован и работает
+- [ ] Railway staging сервисы = SUCCESS
+- [ ] Health check проходит
+- [ ] Ручное тестирование выполнено
+- [ ] Нет критичных багов
+- [ ] Одобрено для production
+
+---
+
+### ⚠️ После мерджа:
+
+1. ✅ Railway production автодеплой запустится
+2. ✅ \`post-deploy-monitor\` проверит health endpoint
+3. ✅ При сбое - автоматический rollback
+4. ✅ Уведомление в Telegram
+
+---
+
+**🎯 Готов к мерджу вручную после одобрения!**
+
+> ⚠️ **ВАЖНО:** Этот PR мержится **ТОЛЬКО вручную** после явного одобрения.
+> Auto-merge для main отключён.
+`;
+
+            if (existingPR) {
+              // Обновляем существующий PR
+              await github.rest.pulls.update({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                pull_number: parseInt(prNumber),
+                title: releaseTitle,
+                body: body
+              });
+              
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: parseInt(prNumber),
+                body: `🔄 **PR обновлён**\n\nЗапрошено: @${{ github.actor }}\nВремя: ${new Date().toISOString()}\n\nStaging был обновлён. Проверьте изменения перед мерджем.`
+              });
+              
+              core.info(`✅ PR #${prNumber} обновлён`);
+              core.setOutput('pr_number', prNumber);
+              core.setOutput('pr_url', '${{ steps.existing_pr.outputs.pr_url }}');
+            } else {
+              // Создаём новый PR
+              const { data: pr } = await github.rest.pulls.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title: releaseTitle,
+                body: body,
+                head: 'staging',
+                base: 'main'
+              });
+              
+              core.info(`✅ PR #${pr.number} создан`);
+              core.setOutput('pr_number', pr.number);
+              core.setOutput('pr_url', pr.html_url);
+            }
+      
+      - name: Summary
+        if: steps.check.outputs.has_changes == 'true'
+        run: |
+          echo "## 🎯 Release PR создан/обновлён" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**PR URL:** ${{ steps.existing_pr.outputs.pr_url || steps.create-pr.outputs.pr_url }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Коммитов:** ${{ steps.check.outputs.commits_ahead }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "⚠️ **Мердж только вручную после одобрения!**" >> $GITHUB_STEP_SUMMARY
+      
+      - name: No changes summary
+        if: steps.check.outputs.has_changes == 'false'
+        run: |
+          echo "## ℹ️ Нет изменений для релиза" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Staging не имеет новых коммитов относительно main." >> $GITHUB_STEP_SUMMARY
+          echo "PR не создан." >> $GITHUB_STEP_SUMMARY
+
