@@ -107,7 +107,7 @@ jobs:
           while true; do
             json=$(curl -fsSk -H "Authorization: Bearer ${RAILWAY_API_TOKEN}" \
               -H 'Content-Type: application/json' \
-              -d '{"query":"query($id:String!){project(id:$id){services{edges{node{name serviceInstances{edges{node{environmentId latestDeployment{status}}}}}}}}","variables":{"id":"'"$RAILWAY_PROJECT_ID"'"}}' \
+              -d '{"query":"query{project(id: \"'"$RAILWAY_PROJECT_ID"'\"){services{edges{node{name serviceInstances{edges{node{environmentId latestDeployment{status}}}}}}}}}"}' \
               "$RAILWAY_GRAPHQL")
             
             statuses=$(echo "$json" | jq -r --arg EID "$STAGING_ENV_ID" \
