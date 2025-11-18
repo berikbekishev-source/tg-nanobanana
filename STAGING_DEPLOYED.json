@@ -1,8 +1,8 @@
 {
-  "pr": 136,
-  "title": "feat: feature/e2e-full-pipeline-test-20251118-172207 → staging",
+  "pr": 137,
+  "title": "feat: feature/trigger-railway-staging-e2e → staging",
   "actor": "berikbekishev-source",
-  "deployed_at": "2025-11-18T12:26:04.799Z",
+  "deployed_at": "2025-11-18T12:33:18.674Z",
   "commit": "unknown",
   "commit_short": "unknown"
 }
