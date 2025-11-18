@@ -44,10 +44,19 @@ jobs:
               core.info('No matching command'); return;
             }
 
-            await github.rest.repos.createDispatchEvent({
+            const workflow = '.github/workflows/staging-ops.yml';
+            const ref = context.payload.repository?.default_branch || 'main';
+            await github.rest.actions.createWorkflowDispatch({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              event_type: evt,
-              client_payload: payload
+              workflow_id: workflow,
+              ref,
+              inputs: {
+                action: evt.replace('-staging',''),
+                pr: String(pr),
+                ttl: String(payload.ttl || ''),
+                reason: String(payload.reason || ''),
+                actor
+              }
             });
-            core.info(`Dispatched ${evt} for PR #${pr}`);
+            core.info(`Workflow dispatch sent: ${evt} for PR #${pr}`);
