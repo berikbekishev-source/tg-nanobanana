@@ -276,3 +276,5 @@ if SENTRY_DSN:
 ERROR_ALERT_CHAT_ID = os.getenv("ERROR_ALERT_CHAT_ID") or LAVA_FALLBACK_CHAT_ID
 ERROR_ALERT_COOLDOWN = int(os.getenv("ERROR_ALERT_COOLDOWN", "300"))
 ERROR_LOG_RETENTION_DAYS = int(os.getenv("ERROR_LOG_RETENTION_DAYS", "30"))
+
+# Test comment for Railway reconnect verification (deployment test)
