@@ -8,6 +8,9 @@ https://docs.djangoproject.com/en/5.2/topics/settings/
 
 For the full list of settings and their values, see
 https://docs.djangoproject.com/en/5.2/ref/settings/
+
+E2E Test: Simplified staging pipeline - 2025-11-18
+Тестируем новый упрощённый пайплайн без ChatOps с concurrency control
 """
 
 import os, dj_database_url
