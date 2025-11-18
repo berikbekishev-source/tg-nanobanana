@@ -62,3 +62,4 @@ jobs:
       ttl: ${{ needs.parse.outputs.ttl || '15m' }}
       reason: ${{ needs.parse.outputs.reason }}
       actor: ${{ needs.parse.outputs.actor }}
+    secrets: inherit

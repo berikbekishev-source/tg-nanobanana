@@ -27,6 +27,29 @@ on:
         description: Initiator
         required: false
         type: string
+  workflow_call:
+    inputs:
+      action:
+        description: reserve|deploy|release
+        required: true
+        type: string
+      pr:
+        description: PR number
+        required: true
+        type: string
+      ttl:
+        description: TTL for reservation (e.g. 15m)
+        required: false
+        type: string
+        default: '15m'
+      reason:
+        description: Reason comment
+        required: false
+        type: string
+      actor:
+        description: Initiator
+        required: false
+        type: string
 
 permissions:
   contents: write
@@ -54,9 +77,29 @@ jobs:
       - name: Check PR context and parse
         id: parse
         uses: actions/github-script@v7
+        env:
+          W_ACTION: ${{ inputs.action }}
+          W_PR: ${{ inputs.pr }}
+          W_TTL: ${{ inputs.ttl }}
+          W_REASON: ${{ inputs.reason }}
+          W_ACTOR: ${{ inputs.actor }}
         with:
           script: |
-            // Support three entrypoints: issue_comment, repository_dispatch, workflow_dispatch
+            // Support four entrypoints: issue_comment, repository_dispatch, workflow_dispatch, workflow_call
+            if (context.eventName === 'workflow_call') {
+              const action = (process.env.W_ACTION || '').trim();
+              const ttl = process.env.W_TTL || '15m';
+              const reason = process.env.W_REASON || '';
+              const pr = String(process.env.W_PR || '');
+              const actor = process.env.W_ACTOR || context.actor;
+              core.setOutput('cmd', action);
+              core.setOutput('ttl', ttl);
+              core.setOutput('reason', reason);
+              core.setOutput('pr', pr);
+              core.setOutput('actor', actor);
+              return;
+            }
+            // Also handle repository_dispatch and workflow_dispatch
             if (context.eventName === 'repository_dispatch') {
               const action = context.payload?.action || '';
               const payload = context.payload?.client_payload || {};
