@@ -11,24 +11,18 @@ permissions:
   pull-requests: read
 
 jobs:
-  parse:
+  route:
     runs-on: ubuntu-latest
-    outputs:
-      action: ${{ steps.p.outputs.action }}
-      pr: ${{ steps.p.outputs.pr }}
-      ttl: ${{ steps.p.outputs.ttl }}
-      reason: ${{ steps.p.outputs.reason }}
-      actor: ${{ steps.p.outputs.actor }}
     steps:
-      - name: Parse slash command
-        id: p
+      - name: Route slash command → workflow_dispatch
         uses: actions/github-script@v7
         with:
+          github-token: ${{ secrets.ADMIN_GH_TOKEN || github.token }}
           script: |
             const body = (context.payload.comment?.body || '').trim();
             const isPR = !!context.payload.issue?.pull_request;
-            if (!isPR) { core.setOutput('action',''); return; }
-            const pr = String(context.payload.issue.number);
+            if (!isPR) return core.info('Not a PR comment, skipping');
+            const pr = context.payload.issue.number;
             const actor = context.actor;
             function parseReserve(s){
               const m = s.match(/^\/reserve-staging\s+(\d+)(m|h)?/i);
@@ -40,26 +34,29 @@ jobs:
             let ttl = '';
             let reason = '';
             if (/^\/reserve-staging\b/i.test(body)) {
-              const res = parseReserve(body); ttl = res.ttl; reason = res.reason; action = 'reserve';
+              ({ttl, reason} = parseReserve(body));
+              action = 'reserve';
             } else if (/^\/deploy-staging\b/i.test(body)) {
               action = 'deploy';
             } else if (/^\/release-staging\b/i.test(body)) {
               action = 'release';
+            } else {
+              core.info('No matching command');
+              return;
             }
-            core.setOutput('action', action);
-            core.setOutput('pr', pr);
-            core.setOutput('ttl', ttl);
-            core.setOutput('reason', reason);
-            core.setOutput('actor', actor);
-
-  staging_ops:
-    needs: parse
-    if: ${{ needs.parse.outputs.action != '' }}
-    uses: ./.github/workflows/staging-ops.yml
-    with:
-      action: ${{ needs.parse.outputs.action }}
-      pr: ${{ needs.parse.outputs.pr }}
-      ttl: ${{ needs.parse.outputs.ttl || '15m' }}
-      reason: ${{ needs.parse.outputs.reason }}
-      actor: ${{ needs.parse.outputs.actor }}
-    secrets: inherit
+            const workflow = 'staging-ops.yml';
+            const ref = context.payload.repository?.default_branch || 'main';
+            await github.rest.actions.createWorkflowDispatch({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: workflow,
+              ref,
+              inputs: {
+                action,
+                pr: String(pr),
+                ttl: ttl || '15m',
+                reason: reason || '',
+                actor
+              }
+            });
+            core.info(`Dispatched staging-ops with action=${action} for PR #${pr}`);
