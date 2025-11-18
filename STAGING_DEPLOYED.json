@@ -1,9 +1,8 @@
 {
-  "pr": 0,
-  "title": "Initial state",
-  "actor": "system",
-  "deployed_at": "2025-11-18T00:00:00Z",
-  "commit": "initial",
-  "commit_short": "initial"
+  "pr": 130,
+  "title": "feat: feature/e2e-bypass-enabled-20251118-135951 → staging",
+  "actor": "berikbekishev-source",
+  "deployed_at": "2025-11-18T09:03:29.349Z",
+  "commit": "unknown",
+  "commit_short": "unknown"
 }
-
