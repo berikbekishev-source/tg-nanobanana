@@ -258,7 +258,8 @@ MIDJOURNEY_KIE_REQUEST_TIMEOUT = os.getenv("MIDJOURNEY_KIE_REQUEST_TIMEOUT", KIE
 LAVA_WEBHOOK_SECRET = os.getenv("LAVA_WEBHOOK_SECRET")
 LAVA_API_KEY = os.getenv("LAVA_API_KEY")
 LAVA_FALLBACK_CHAT_ID = os.getenv("LAVA_FALLBACK_CHAT_ID", "283738604")
-PAYMENT_MINI_APP_URL = f"{PUBLIC_BASE_URL.rstrip('/')}/miniapp/"
+# Безопасная обработка PUBLIC_BASE_URL (может быть None в CI окружении)
+PAYMENT_MINI_APP_URL = f"{PUBLIC_BASE_URL.rstrip('/')}/miniapp/" if PUBLIC_BASE_URL else None
 
 # --- Sentry (опционально) ---
 SENTRY_DSN = os.getenv("SENTRY_DSN")
