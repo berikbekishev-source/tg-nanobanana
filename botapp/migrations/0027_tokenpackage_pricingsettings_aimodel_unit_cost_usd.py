@@ -83,12 +83,20 @@ class Migration(migrations.Migration):
         migrations.RunPython(seed_pricing_settings, delete_pricing_settings),
         migrations.RunSQL(
             sql="""
-            ALTER TABLE IF EXISTS token_packages
-            ADD COLUMN IF NOT EXISTS price_usd numeric(10,2);
+            DO $$
+            BEGIN
+                IF EXISTS (SELECT FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'token_packages') THEN
+                    ALTER TABLE token_packages ADD COLUMN IF NOT EXISTS price_usd numeric(10,2);
+                END IF;
+            END $$;
             """,
             reverse_sql="""
-            ALTER TABLE IF EXISTS token_packages
-            DROP COLUMN IF EXISTS price_usd;
+            DO $$
+            BEGIN
+                IF EXISTS (SELECT FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'token_packages') THEN
+                    ALTER TABLE token_packages DROP COLUMN IF EXISTS price_usd;
+                END IF;
+            END $$;
             """,
         ),
         migrations.RunSQL(
@@ -188,31 +196,36 @@ class Migration(migrations.Migration):
         ),
         migrations.RunSQL(
             sql="""
-            CREATE OR REPLACE FUNCTION public.trg_set_token_package_credits()
-            RETURNS trigger AS $$
-            DECLARE
-                v_rate numeric;
+            DO $$
             BEGIN
-                SELECT usd_to_token_rate INTO v_rate
-                FROM pricing_settings
-                ORDER BY id
-                LIMIT 1;
+                IF EXISTS (SELECT FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'token_packages') THEN
+                    CREATE OR REPLACE FUNCTION public.trg_set_token_package_credits()
+                    RETURNS trigger AS $trig$
+                    DECLARE
+                        v_rate numeric;
+                    BEGIN
+                        SELECT usd_to_token_rate INTO v_rate
+                        FROM pricing_settings
+                        ORDER BY id
+                        LIMIT 1;
 
-                IF v_rate IS NULL OR v_rate = 0 THEN
-                    RAISE EXCEPTION 'Pricing rate is not configured';
+                        IF v_rate IS NULL OR v_rate = 0 THEN
+                            RAISE EXCEPTION 'Pricing rate is not configured';
+                        END IF;
+
+                        NEW.credits = ROUND(COALESCE(NEW.price_usd, 0) * v_rate, 2);
+                        RETURN NEW;
+                    END;
+                    $trig$ LANGUAGE plpgsql;
+
+                    DROP TRIGGER IF EXISTS set_token_package_credits ON token_packages;
+                    CREATE TRIGGER set_token_package_credits
+                    BEFORE INSERT OR UPDATE
+                    ON token_packages
+                    FOR EACH ROW
+                    EXECUTE FUNCTION public.trg_set_token_package_credits();
                 END IF;
-
-                NEW.credits = ROUND(COALESCE(NEW.price_usd, 0) * v_rate, 2);
-                RETURN NEW;
-            END;
-            $$ LANGUAGE plpgsql;
-
-            DROP TRIGGER IF EXISTS set_token_package_credits ON token_packages;
-            CREATE TRIGGER set_token_package_credits
-            BEFORE INSERT OR UPDATE
-            ON token_packages
-            FOR EACH ROW
-            EXECUTE FUNCTION public.trg_set_token_package_credits();
+            END $$;
             """,
             reverse_sql="""
             DROP TRIGGER IF EXISTS set_token_package_credits ON token_packages;
@@ -221,20 +234,25 @@ class Migration(migrations.Migration):
         ),
         migrations.RunSQL(
             sql="""
-            CREATE OR REPLACE FUNCTION public.trg_recalc_packages_on_pricing()
-            RETURNS trigger AS $$
+            DO $$
             BEGIN
-                UPDATE token_packages
-                SET credits = ROUND(price_usd * NEW.usd_to_token_rate, 2);
-                RETURN NEW;
-            END;
-            $$ LANGUAGE plpgsql;
+                IF EXISTS (SELECT FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'token_packages') THEN
+                    CREATE OR REPLACE FUNCTION public.trg_recalc_packages_on_pricing()
+                    RETURNS trigger AS $trig$
+                    BEGIN
+                        UPDATE token_packages
+                        SET credits = ROUND(price_usd * NEW.usd_to_token_rate, 2);
+                        RETURN NEW;
+                    END;
+                    $trig$ LANGUAGE plpgsql;
 
-            DROP TRIGGER IF EXISTS refresh_token_packages ON pricing_settings;
-            CREATE TRIGGER refresh_token_packages
-            AFTER UPDATE ON pricing_settings
-            FOR EACH ROW
-            EXECUTE FUNCTION public.trg_recalc_packages_on_pricing();
+                    DROP TRIGGER IF EXISTS refresh_token_packages ON pricing_settings;
+                    CREATE TRIGGER refresh_token_packages
+                    AFTER UPDATE ON pricing_settings
+                    FOR EACH ROW
+                    EXECUTE FUNCTION public.trg_recalc_packages_on_pricing();
+                END IF;
+            END $$;
             """,
             reverse_sql="""
             DROP TRIGGER IF EXISTS refresh_token_packages ON pricing_settings;
