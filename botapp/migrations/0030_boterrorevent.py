@@ -16,9 +16,47 @@ class Migration(migrations.Migration):
             name='BotErrorEvent',
             fields=[
                 ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('origin', models.CharField(choices=[('webhook', 'Telegram webhook'), ('telegram_handler', 'Telegram handlers'), ('celery_task', 'Celery task'), ('generation', 'Generation pipeline'), ('payment', 'Payments'), ('miniapp', 'Miniapp/API'), ('other', 'Other')], default='other', max_length=64)),
-                ('severity', models.CharField(choices=[('info', 'Info'), ('warning', 'Warning'), ('critical', 'Critical')], default='warning', max_length=16)),
-                ('status', models.CharField(choices=[('new', 'New'), ('in_progress', 'In progress'), ('resolved', 'Resolved')], db_index=True, default='new', max_length=16)),
+                (
+                    'origin',
+                    models.CharField(
+                        choices=[
+                            ('webhook', 'Telegram webhook'),
+                            ('telegram_handler', 'Telegram handlers'),
+                            ('celery_task', 'Celery task'),
+                            ('generation', 'Generation pipeline'),
+                            ('payment', 'Payments'),
+                            ('miniapp', 'Miniapp/API'),
+                            ('other', 'Other')
+                        ],
+                        default='other',
+                        max_length=64
+                    )
+                ),
+                (
+                    'severity',
+                    models.CharField(
+                        choices=[
+                            ('info', 'Info'),
+                            ('warning', 'Warning'),
+                            ('critical', 'Critical')
+                        ],
+                        default='warning',
+                        max_length=16
+                    )
+                ),
+                (
+                    'status',
+                    models.CharField(
+                        choices=[
+                            ('new', 'New'),
+                            ('in_progress', 'In progress'),
+                            ('resolved', 'Resolved')
+                        ],
+                        db_index=True,
+                        default='new',
+                        max_length=16
+                    )
+                ),
                 ('occurred_at', models.DateTimeField(db_index=True, default=django.utils.timezone.now)),
                 ('handler', models.CharField(blank=True, default='', max_length=255)),
                 ('error_class', models.CharField(blank=True, default='', max_length=255)),
@@ -30,14 +68,41 @@ class Migration(migrations.Migration):
                 ('username_snapshot', models.CharField(blank=True, default='', max_length=255)),
                 ('created_at', models.DateTimeField(auto_now_add=True)),
                 ('updated_at', models.DateTimeField(auto_now=True)),
-                ('gen_request', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='error_events', to='botapp.genrequest')),
-                ('user', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='error_events', to='botapp.tguser')),
+                (
+                    'gen_request',
+                    models.ForeignKey(
+                        blank=True,
+                        null=True,
+                        on_delete=django.db.models.deletion.SET_NULL,
+                        related_name='error_events',
+                        to='botapp.genrequest'
+                    )
+                ),
+                (
+                    'user',
+                    models.ForeignKey(
+                        blank=True,
+                        null=True,
+                        on_delete=django.db.models.deletion.SET_NULL,
+                        related_name='error_events',
+                        to='botapp.tguser'
+                    )
+                ),
             ],
             options={
                 'verbose_name': 'Bot Error',
                 'verbose_name_plural': 'Bot Errors',
                 'ordering': ['-occurred_at', '-id'],
-                'indexes': [models.Index(fields=['origin', 'severity', 'occurred_at'], name='botapp_bote_origin_c5f40a_idx'), models.Index(fields=['status', 'occurred_at'], name='botapp_bote_status_04d9cb_idx')],
+                'indexes': [
+                    models.Index(
+                        fields=['origin', 'severity', 'occurred_at'],
+                        name='botapp_bote_origin_c5f40a_idx'
+                    ),
+                    models.Index(
+                        fields=['status', 'occurred_at'],
+                        name='botapp_bote_status_04d9cb_idx'
+                    )
+                ],
             },
         ),
     ]
