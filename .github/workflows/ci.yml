@@ -73,7 +73,7 @@ jobs:
     env:
       DJANGO_DEBUG: "true"
       SECRET_KEY: "ci-secret"
-      DATABASE_URL: "postgresql://user:pass@localhost:5432/db"
+      DATABASE_URL: "postgresql://user:pass@localhost:5432/db?sslmode=disable"
       REDIS_URL: "redis://localhost:6379/0"
       TELEGRAM_BOT_TOKEN: "000000:CI_TOKEN"
     steps:
