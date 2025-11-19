@@ -84,7 +84,13 @@ if not DATABASE_URL:
     raise RuntimeError("Не задана переменная окружения DATABASE_URL")
 
 DB_CONN_MAX_AGE = int(os.getenv("DB_CONN_MAX_AGE", "60"))
-_ssl_required = not DATABASE_URL.lower().startswith("sqlite")
+
+# Проверяем, нужен ли SSL (не принудительно, если в URL есть sslmode=disable)
+_ssl_required = (
+    not DATABASE_URL.lower().startswith("sqlite") 
+    and "sslmode=disable" not in DATABASE_URL.lower()
+)
+
 DATABASES = {
     "default": dj_database_url.parse(
         DATABASE_URL,
