@@ -4,7 +4,7 @@
 from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery
 from aiogram.fsm.context import FSMContext
-from typing import List
+from typing import List, Dict, Any
 
 from botapp.states import BotStates
 from botapp.keyboards import (
