@@ -93,22 +93,40 @@ class Migration(migrations.Migration):
         ),
         migrations.RunSQL(
             sql=f"""
-            UPDATE token_packages
-            SET price_usd = ROUND(COALESCE(credits, 0) / {DEFAULT_RATE}, 2)
-            WHERE price_usd IS NULL;
+            DO $$
+            BEGIN
+                IF EXISTS (SELECT FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'token_packages') THEN
+                    UPDATE token_packages
+                    SET price_usd = ROUND(COALESCE(credits, 0) / {DEFAULT_RATE}, 2)
+                    WHERE price_usd IS NULL;
+                END IF;
+            END $$;
             """,
             reverse_sql="""
-            UPDATE token_packages SET price_usd = NULL;
+            DO $$
+            BEGIN
+                IF EXISTS (SELECT FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'token_packages') THEN
+                    UPDATE token_packages SET price_usd = NULL;
+                END IF;
+            END $$;
             """,
         ),
         migrations.RunSQL(
             sql="""
-            ALTER TABLE token_packages
-            ALTER COLUMN price_usd SET NOT NULL;
+            DO $$
+            BEGIN
+                IF EXISTS (SELECT FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'token_packages') THEN
+                    ALTER TABLE token_packages ALTER COLUMN price_usd SET NOT NULL;
+                END IF;
+            END $$;
             """,
             reverse_sql="""
-            ALTER TABLE token_packages
-            ALTER COLUMN price_usd DROP NOT NULL;
+            DO $$
+            BEGIN
+                IF EXISTS (SELECT FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'token_packages') THEN
+                    ALTER TABLE token_packages ALTER COLUMN price_usd DROP NOT NULL;
+                END IF;
+            END $$;
             """,
         ),
         migrations.RunSQL(
