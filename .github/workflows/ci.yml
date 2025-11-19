@@ -93,7 +93,7 @@ jobs:
         run: python manage.py migrate --noinput
 
       - name: Run Tests
-        run: python manage.py test
+        run: python manage.py test --keepdb
 
   # 3. Staging Smoke (После пуша в staging)
   staging-smoke:
