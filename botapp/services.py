@@ -70,6 +70,7 @@ def vertex_edit_images(
         raise ValueError("Для режима image2image необходимо загрузить изображения.")
 
     session = _authorized_vertex_session()
+    creds_info = _load_service_account_info()
 
     project_id = getattr(settings, "GCP_PROJECT_ID", creds_info.get("project_id"))
     location = getattr(settings, "GCP_LOCATION", "us-central1")

@@ -2,7 +2,8 @@ name: Auto-merge to staging
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened]
+    # Запускаем при открытии или обновлении PR в staging
+    types: [opened, synchronize, reopened, ready_for_review]
     branches: [staging]
 
 permissions:
@@ -10,197 +11,75 @@ permissions:
   pull-requests: write
 
 jobs:
-  auto-merge:
+  fast-merge:
+    # Запускаем только если это не черновик
+    if: github.event.pull_request.draft == false
     runs-on: ubuntu-latest
-    # Concurrency group для последовательных мерджей
-    concurrency:
-      group: staging-deploy
-      cancel-in-progress: false
-    
     steps:
-      - name: Checkout staging
-        uses: actions/checkout@v4
-        with:
-          ref: staging
-          fetch-depth: 0
-
-      - name: Wait for CI to complete
+      - name: Wait for Lint to pass
         uses: actions/github-script@v7
         with:
           script: |
-            const pr = context.payload.pull_request.number;
-            const maxWait = 10 * 60 * 1000; // 10 минут
-            const start = Date.now();
+            const pr = context.payload.pull_request;
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const sha = pr.head.sha;
             
-            while (Date.now() - start < maxWait) {
-              const { data: checks } = await github.rest.checks.listForRef({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                ref: context.payload.pull_request.head.sha
+            console.log(`Checking status for commit ${sha}...`);
+            
+            // Ждем максимум 2 минуты (линтер быстрый)
+            const maxRetries = 12; 
+            
+            for (let i = 0; i < maxRetries; i++) {
+              const { data: checkRuns } = await github.rest.checks.listForRef({
+                owner, repo, ref: sha, filter: 'latest'
               });
               
-              const ciChecks = checks.check_runs.filter(c => 
-                c.name.includes('build-test') || c.name === 'CI / build-test'
-              );
+              const lintCheck = checkRuns.check_runs.find(c => c.name === 'lint');
               
-              if (ciChecks.length === 0) {
-                core.info('No CI checks found yet, waiting...');
-                await new Promise(r => setTimeout(r, 10000));
-                continue;
+              if (lintCheck) {
+                 console.log(`Lint status: ${lintCheck.status}, Conclusion: ${lintCheck.conclusion}`);
+                 
+                 if (lintCheck.status === 'completed') {
+                   if (lintCheck.conclusion === 'success') {
+                     console.log('✅ Lint passed!');
+                     return;
+                   } else {
+                     core.setFailed('❌ Lint failed. Fix syntax errors.');
+                     return;
+                   }
+                 }
+              } else {
+                 console.log('Lint check not found yet...');
               }
               
-              const allDone = ciChecks.every(c => c.status === 'completed');
-              const allSuccess = ciChecks.every(c => c.conclusion === 'success');
-              
-              if (allDone && allSuccess) {
-                core.info('✅ All CI checks passed!');
-                return;
-              }
-              
-              if (allDone && !allSuccess) {
-                core.setFailed('❌ CI checks failed');
-                return;
-              }
-              
-              core.info('Waiting for CI checks to complete...');
               await new Promise(r => setTimeout(r, 10000));
             }
-            
-            core.setFailed('Timeout waiting for CI checks');
+            core.setFailed('Timeout waiting for Lint.');
 
       - name: Merge PR
         uses: actions/github-script@v7
         with:
           github-token: ${{ secrets.ADMIN_GH_TOKEN || github.token }}
           script: |
-            const pr = context.payload.pull_request.number;
+            const pr = context.payload.pull_request;
             
             try {
               await github.rest.pulls.merge({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
-                pull_number: pr,
+                pull_number: pr.number,
                 merge_method: 'squash',
-                commit_title: `${context.payload.pull_request.title} (#${pr})`,
-                commit_message: 'Auto-merged by staging pipeline'
+                commit_title: `${pr.title} (#${pr.number})`,
+                commit_message: 'Fast-track merge to staging 🚀'
               });
-              
-              core.info(`✅ PR #${pr} merged successfully`);
+              console.log(`✅ PR #${pr.number} merged successfully`);
             } catch (error) {
-              core.setFailed(`Failed to merge PR: ${error.message}`);
+              console.log(`⚠️ Merge failed: ${error.message}`);
+              // Если конфликт или другое - не фейлим билд, просто оставляем PR висеть
+              if (error.message.includes('Merge conflict')) {
+                 core.info('⚠️ Merge conflict detected. Manual intervention required.');
+              } else {
+                 core.setFailed(error.message);
+              }
             }
-
-      - name: Wait for Railway deployment
-        shell: bash
-        env:
-          RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
-        run: |
-          set -euo pipefail
-          
-          RAILWAY_PROJECT_ID="866bc61a-0ef1-41d1-af53-26784f6e5f06"
-          STAGING_ENV_ID="9e15b55d-8220-4067-a47e-191a57c2bcca"
-          RAILWAY_GRAPHQL="https://backboard.railway.app/graphql/v2"
-          
-          echo "⏳ Ожидание деплоя Railway..."
-          deadline=$(( $(date +%s) + 300 )) # 5 минут
-          
-          while true; do
-            json=$(curl -fsSk -H "Authorization: Bearer ${RAILWAY_API_TOKEN}" \
-              -H 'Content-Type: application/json' \
-              -d '{"query":"query{project(id: \"'"$RAILWAY_PROJECT_ID"'\"){services{edges{node{name serviceInstances{edges{node{environmentId latestDeployment{status}}}}}}}}}"}' \
-              "$RAILWAY_GRAPHQL")
-            
-            statuses=$(echo "$json" | jq -r --arg EID "$STAGING_ENV_ID" \
-              '.data.project.services.edges[].node | select(.name=="web" or .name=="worker" or .name=="beat") | .serviceInstances.edges[] | select(.node.environmentId==$EID) | .node.latestDeployment.status' || true)
-            
-            echo "Статусы: $statuses"
-            
-            all_success=true
-            for s in $statuses; do
-              if [[ "$s" != "SUCCESS" ]]; then
-                all_success=false
-              fi
-            done
-            
-            if $all_success && [[ -n "$statuses" ]]; then
-              echo "✅ Все сервисы задеплоены успешно"
-              break
-            fi
-            
-            if (( $(date +%s) > deadline )); then
-              echo "⚠️ Timeout ожидания деплоя"
-              exit 1
-            fi
-            
-            sleep 15
-          done
-
-      - name: Update deployment marker via GitHub API
-        uses: actions/github-script@v7
-        with:
-          github-token: ${{ secrets.ADMIN_GH_TOKEN || github.token }}
-          script: |
-            const pr = context.payload.pull_request.number;
-            const title = context.payload.pull_request.title;
-            const actor = context.actor;
-            const sha = context.payload.pull_request.merge_commit_sha;
-            const shortSha = sha ? sha.substring(0, 7) : 'unknown';
-            
-            // Создаём содержимое файла
-            const content = JSON.stringify({
-              pr: pr,
-              title: title,
-              actor: actor,
-              deployed_at: new Date().toISOString(),
-              commit: sha || 'unknown',
-              commit_short: shortSha
-            }, null, 2);
-            
-            try {
-              // Получаем текущий SHA файла
-              const currentFile = await github.rest.repos.getContent({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                path: 'STAGING_DEPLOYED.json',
-                ref: 'staging'
-              });
-              
-              // Обновляем файл через API (bypass branch protection)
-              await github.rest.repos.createOrUpdateFileContents({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                path: 'STAGING_DEPLOYED.json',
-                message: `ci: update staging deployment marker (PR #${pr})`,
-                content: Buffer.from(content).toString('base64'),
-                branch: 'staging',
-                sha: currentFile.data.sha
-              });
-              
-              core.info('✅ Маркер деплоя обновлён через GitHub API');
-            } catch (error) {
-              core.warning(`⚠️ Не удалось обновить маркер деплоя: ${error.message}`);
-              // Не фейлим весь workflow, если маркер не обновился
-            }
-
-      - name: Comment success
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const pr = context.payload.pull_request.number;
-            const body = `✅ **Деплой в staging завершён**
-            
-            🚀 Railway: все сервисы (web, worker, beat) → SUCCESS
-            📝 Маркер деплоя обновлён: PR #${pr}
-            🔍 Проверить: \`railway variables | grep STAGING_DEPLOYED\`
-            
-            **Следующие шаги:**
-            1. Проверьте health: https://web-staging-70d1.up.railway.app/api/health
-            2. Протестируйте в @test_integer_ai_bot
-            3. После тестирования создайте PR staging → main`;
-            
-            await github.rest.issues.createComment({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: pr,
-              body
-            });

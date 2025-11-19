@@ -1272,3 +1272,1635 @@
 - Коммит: unknown
 - Проверки: Railway=SUCCESS, health=ok
 - Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 11:23 UTC — Auto-deploy to staging (PR #130)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 11:24 UTC — Auto-deploy to staging (PR #130)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 11:25 UTC — Auto-deploy to staging (PR #130)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 11:25 UTC — Auto-deploy to staging (PR #130)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 11:26 UTC — Auto-deploy to staging (PR #130)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 11:26 UTC — Auto-deploy to staging (PR #130)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 11:27 UTC — Auto-deploy to staging (PR #130)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 11:28 UTC — Auto-deploy to staging (PR #130)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 11:28 UTC — Auto-deploy to staging (PR #130)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 11:29 UTC — Auto-deploy to staging (PR #130)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 11:30 UTC — Auto-deploy to staging (PR #130)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 11:31 UTC — Auto-deploy to staging (PR #130)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 12:19 UTC — Auto-deploy to staging (PR #135)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 12:19 UTC — Auto-deploy to staging (PR #130)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 12:20 UTC — Auto-deploy to staging (PR #135)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 12:21 UTC — Auto-deploy to staging (PR #135)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 12:21 UTC — Auto-deploy to staging (PR #135)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 12:22 UTC — Auto-deploy to staging (PR #135)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 12:26 UTC — Auto-deploy to staging (PR #135)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 12:33 UTC — Auto-deploy to staging (PR #137)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 12:34 UTC — Auto-deploy to staging (PR #137)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 12:35 UTC — Auto-deploy to staging (PR #137)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 12:35 UTC — Auto-deploy to staging (PR #137)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 12:36 UTC — Auto-deploy to staging (PR #137)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 12:37 UTC — Auto-deploy to staging (PR #137)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 12:38 UTC — Auto-deploy to staging (PR #137)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 15:18 UTC — Auto-deploy to staging (PR #137)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 15:19 UTC — Auto-deploy to staging (PR #142)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 15:20 UTC — Auto-deploy to staging (PR #142)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 15:25 UTC — Auto-deploy to staging (PR #142)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 15:28 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 15:28 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 15:28 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 15:30 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 15:31 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 15:35 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 15:38 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 15:38 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 15:38 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 15:41 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 15:41 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 15:43 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 15:46 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 15:48 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 15:52 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 15:54 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 15:56 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 15:59 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 16:00 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 16:04 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 16:05 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 16:06 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 16:07 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 16:14 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 16:16 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 16:17 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 16:19 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 16:22 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 16:24 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 16:24 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 16:30 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 16:32 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 16:33 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 16:35 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 16:36 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 16:37 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 16:39 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 16:40 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 16:41 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 16:42 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 16:43 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 16:44 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 16:45 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 16:46 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 16:47 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 16:49 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 16:50 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 16:52 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 16:53 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 16:54 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 16:55 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 16:57 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 16:58 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 16:59 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 17:00 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 17:02 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 17:03 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 17:05 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 17:08 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 17:10 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 17:11 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 17:12 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 17:14 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 17:16 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 17:17 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 17:18 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 17:20 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 17:22 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 17:23 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 17:25 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 17:26 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 17:27 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 17:29 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 17:31 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 17:32 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 17:34 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 17:36 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 17:37 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 17:39 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 17:41 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 17:42 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 17:43 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 17:44 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 17:46 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 17:47 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 17:49 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 17:50 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 17:51 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 17:53 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 17:54 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 17:55 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 17:57 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 17:58 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 17:59 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 18:00 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 18:02 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 18:04 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 18:06 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 18:11 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 18:13 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 18:14 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 18:15 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 18:16 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 18:17 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 18:19 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 18:20 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 18:22 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 18:23 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 18:24 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 18:26 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 18:31 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 18:32 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 18:33 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 18:35 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 18:36 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 18:38 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 18:39 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 18:40 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 18:41 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 18:43 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 18:44 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 18:45 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 18:47 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 18:48 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 18:49 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 18:51 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 18:52 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 18:53 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 18:54 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 18:55 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 18:56 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 18:58 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 18:59 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 19:01 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 19:03 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 19:05 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 19:07 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 19:08 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 19:10 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 19:11 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 19:14 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 19:15 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 19:16 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 19:17 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 19:18 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 19:20 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 19:21 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 19:22 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 19:24 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 19:25 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 19:27 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 19:28 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 19:30 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 19:31 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 19:33 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 19:34 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 19:40 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 19:41 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 19:42 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 19:43 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 19:44 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 19:45 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 19:47 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 19:49 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 19:50 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 19:51 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 19:52 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 19:54 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 19:55 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 19:57 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 19:58 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 19:59 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 20:01 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 20:02 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 20:03 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 20:06 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 20:08 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 20:09 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 20:10 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 20:12 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 20:13 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 20:14 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 20:20 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 20:21 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 20:22 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 20:24 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 20:25 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 20:26 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 20:28 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 20:29 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 20:30 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-18 20:32 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-19 06:32 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-19 06:34 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-19 06:35 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-19 06:36 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-19 06:37 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-19 06:38 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-19 06:40 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-19 06:41 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-19 06:42 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-19 06:43 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-19 06:44 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-19 06:45 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-19 06:47 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-19 06:48 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-19 06:49 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-19 06:50 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-19 06:52 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-19 06:53 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-19 06:54 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-19 06:55 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-19 06:56 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-19 06:57 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-19 06:59 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-19 07:00 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-19 07:01 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-19 07:02 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-19 07:03 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-19 07:05 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-19 07:06 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-19 07:07 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-19 07:08 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-19 07:09 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-19 07:11 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-19 07:12 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-19 07:13 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-19 07:14 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-19 07:15 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-19 07:17 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-19 07:18 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-19 07:19 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-19 07:20 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-19 07:21 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-19 07:23 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-19 07:24 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-19 07:25 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-19 07:28 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-19 07:29 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-19 07:29 UTC — Auto-deploy to staging (PR #143)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-19 07:31 UTC — Auto-deploy to staging (PR #147)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-19 07:52 UTC — Auto-deploy to staging (PR #149)
+- Актор: berikbekishev-source
+- Коммит: unknown
+- Проверки: Railway=SUCCESS, health=ok
+- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
