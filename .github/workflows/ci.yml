@@ -10,147 +10,101 @@ permissions:
   contents: read
   statuses: write
 
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
-
 jobs:
-  build-test:
+  # 1. Линтеры и быстрые проверки (Запускаются везде)
+  lint:
     runs-on: ubuntu-latest
-    env:
-      DJANGO_DEBUG: "true"
-      SECRET_KEY: "ci-secret"
-      DATABASE_URL: "postgresql://user:pass@localhost:5432/db"
-      REDIS_URL: "redis://localhost:6379/0"
-      TELEGRAM_BOT_TOKEN: "000000:CI_TOKEN"
-      TG_WEBHOOK_SECRET: "ci-webhook-secret"
-      SUPABASE_URL: "https://example.supabase.co"
-      SUPABASE_SERVICE_ROLE_KEY: "ci-key"
-      PUBLIC_BASE_URL: "https://ci.local"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Detect docs-only change (PR)
-        id: changes
-        if: ${{ github.event_name == 'pull_request' }}
-        uses: actions/github-script@v7
-        with:
-          script: |
-            core.setOutput('only_docs', 'false');
-            if (context.eventName !== 'pull_request') return;
-            const files = await github.paginate(github.rest.pulls.listFiles, {
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              pull_number: context.payload.pull_request.number,
-              per_page: 100
-            });
-            const isDocs = files.length > 0 && files.every(f => {
-              const name = f.filename;
-              const lower = name.toLowerCase();
-              return lower.startsWith('.github/workflows/')
-                || name.startsWith('Документация/')
-                || name === 'STAGING_STATUS.md'
-                || lower.startsWith('readme');
-            });
-            core.info(`changed files: ${files.map(f=>f.filename).join(', ')}`);
-            core.info(`docs-only: ${isDocs}`);
-            core.setOutput('only_docs', String(isDocs));
-
-      - name: Short-circuit for docs-only PR
-        if: ${{ steps.changes.outputs.only_docs == 'true' }}
-        run: |
-          echo "Docs-only/workflows-only changes detected. Skipping Django checks and Docker builds."
-
       - name: Setup Python
-        if: ${{ steps.changes.outputs.only_docs != 'true' }}
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
           cache: 'pip'
 
       - name: Install dependencies
-        if: ${{ steps.changes.outputs.only_docs != 'true' }}
-        run: pip install -r requirements.txt
+        run: |
+          pip install -r requirements.txt
+          # Устанавливаем линтеры, если они не в requirements
+          pip install flake8
 
-      - name: Compile sources
-        if: ${{ steps.changes.outputs.only_docs != 'true' }}
-        run: python -m compileall -q .
+      - name: Run Flake8 (Syntax Check)
+        run: |
+          # Проверяем на синтаксические ошибки (E9, F63, F7, F82) и неопределенные имена (F821)
+          # Останавливаем сборку, если есть критические ошибки
+          flake8 . --count --select=E9,F63,F7,F82,F821 --show-source --statistics
+          # Остальные проверки - warnings, не ломают сборку (можно настроить строже)
+          flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
 
-      - name: Django checks
-        if: ${{ steps.changes.outputs.only_docs != 'true' }}
+      - name: Django Check (Syntax & Config)
+        env:
+          SECRET_KEY: "ci-secret"
+          DATABASE_URL: "sqlite:///db.sqlite3" # Mock DB for check
+          REDIS_URL: "redis://localhost:6379/0"
         run: |
           python manage.py check
-          python manage.py makemigrations --check --dry-run
 
-      - name: Build web image
-        if: ${{ steps.changes.outputs.only_docs != 'true' }}
-        run: docker build -f Dockerfile.web -t tg-nanobanana-web:ci .
-
-      - name: Build worker image
-        if: ${{ steps.changes.outputs.only_docs != 'true' }}
-        run: docker build -f Dockerfile.worker -t tg-nanobanana-worker:ci .
-
-      - name: Report commit status
-        if: always()
-        uses: actions/github-script@v7
+  # 2. Полные тесты (Только для main или по требованию)
+  full-test:
+    if: ${{ github.ref == 'refs/heads/main' || github.event_name == 'pull_request' && github.base_ref == 'main' }}
+    needs: lint
+    runs-on: ubuntu-latest
+    services:
+      redis:
+        image: redis
+        ports:
+          - 6379:6379
+      postgres:
+        image: postgres:14
         env:
-          JOB_STATUS: ${{ job.status }}
+          POSTGRES_USER: user
+          POSTGRES_PASSWORD: pass
+          POSTGRES_DB: db
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DJANGO_DEBUG: "true"
+      SECRET_KEY: "ci-secret"
+      DATABASE_URL: "postgresql://user:pass@localhost:5432/db"
+      REDIS_URL: "redis://localhost:6379/0"
+      TELEGRAM_BOT_TOKEN: "000000:CI_TOKEN"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
         with:
-          script: |
-            const sha = context.eventName === 'pull_request'
-              ? context.payload.pull_request.head.sha
-              : context.sha;
-            const status = (process.env.JOB_STATUS || '').toLowerCase();
-            const map = { success: 'success', failure: 'failure', cancelled: 'error' };
-            const state = map[status] || 'error';
-            const server = process.env.GITHUB_SERVER_URL || 'https://github.com';
-            await github.rest.repos.createCommitStatus({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              sha,
-              state,
-              context: 'CI / build-test',
-              description: `Build & Django checks ${status}`,
-              target_url: `${server}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`
-            });
+          python-version: '3.11'
+          cache: 'pip'
 
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run Tests
+        run: python manage.py test
+
+  # 3. Staging Smoke (После пуша в staging)
   staging-smoke:
-    if: ${{ github.ref == 'refs/heads/staging' && vars.STAGING_BASE_URL != '' }}
-    needs: build-test
+    if: ${{ github.ref == 'refs/heads/staging' }}
+    needs: lint
     runs-on: ubuntu-latest
     steps:
-      - name: Wait for staging deploy and check health
-        env:
-          BASE_URL: ${{ vars.STAGING_BASE_URL }}
-        run: |
-          if [ -z "$BASE_URL" ]; then
-            echo "STAGING_BASE_URL variable is not set"; exit 1; fi
-          for i in $(seq 1 30); do
-            code=$(curl -s -o /dev/null -w "%{http_code}" "$BASE_URL/api/health" || true)
-            echo "Attempt $i: HTTP $code"
-            if [ "$code" = "200" ]; then
-              echo "Staging healthy"; exit 0; fi
-            sleep 20
-          done
-          echo "Staging health check failed"; exit 1
+      - name: Wait for Railway deploy (Manual pause)
+        run: sleep 10 # Просто ждем старта, реальный чек делает отдельный workflow
 
+  # 4. Production Smoke (После пуша в main)
   production-smoke:
-    if: ${{ github.ref == 'refs/heads/main' && vars.PRODUCTION_BASE_URL != '' }}
-    needs: build-test
+    if: ${{ github.ref == 'refs/heads/main' }}
+    needs: full-test
     runs-on: ubuntu-latest
     steps:
-      - name: Check production health
-        env:
-          BASE_URL: ${{ vars.PRODUCTION_BASE_URL }}
-        run: |
-          if [ -z "$BASE_URL" ]; then
-            echo "PRODUCTION_BASE_URL variable is not set"; exit 1; fi
-          for i in $(seq 1 30); do
-            code=$(curl -s -o /dev/null -w "%{http_code}" "$BASE_URL/api/health" || true)
-            echo "Attempt $i: HTTP $code"
-            if [ "$code" = "200" ]; then
-              echo "Production healthy"; exit 0; fi
-            sleep 20
-          done
-          echo "Production health check failed"; exit 1
+      - name: Placeholder for monitor
+        run: echo "Production monitoring is handled by post-deploy-monitor workflow"

@@ -3,15 +3,12 @@ name: Staging Health Check
 on:
   push:
     branches: [staging]
-    paths-ignore:
-      - 'Документация/AGENTS_LOGS.md'
-      - '**.md'
   workflow_dispatch:
 
 permissions:
   contents: read
-  pull-requests: write
   issues: write
+  pull-requests: write
 
 env:
   STAGING_BASE_URL: https://web-staging-70d1.up.railway.app
@@ -27,220 +24,64 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Wait for Railway deployment
-        continue-on-error: true
-        shell: bash
         env:
           RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
         run: |
-          set -euo pipefail
+          echo "⏳ Ждем деплоя Railway..."
+          sleep 30 # Даем время Railway среагировать на пуш
           
-          echo "⏳ Ожидание завершения деплоя Railway..."
-          deadline=$(( $(date +%s) + 300 )) # 5 минут
+          # Простая проверка циклами (до 5 минут)
+          deadline=$(( $(date +%s) + 300 ))
           
           while true; do
-            json=$(curl -fsSk -H "Authorization: Bearer ${RAILWAY_API_TOKEN}" \
-              -H 'Content-Type: application/json' \
-              -d '{"query":"query{project(id: \"'"$RAILWAY_PROJECT_ID"'\"){services{edges{node{name serviceInstances{edges{node{environmentId latestDeployment{status createdAt}}}}}}}}}"}' \
-              "$RAILWAY_GRAPHQL")
-            
-            statuses=$(echo "$json" | jq -r --arg EID "$STAGING_ENV_ID" \
-              '.data.project.services.edges[].node | select(.name=="web" or .name=="worker" or .name=="beat") | .serviceInstances.edges[] | select(.node.environmentId==$EID) | .node.latestDeployment.status' || true)
-            
-            echo "📊 Статусы сервисов: $statuses"
-            
-            all_success=true
-            for s in $statuses; do
-              if [[ "$s" != "SUCCESS" ]]; then
-                all_success=false
-              fi
-            done
-            
-            if $all_success && [[ -n "$statuses" ]]; then
-              echo "✅ Все сервисы задеплоены"
-              break
-            fi
-            
-            if (( $(date +%s) > deadline )); then
-              echo "⚠️ Timeout: деплой не завершился за 5 минут"
-              exit 1
-            fi
-            
-            sleep 15
+             # Здесь можно использовать простой curl запрос к GraphQL или CLI если есть
+             # Для простоты просто чекаем health endpoint
+             
+             http_code=$(curl -s -o /dev/null -w "%{http_code}" "$STAGING_BASE_URL/api/health" || echo "000")
+             
+             if [[ "$http_code" == "200" ]]; then
+                echo "✅ Staging is alive!"
+                break
+             fi
+             
+             if (( $(date +%s) > deadline )); then
+               echo "⚠️ Timeout waiting for health check"
+               exit 1
+             fi
+             
+             echo "Waiting for health 200... (Current: $http_code)"
+             sleep 15
           done
 
-      - name: Health check
-        id: health
-        shell: bash
-        run: |
-          set -euo pipefail
-          
-          echo "🔍 Проверка health endpoint..."
-          
-          # Даём время веб-сервису прогреться
-          sleep 10
-          
-          response=$(curl -fsS "$STAGING_BASE_URL/api/health" || echo "FAILED")
-          
-          if [[ "$response" == "FAILED" ]]; then
-            echo "❌ Health check failed"
-            echo "health_status=failed" >> $GITHUB_OUTPUT
-            exit 1
-          fi
-          
-          echo "✅ Health check passed"
-          echo "health_response=$response" >> $GITHUB_OUTPUT
-          echo "health_status=ok" >> $GITHUB_OUTPUT
-
-      - name: Get Railway logs (last 50 lines)
-        if: always()
-        shell: bash
-        env:
-          RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
-        run: |
-          echo "📋 Последние логи Railway..."
-          
-          # Используем Railway CLI если доступен, иначе пропускаем
-          if command -v railway &> /dev/null; then
-            railway logs --service web --tail 20 || echo "Could not fetch web logs"
-            railway logs --service worker --tail 20 || echo "Could not fetch worker logs"
-          else
-            echo "Railway CLI не установлен, пропускаем логи"
-          fi
-
-      - name: Read deployment marker
-        id: marker
-        shell: bash
-        run: |
-          if [[ -f STAGING_DEPLOYED.json ]]; then
-            pr=$(jq -r '.pr' STAGING_DEPLOYED.json)
-            actor=$(jq -r '.actor' STAGING_DEPLOYED.json)
-            deployed_at=$(jq -r '.deployed_at' STAGING_DEPLOYED.json)
-            commit=$(jq -r '.commit_short' STAGING_DEPLOYED.json)
-            
-            echo "pr=$pr" >> $GITHUB_OUTPUT
-            echo "actor=$actor" >> $GITHUB_OUTPUT
-            echo "deployed_at=$deployed_at" >> $GITHUB_OUTPUT
-            echo "commit=$commit" >> $GITHUB_OUTPUT
-            echo "marker_found=true" >> $GITHUB_OUTPUT
-          else
-            echo "marker_found=false" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Find last merged PR
+      - name: Find PR associated with this commit
         id: find_pr
         uses: actions/github-script@v7
         with:
           script: |
-            // Находим последний смерженный PR в staging
-            const { data: prs } = await github.rest.pulls.list({
+            const { data: prs } = await github.rest.repos.listPullRequestsAssociatedWithCommit({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              state: 'closed',
-              base: 'staging',
-              sort: 'updated',
-              direction: 'desc',
-              per_page: 5
+              commit_sha: context.sha
             });
             
-            const mergedPR = prs.find(pr => pr.merged_at);
-            
-            if (mergedPR) {
-              core.setOutput('pr_number', mergedPR.number);
-              core.setOutput('pr_title', mergedPR.title);
+            if (prs.length > 0) {
+              const pr = prs[0];
+              core.setOutput('pr_number', pr.number);
               core.setOutput('pr_found', 'true');
             } else {
               core.setOutput('pr_found', 'false');
             }
 
-      - name: Comment on PR with health report
+      - name: Report Health to PR
         if: steps.find_pr.outputs.pr_found == 'true'
         uses: actions/github-script@v7
         with:
           script: |
-            const prNumber = Number('${{ steps.find_pr.outputs.pr_number }}');
-            const healthStatus = '${{ steps.health.outputs.health_status }}';
-            const markerPR = '${{ steps.marker.outputs.pr }}';
-            const deployedAt = '${{ steps.marker.outputs.deployed_at }}';
-            const commit = '${{ steps.marker.outputs.commit }}';
-            
-            const statusEmoji = healthStatus === 'ok' ? '✅' : '❌';
-            
-            const body = `${statusEmoji} **Staging Health Check**
-            
-            📊 **Статус:** ${healthStatus === 'ok' ? 'Здоров' : 'Проблемы'}
-            🚀 **Railway:** web/worker/beat → SUCCESS
-            🔗 **Health endpoint:** ${process.env.STAGING_BASE_URL}/api/health
-            
-            📝 **Маркер деплоя:**
-            - PR: #${markerPR}
-            - Commit: \`${commit}\`
-            - Deployed: ${deployedAt}
-            
-            **Для проверки:**
-            \`\`\`bash
-            # Health check
-            curl -sf ${process.env.STAGING_BASE_URL}/api/health
-            
-            # Проверка маркера деплоя
-            cat STAGING_DEPLOYED.json
-            \`\`\`
-            
-            🤖 **Тестовый бот:** @test_integer_ai_bot`;
+            const prNumber = ${{ steps.find_pr.outputs.pr_number }};
             
             await github.rest.issues.createComment({
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: prNumber,
-              body
+              body: `✅ **Деплой на Staging успешен!**\n\nБот доступен и отвечает на health check.\nПроверьте функционал: @test_integer_ai_bot`
             });
-
-      - name: Update AGENTS_LOGS via GitHub API
-        if: steps.marker.outputs.marker_found == 'true'
-        uses: actions/github-script@v7
-        with:
-          github-token: ${{ secrets.ADMIN_GH_TOKEN || github.token }}
-          script: |
-            const pr = '${{ steps.marker.outputs.pr }}';
-            const actor = '${{ steps.marker.outputs.actor }}';
-            const commit = '${{ steps.marker.outputs.commit }}';
-            const ts = new Date().toISOString().replace('T', ' ').substring(0, 16) + ' UTC';
-            
-            const newEntry = `
-            ## ${ts} — Auto-deploy to staging (PR #${pr})
-            - Актор: ${actor}
-            - Коммит: ${commit}
-            - Проверки: Railway=SUCCESS, health=ok
-            - Health endpoint: ${process.env.STAGING_BASE_URL}/api/health
-            `;
-            
-            try {
-              // Получаем текущий файл
-              const currentFile = await github.rest.repos.getContent({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                path: 'Документация/AGENTS_LOGS.md',
-                ref: 'staging'
-              });
-              
-              // Декодируем содержимое
-              const currentContent = Buffer.from(currentFile.data.content, 'base64').toString('utf-8');
-              
-              // Добавляем новую запись
-              const updatedContent = currentContent + newEntry;
-              
-              // Обновляем файл через API (bypass branch protection)
-              await github.rest.repos.createOrUpdateFileContents({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                path: 'Документация/AGENTS_LOGS.md',
-                message: `docs: log staging deploy (PR #${pr})`,
-                content: Buffer.from(updatedContent).toString('base64'),
-                branch: 'staging',
-                sha: currentFile.data.sha
-              });
-              
-              core.info('✅ AGENTS_LOGS обновлён через GitHub API');
-            } catch (error) {
-              core.warning(`⚠️ Не удалось обновить AGENTS_LOGS: ${error.message} (non-critical)`);
-            }
-
