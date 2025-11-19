@@ -3,6 +3,9 @@ name: Staging Health Check
 on:
   push:
     branches: [staging]
+    paths-ignore:
+      - 'Документация/AGENTS_LOGS.md'
+      - '**.md'
   workflow_dispatch:
 
 permissions:
