@@ -90,7 +90,7 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Run Tests
-        run: python manage.py test
+        run: python manage.py test --keepdb
 
   # 3. Staging Smoke (После пуша в staging)
   staging-smoke:
