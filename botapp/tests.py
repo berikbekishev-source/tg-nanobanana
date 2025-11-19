@@ -707,14 +707,14 @@ class ChatLoggerTests(TestCase):
         base = {
             "message_id": overrides.pop('message_id', 1),
             "date": now,
-            "chat": overrides.pop('chat') or {
+            "chat": overrides.pop('chat', None) or {
                 "id": chat_id,
                 "type": "private",
                 "first_name": overrides.pop('chat_first_name', "Tester"),
                 "last_name": overrides.pop('chat_last_name', ""),
                 "username": overrides.pop('chat_username', "tester"),
             },
-            "from": overrides.pop('from_user') or {
+            "from": overrides.pop('from_user', None) or {
                 "id": chat_id,
                 "is_bot": False,
                 "first_name": overrides.pop('from_first_name', "Tester"),
