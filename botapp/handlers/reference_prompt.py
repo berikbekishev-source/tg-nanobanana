@@ -130,7 +130,7 @@ def _collect_reference_payload(message: Message) -> Optional[ReferenceInputPaylo
     return None
 
 
-@router.message(F.text == "Промт по рефференсу")
+@router.message(F.text == "📲Промт по рефференсу")
 async def prompt_by_reference_entry(message: Message, state: FSMContext):
     """Точка входа в сценарий генерации промта по референсу."""
 
@@ -143,15 +143,21 @@ async def prompt_by_reference_entry(message: Message, state: FSMContext):
         )
         return
 
-    options: List[Tuple[str, str]] = [
-        (model.slug, model.title) for model in REFERENCE_PROMPT_MODELS.values()
-    ]
+    default_model = next(iter(REFERENCE_PROMPT_MODELS.values()), None)
+    if not default_model:
+        await message.answer(
+            "😔 Сейчас нет доступных моделей для создания промта по референсу.",
+            reply_markup=get_cancel_keyboard(),
+        )
+        return
+
+    await state.update_data(reference_prompt_model=default_model.slug)
 
     await message.answer(
-        "Выберите модель для которой нужно собрать JSON-промт:",
-        reply_markup=get_reference_prompt_models_keyboard(options),
+        "🔍 Скиньте в бота ссылку на любой Reels, Shorts, TikTok или загрузите в чат видео/изображениеи и получите промт для генерации точно такого же видео!",
+        reply_markup=get_cancel_keyboard(),
     )
-    await state.set_state(BotStates.reference_prompt_select_model)
+    await state.set_state(BotStates.reference_prompt_wait_reference)
 
 
 @router.callback_query(BotStates.reference_prompt_select_model, F.data.startswith("ref_prompt_model:"))

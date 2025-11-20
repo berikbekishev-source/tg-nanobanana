@@ -290,8 +290,7 @@ async def receive_image_for_prompt(message: Message, state: FSMContext):
 
     if len(remix_images) < min_needed:
         await message.answer(
-            f"✅ Изображение {len(remix_images)} загружено. Нужно минимум {min_needed} изображений."
-            f" Загрузите ещё или отмените операцию.",
+            f"✅ Изображение {len(remix_images)} загружено. Загрузите ещё или отмените операцию.",
             reply_markup=get_cancel_keyboard(),
         )
     elif len(remix_images) < max_images:
@@ -378,7 +377,8 @@ async def select_image_mode(callback: CallbackQuery, state: FSMContext):
 
     if mode == "remix":
         await callback.message.answer(
-            f"🎭 Режим ремикса.\nЗагрузите от 2 до {max_images} изображений (одним за другим), затем отправьте текстовый промт.",
+            f"🎭 Режим ремикс позволяет загрузить сразу несколько изображений в качестве промта.\n"
+            f"Загрузите от 2 до {max_images} изображений и напишите текстовый промт.",
             reply_markup=get_cancel_keyboard(),
         )
         await state.set_state(BotStates.image_wait_prompt)

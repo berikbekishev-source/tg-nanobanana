@@ -79,9 +79,9 @@ logger = logging.getLogger(__name__)
 
 
 class ReferencePromptService:
-    """Основной сервис генерации JSON-промта."""
+    """Сервис генерации промта по референсу (укороченный текстовый вывод)."""
 
-    SYSTEM_PROMPT = (
+    ARCHIVED_SYSTEM_PROMPT_JSON = (
         "You are a senior VEO3 prompt engineer & creative director.\n\n"
         "GOAL\nFrom idea/context (text, transcript, or image caption), produce ONE VEO3-JSON-1.0 blueprint. "
         "Do NOT output API request here; return only the blueprint.\n\n"
@@ -136,6 +136,17 @@ class ReferencePromptService:
         "OUTPUT\nReturn exactly one valid JSON object with both keys and nothing else."
     )
 
+    SYSTEM_PROMPT = (
+        "You are an expert prompt writer for general video generation models (Sora, Veo, Kling, Runway, OpenAI, etc.).\n"
+        "Given a reference (link/photo/video) and optional user edits, produce ONE concise English prompt that will recreate the reference as closely as possible.\n"
+        "- Output plain text only, no JSON, no code fences, no meta-comments.\n"
+        "- Keep it under ~800 characters.\n"
+        "- Include subject, environment, camera feel/movement, lighting, mood/color, pacing/editing, notable actions, and framing.\n"
+        "- Do not include platform-specific parameters or negative prompts.\n"
+        "- If audio/speech is implied, briefly suggest it in English; otherwise omit.\n"
+        "- Respect user edits if provided; otherwise infer from the reference.\n"
+    )
+
     MAX_INLINE_BYTES = 14 * 1024 * 1024  # 14 MB ограничение для Gemini inline_data
 
     def __init__(self, *, model: Optional[ReferencePromptModel] = None) -> None:
@@ -150,7 +161,7 @@ class ReferencePromptService:
         modifications: Optional[str] = None,
         user_context: Optional[Dict[str, Any]] = None,
     ) -> ReferencePromptResult:
-        """Формирует JSON-промт на основе входных данных пользователя."""
+        """Формирует текстовый промт на основе входных данных пользователя."""
 
         model = self._default_model or get_reference_prompt_model(model_slug)
 
@@ -235,26 +246,24 @@ class ReferencePromptService:
                 }
             ],
             "generationConfig": {
-                "temperature": 0.4,
-                "topP": 0.95,
-                "responseMimeType": "application/json",
+                "temperature": 0.3,
+                "topP": 0.9,
+                "responseMimeType": "text/plain",
             },
         }
 
         response_json = await self._call_gemini(model.gemini_model, payload)
-        parsed = self._extract_json_response(response_json)
-        vertex_request, blueprint, prepared_prompt, parameters = self._prepare_vertex_payload(parsed)
-
-        pretty = json.dumps(vertex_request, ensure_ascii=False, indent=2)
-        chunks = self._format_chunks(pretty)
+        prompt_out = self._extract_text_response(response_json)
         dialogue_code = uuid.uuid4().hex[:12]
 
+        chunks = [f"✅Ваш промт готов:\n{prompt_out}"]
+
         return ReferencePromptResult(
-            prompt_text=prepared_prompt,
-            parameters=parameters,
-            vertex_request=vertex_request,
-            blueprint=blueprint,
-            pretty_json=pretty,
+            prompt_text=prompt_out,
+            parameters={},
+            vertex_request={},
+            blueprint={},
+            pretty_json=prompt_out,
             dialogue_code=dialogue_code,
             chunks=chunks,
         )
@@ -276,52 +285,32 @@ class ReferencePromptService:
             return resp.content
 
     def _build_user_prompt(self, reference: ReferenceInputPayload, modifications: Optional[str]) -> str:
-        context: Dict[str, Any] = {
-            "mods": modifications or "",
-            "input_type": reference.input_type,
-        }
-
-        if reference.urls:
-            context["urls"] = reference.urls
-        if reference.file_name:
-            context["file_name"] = reference.file_name
-        if reference.mime_type:
-            context["mime_type"] = reference.mime_type
-        if reference.duration:
-            context["duration"] = reference.duration
-        if reference.width and reference.height:
-            context["resolution"] = f"{reference.width}x{reference.height}"
-        if reference.source_url:
-            context["source_url"] = reference.source_url
-        if reference.source_title:
-            context["source_title"] = reference.source_title
-        if reference.source_description:
-            context["source_description"] = reference.source_description
+        ctx_lines: List[str] = []
 
         idea_text = (reference.text or reference.caption or "").strip()
         if not idea_text and reference.source_title:
             idea_text = reference.source_title
         if not idea_text and reference.source_description:
             idea_text = reference.source_description[:400]
-        if not idea_text:
-            if reference.input_type == "photo":
-                idea_text = "The user attached a photo reference. Describe it precisely and convert into a Veo 3 video blueprint."
-            elif reference.input_type == "video":
-                idea_text = "The user attached a short video reference. Match the narrative, pacing, camera, and mood in the Veo 3 blueprint."
-            else:
-                idea_text = ""
 
-        blueprint_section = "null"
-        context_json = json.dumps(context, ensure_ascii=False, indent=2)
+        if idea_text:
+            ctx_lines.append(f"Reference summary: {idea_text}")
 
-        return (
-            "===BLUEPRINT_JSON (optional; null if absent)\n"
-            f"{blueprint_section}\n\n"
-            "==IDEA_TEXT\n"
-            f"{idea_text}\n\n"
-            "==CONTEXT_JSON\n"
-            f"{context_json}\n"
-        )
+        if reference.input_type:
+            ctx_lines.append(f"Reference type: {reference.input_type}")
+        if reference.urls:
+            ctx_lines.append(f"Source link: {reference.urls[0]}")
+        if reference.duration:
+            ctx_lines.append(f"Duration (if video): {reference.duration} seconds")
+        if reference.width and reference.height:
+            ctx_lines.append(f"Resolution (if known): {reference.width}x{reference.height}")
+        if modifications:
+            ctx_lines.append(f"User edits: {modifications}")
+
+        if not ctx_lines:
+            ctx_lines.append("No additional context provided; infer from attached media.")
+
+        return "\n".join(ctx_lines)
 
     async def _call_gemini(self, model_name: str, payload: Dict[str, Any]) -> Dict[str, Any]:
         api_key = settings.GEMINI_API_KEY
@@ -359,6 +348,18 @@ class ReferencePromptService:
                 return json.loads(cleaned)
             except json.JSONDecodeError as exc:  # pragma: no cover - логирование
                 logger.warning("Не удалось распарсить JSON от Gemini: %s", exc)
+        raise ValueError("Gemini вернул неожиданный формат ответа")
+
+    @staticmethod
+    def _extract_text_response(response: Dict[str, Any]) -> str:
+        candidates = response.get("candidates") or []
+        if not candidates:
+            raise ValueError("Gemini не вернул кандидатов для ответа")
+        parts = candidates[0].get("content", {}).get("parts", [])
+        for part in parts:
+            text = part.get("text")
+            if text:
+                return text.strip()
         raise ValueError("Gemini вернул неожиданный формат ответа")
 
     @staticmethod
