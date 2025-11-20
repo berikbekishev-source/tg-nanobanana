@@ -2970,3 +2970,11 @@
 - Проверки: `railway logs --service web|worker|beat --environment staging`, `curl -sSf https://web-staging-70d1.up.railway.app/api/health`
 - Коммит/PR: планируется добавить изменения в docs в текущую ветку
 - Вопросы/блокеры: нет
+- Статус: PR #197 по ветке feature/cleanup-unused-files-ai смержен (CI passed, auto-merge), деплой staging SUCCESS (deploy 0bcc7f5e…, /api/health ok)
+
+## 2025-11-20 11:19 UTC — PR #199 (docs db split) ожидает мержа
+- Ветка: feature/cleanup-unused-files-ai (worktree /Users/berik/Desktop/cleanup-unused-files-ai)
+- Шаг: добавил записи о разнесении БД и логи деплоя в docs; PR #199 открыт (mergeable/dirty state из-за fast-track, base = staging)
+- Проверки: CI open-pr green, остальные не запускались; /api/health на stg OK после предыдущего деплоя
+- Коммит/PR: 2125bae7, 9601d7ca, 42ae7015, 1bfafc8b (в ветке)
+- Вопросы/блокеры: требуется автомерж PR #199 в staging
