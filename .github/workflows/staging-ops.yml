@@ -285,8 +285,8 @@ jobs:
               const pr = await github.pulls.get({ owner: context.repo.owner, repo: context.repo.repo, pull_number: prNumber });
               const ref = pr.data.head.sha;
               const checks = await github.checks.listForRef({ owner: context.repo.owner, repo: context.repo.repo, ref });
-              const build = checks.data.check_runs.filter(r => r.name.includes('build-test'));
-              if (build.length && build.every(r => r.conclusion === 'success')) break;
+              const lint = checks.data.check_runs.filter(r => r.name === 'lint' || r.name === 'CI / lint' || r.name.toLowerCase().includes('lint'));
+              if (lint.length && lint.every(r => r.conclusion === 'success')) break;
               await new Promise(r => setTimeout(r, 5000));
             }
             await github.pulls.merge({ owner: context.repo.owner, repo: context.repo.repo, pull_number: prNumber, merge_method: 'squash' });
@@ -322,15 +322,15 @@ jobs:
               pull_number: Number('${{ needs.parse.outputs.pr }}')
             });
             if (pr.data.base.ref !== 'staging') core.setFailed('PR target is not staging');
-            // require check named "CI / build-test" success
+            // Требуется успешный lint
             const checks = await github.checks.listForRef({
               owner: context.repo.owner,
               repo: context.repo.repo,
               ref: pr.data.head.sha
             });
-            const ok = checks.data.check_runs.some(r => r.name === 'build-test' || r.name === 'CI / build-test' || r.name.includes('build-test')) &&
-              checks.data.check_runs.filter(r => (r.name === 'build-test' || r.name === 'CI / build-test' || r.name.includes('build-test'))).every(r => r.conclusion === 'success');
-            if (!ok) core.setFailed('Required checks are not green: build-test');
+            const lintChecks = checks.data.check_runs.filter(r => r.name === 'lint' || r.name === 'CI / lint' || r.name.toLowerCase().includes('lint'));
+            const ok = lintChecks.length > 0 && lintChecks.every(r => r.conclusion === 'success');
+            if (!ok) core.setFailed('Required checks are not green: lint');
 
       - name: Merge PR (squash)
         uses: actions/github-script@v7
@@ -454,8 +454,8 @@ EOF
               const pr = await github.pulls.get({ owner: context.repo.owner, repo: context.repo.repo, pull_number: prNumber });
               const ref = pr.data.head.sha;
               const checks = await github.checks.listForRef({ owner: context.repo.owner, repo: context.repo.repo, ref });
-              const build = checks.data.check_runs.filter(r => r.name.includes('build-test'));
-              if (build.length && build.every(r => r.conclusion === 'success')) break;
+              const lint = checks.data.check_runs.filter(r => r.name === 'lint' || r.name === 'CI / lint' || r.name.toLowerCase().includes('lint'));
+              if (lint.length && lint.every(r => r.conclusion === 'success')) break;
               await new Promise(r => setTimeout(r, 5000));
             }
             await github.pulls.merge({ owner: context.repo.owner, repo: context.repo.repo, pull_number: prNumber, merge_method: 'squash' });
@@ -577,8 +577,8 @@ EOF
               const pr = await github.pulls.get({ owner: context.repo.owner, repo: context.repo.repo, pull_number: prNumber });
               const ref = pr.data.head.sha;
               const checks = await github.checks.listForRef({ owner: context.repo.owner, repo: context.repo.repo, ref });
-              const build = checks.data.check_runs.filter(r => r.name.includes('build-test'));
-              if (build.length && build.every(r => r.conclusion === 'success')) break;
+              const lint = checks.data.check_runs.filter(r => r.name === 'lint' || r.name === 'CI / lint' || r.name.toLowerCase().includes('lint'));
+              if (lint.length && lint.every(r => r.conclusion === 'success')) break;
               await new Promise(r => setTimeout(r, 5000));
             }
             await github.pulls.merge({ owner: context.repo.owner, repo: context.repo.repo, pull_number: prNumber, merge_method: 'squash' });
