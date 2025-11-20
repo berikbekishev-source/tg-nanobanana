@@ -17,7 +17,7 @@ import time
 from decimal import Decimal
 from datetime import datetime
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import Tuple
 
 import django
 import requests

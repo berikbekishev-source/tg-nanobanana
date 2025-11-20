@@ -1,6 +1,6 @@
 from django.contrib import admin
 from django.utils.html import format_html
-from django.db.models import Count, Sum
+from django.db.models import Count
 from django.urls import path, reverse
 from django.shortcuts import get_object_or_404
 from django.template.response import TemplateResponse

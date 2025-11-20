@@ -6,7 +6,7 @@
 
 import requests
 import json
-from typing import Dict, Any, Optional
+import time
 
 # API Configuration
 API_KEY = "HUavlwH154yV1KjiTbEKnZJyHxem7W0SgE7iIKsbq6MlSjNMulkOS3GgYEadREEb"
@@ -299,8 +299,6 @@ class LavaAPITester:
 
 def run_full_test_suite():
     """Запуск полного набора тестов API"""
-    import time
-
     print("\n" + "🚀"*30)
     print("LAVA.TOP API TEST SUITE")
     print("🚀"*30)
@@ -311,7 +309,7 @@ def run_full_test_suite():
 
     # 1. Test Products
     print("\n📦 TESTING PRODUCTS ENDPOINTS")
-    products = tester.test_products_list()
+    tester.test_products_list()
 
     # 2. Test Invoice Creation
     print("\n💳 TESTING INVOICE CREATION")
@@ -351,5 +349,4 @@ def run_full_test_suite():
 
 
 if __name__ == "__main__":
-    import time
     run_full_test_suite()

@@ -1,3 +1,5 @@
+import logging
+
 from django.conf import settings
 from aiogram import Bot, Dispatcher
 from aiogram.fsm.storage.redis import RedisStorage
@@ -68,6 +70,7 @@ dp = Dispatcher(storage=_storage)
 dp.errors.register(aiogram_error_handler)
 
 bot = _bot  # re-export
+logger = logging.getLogger(__name__)
 
 def setup_telegram():
     """
@@ -78,6 +81,6 @@ def setup_telegram():
     # Проверка, чтобы не подключать повторно
     if main_router not in dp.sub_routers:
         dp.include_router(main_router)
-        print("✅ Telegram bot initialized with FSM handlers")
+        logger.info("Telegram bot initialized with FSM handlers")
     else:
-        print("⚠️ Router already attached, skipping setup_telegram()")
+        logger.info("Router already attached, skipping setup_telegram()")

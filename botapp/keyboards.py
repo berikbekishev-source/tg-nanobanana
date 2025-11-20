@@ -1,7 +1,6 @@
 """
 Клавиатуры для навигации по боту согласно ТЗ
 """
-import os
 from typing import List, Sequence, Tuple, Optional
 from decimal import Decimal
 from aiogram.types import (
@@ -9,7 +8,7 @@ from aiogram.types import (
     InlineKeyboardMarkup, InlineKeyboardButton,
     WebAppInfo
 )
-from aiogram.utils.keyboard import ReplyKeyboardBuilder, InlineKeyboardBuilder
+from aiogram.utils.keyboard import InlineKeyboardBuilder
 from botapp.models import AIModel
 from botapp.business.pricing import (
     get_base_price_tokens,

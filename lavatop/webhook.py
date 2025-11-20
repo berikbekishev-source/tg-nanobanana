@@ -6,7 +6,7 @@ import hashlib
 import hmac
 import json
 import logging
-from typing import Dict, Optional
+from typing import Dict
 from django.conf import settings
 from decimal import Decimal
 

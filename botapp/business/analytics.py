@@ -1,24 +1,21 @@
 """
 Аналитический сервис для отслеживания метрик и статистики
 """
-from decimal import Decimal
-from datetime import datetime, timedelta
-from typing import Dict, List, Any, Optional, Tuple
+from datetime import timedelta
+from typing import Dict, List, Any, Optional
+
 from django.utils import timezone
 from django.db.models import (
     Count, Sum, Avg, Q, F,
-    ExpressionWrapper, DecimalField,
-    DateTimeField, IntegerField
+    ExpressionWrapper, IntegerField
 )
-from django.db.models.functions import TruncDate, TruncHour, TruncWeek, TruncMonth
-import json
+from django.db.models.functions import TruncDate, TruncHour
 
 from ..models import (
     TgUser,
     GenRequest,
     Transaction,
     AIModel,
-    UserBalance
 )
 from .pricing import get_base_price_tokens
 

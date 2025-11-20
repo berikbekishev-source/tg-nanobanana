@@ -6,7 +6,6 @@ Comprehensive Integration Tests for Lava.top Payment System
 import os
 import sys
 import json
-from decimal import Decimal
 
 # Add project root to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
