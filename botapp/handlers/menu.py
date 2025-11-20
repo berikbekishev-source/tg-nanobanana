@@ -32,7 +32,14 @@ MAIN_MENU_ACTIONS = {
 }
 
 # URL для Mini App (будет браться из настроек)
-PAYMENT_URL = getattr(settings, 'PAYMENT_MINI_APP_URL', 'https://example.com/payment')
+_configured_payment_url = getattr(settings, 'PAYMENT_MINI_APP_URL', None)
+_public_base_url = getattr(settings, 'PUBLIC_BASE_URL', '')
+if _configured_payment_url:
+    PAYMENT_URL = _configured_payment_url
+elif _public_base_url:
+    PAYMENT_URL = f"{_public_base_url.rstrip('/')}/miniapp/"
+else:
+    PAYMENT_URL = 'https://example.com/miniapp/'
 
 
 @router.message(CommandStart())
@@ -133,7 +140,8 @@ async def deposit_callback(callback: CallbackQuery, state: FSMContext):
     # Формируем URL с параметрами пользователя
     user_id = callback.from_user.id
     username = callback.from_user.username or ""
-    payment_url_with_params = f"{PAYMENT_URL}?user_id={user_id}&username={username}"
+    payment_url = PAYMENT_URL
+    payment_url_with_params = f"{payment_url}?user_id={user_id}&username={username}"
 
     # Создаем inline кнопку для открытия Mini App
     from aiogram.utils.keyboard import InlineKeyboardBuilder
@@ -143,6 +151,10 @@ async def deposit_callback(callback: CallbackQuery, state: FSMContext):
     builder.button(
         text="💳 Открыть страницу оплаты",
         web_app=WebAppInfo(url=payment_url_with_params)
+    )
+    builder.button(
+        text="🌐 Открыть в браузере",
+        url=payment_url_with_params
     )
 
     await callback.message.answer(
