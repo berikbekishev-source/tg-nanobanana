@@ -2939,6 +2939,13 @@
 - Проверки: n/a (только документация)
 - Коммит/PR: pending (после разрешения конфликта)
 - Следующий шаг: закоммитить merge, допушить для авто-PR #190
+
+## 2025-11-20 — push после sync (PR #190)
+- Ветка: feature/cleanup-deadcode-berik
+- Шаг: закоммитил merge с staging (`merge: sync staging into feature/cleanup-deadcode-berik`), `git push origin feature/cleanup-deadcode-berik`
+- Проверки: n/a (документация)
+- Коммит/PR: 514e02f4, PR #190
+- Следующий шаг: дождаться автосоздания/мерджа PR в staging, при необходимости отслеживать CI
 ## 2025-11-20 — DB cleanup анализ (агент: feature/integer-vscode-agent1)
 - Рабочее дерево: feature/integer-vscode-agent1 (worktree `../integer-vscode-agent1`)
 - Действия: инвентаризация моделей/полей/миграций; выделены неиспользуемые поля `UserSettings`, реферальные поля без логики по коду, `GenRequest.model` как легаси; зафиксированы Postgres-зависимые миграции 0027–0028 и managed=False `token_packages`.
