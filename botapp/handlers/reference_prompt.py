@@ -246,7 +246,10 @@ async def _start_prompt_generation(message: Message, state: FSMContext, modifica
 
     reference_payload = ReferenceInputPayload.from_state(payload_data)
 
-    await message.answer("Собираю JSON-промт…", reply_markup=get_cancel_keyboard())
+    await message.answer(
+        "Создаю промт для генерация видео по указанному рефференсу, ожидайте пару минут ⏳",
+        reply_markup=get_cancel_keyboard()
+    )
     await state.set_state(BotStates.reference_prompt_processing)
 
     try:
@@ -286,15 +289,5 @@ async def _start_prompt_generation(message: Message, state: FSMContext, modifica
     for chunk in result.chunks:
         await message.answer(chunk, parse_mode="Markdown")
 
-    await message.answer(
-        f"Код диалога: `{result.dialogue_code}`",
-        parse_mode="Markdown",
-    )
-
     await state.clear()
     await state.set_state(BotStates.main_menu)
-
-    await message.answer(
-        "Выберите нужное  действие нажав на кнопку в меню 👇",
-        reply_markup=get_main_menu_keyboard(PAYMENT_URL),
-    )
