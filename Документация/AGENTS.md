@@ -189,7 +189,7 @@ curl -s -X POST https://backboard.railway.app/graphql/v2 \
 - Для REST-запросов добавляйте заголовки `apikey` и `Authorization` со значением сервисного ключа.
 - Стейджинг/прод БД разнесены:
   - **Production**: проект Supabase `eqgcrggbksouurhjxvzs` (хост `aws-1-eu-north-1.pooler.supabase.com`), `DATABASE_URL` хранится в окружении Railway **production**.
-  - **Staging**: отдельный проект Supabase `tg-nanobanana-staging` (`srquwlfweefqzpowdtiw`, регион `eu-west-1`, хост `db.srquwlfweefqzpowdtiw.supabase.co`). `DATABASE_URL` хранится только в окружении Railway **staging** (пароль не публикуем в репо).
+  - **Staging**: отдельный проект Supabase `tg-nanobanana-stg` (`usacvdpwwjnkazkahfwv`, регион `eu-west-1`, пулер `aws-1-eu-west-1.pooler.supabase.com`). `DATABASE_URL` хранится только в окружении Railway **staging** (пароль не публикуем в репо).
   - Не смешивайте строки подключения между окружениями. Для действий со стейджинговой БД используйте `DATABASE_URL` из Railway staging (например, `railway variables --environment staging --service web --json | jq '.DATABASE_URL'` или GraphQL по `RAILWAY_API_TOKEN`).
 
 ### 2.4 Telegram-боты
