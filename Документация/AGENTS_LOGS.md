@@ -2978,3 +2978,9 @@
 - Проверки: CI open-pr green, остальные не запускались; /api/health на stg OK после предыдущего деплоя
 - Коммит/PR: 2125bae7, 9601d7ca, 42ae7015, 1bfafc8b (в ветке)
 - Вопросы/блокеры: требуется автомерж PR #199 в staging
+
+## 2025-11-20 14:21 UTC — починка открытия страницы оплаты
+- Ветка: feature/balance-payment-issue (worktree `../balance-payment-issue`)
+- Шаги: скопировал `token_packages` из продовой Supabase в staging, добавил `xframe_options_exempt` для `/miniapp/`, пушнул и дождался авто-PR #205 → staging (auto-merge)
+- Проверки: `curl -s https://web-staging-70d1.up.railway.app/api/miniapp/pricing` (200, 4 пакета), `curl -I https://web-staging-70d1.up.railway.app/miniapp/` (200, без `X-Frame-Options`), `/api/health` OK
+- Результат: деплой на staging SUCCESS, миниапп оплаты открывается, готово к тестированию в боте
