@@ -2919,6 +2919,13 @@
 - Коммит/PR: n/a
 - Следующий шаг: подготовить коммит и PR → staging после ревью изменений
 
+## 2025-11-20 06:50 UTC — пуш ветки с чисткой шаблонов
+- Ветка: feature/tmpl-cleanup-x1
+- Шаг: запушил коммит `chore: cleanup unused ui assets` в origin/feature/tmpl-cleanup-x1
+- Проверки: n/a (после compileall без изменений)
+- Коммит/PR: pending (PR авто-создается в staging)
+- Следующий шаг: дождаться авто-PR → staging, проверить CI, при необходимости добавить описание
+
 ## 2025-11-20 — tmpl cleanup (rebase на staging)
 - Ветка: feature/tmpl-cleanup-x1 (PR #191)
 - Шаг: ребейз origin/staging, оставил лог staging и добавил запись; ветка удаляет неиспользуемые шаблоны/ассеты
