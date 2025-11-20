@@ -924,17 +924,20 @@ def gemini_vertex_edit(
     model_path = _vertex_model_path(getattr(settings, "NANO_BANANA_GEMINI_MODEL", None))
     api_key = getattr(settings, "NANO_BANANA_API_KEY", None)
 
-    primary = input_images[0]
-    b64_img = base64.b64encode(primary["content"]).decode()
-    parts = [
-        {"text": prompt},
-        {
-            "inlineData": {
-                "mimeType": primary.get("mime_type", "image/png"),
-                "data": b64_img,
+    parts: List[Dict[str, Any]] = [{"text": prompt}]
+    for image in input_images:
+        content = image.get("content")
+        if not content:
+            continue
+        b64_img = base64.b64encode(content).decode()
+        parts.append(
+            {
+                "inlineData": {
+                    "mimeType": image.get("mime_type", "image/png"),
+                    "data": b64_img,
+                }
             }
-        },
-    ]
+        )
 
     if api_key:
         data = _gemini_google_api_request(
