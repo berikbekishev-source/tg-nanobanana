@@ -8,9 +8,8 @@
 - `docker-compose.yml` — локальный запуск сервисов (web/worker/beat/redis/postgres при необходимости).
 - `Dockerfile.web`, `Dockerfile.worker`, `Dockerfile.beat` — сборка образов для web, Celery worker и scheduler.
 - `railway.json` — конфигурация Railway.
-- `STAGING_DEPLOYED.json`, `STAGING_STATUS.md` — служебные файлы статуса/деплоя staging (автогенерация пайплайном, не трогать вручную).
-- `openapi.json` — экспорт OpenAPI.
-- `lava_docs.html` — документация LavaPay (архив), использовать для справки.
+- Служебные маркеры деплоя генерируются пайплайном автоматически (в репозитории не держим).
+- `documentation.yaml` — экспорт OpenAPI (для lavatop).
 
 ## Конфиги и инфраструктура
 - `config/` — настройки Django.
@@ -66,8 +65,9 @@
 - `TokenPackage` в `botapp/models.py` — `managed=False`, привязан к внешней таблице `token_packages` (Railway).
 - Поля `UserSettings` (notify*/prefs) и реферальные поля `UserBalance` оставлены для будущего использования; не удалять без согласования.
 - Легаси поле `GenRequest.model` сохранено для совместимости (исторический след), реструктурировать только после отдельного решения.
+- Базы данных разнесены: **prod** — Supabase проект `eqgcrggbksouurhjxvzs` (пулер `aws-1-eu-north-1.pooler.supabase.com`), **staging** — отдельный проект `tg-nanobanana-stg` (`usacvdpwwjnkazkahfwv`, пулер `aws-1-eu-west-1.pooler.supabase.com`). `DATABASE_URL` задаётся переменными Railway по окружениям.
+- Миграции выполняются на каждом деплое автоматически в своём окружении (`python manage.py migrate` из `railway.json`). Данные между stg/prod не синхронизируются; перенос данных — только вручную и по согласованию.
 
 ## Быстрый ориентир по деплою (staging/production)
 - Ветки: `staging` → автодеплой Railway (staging бот), `main` → production бот.
 - Рабочий процесс: feature → PR в `staging` (auto lint + auto-merge), затем тестирование, затем Release PR `staging → main` по команде.
-

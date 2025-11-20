@@ -2954,3 +2954,19 @@
 - Проверки: `rg` на упоминания удалённых файлов
 - Коммит/PR: n/a (работа в процессе)
 - Вопросы/блокеры: нет
+
+## 2025-11-20 09:54 UTC — разнесение БД staging/prod
+- Ветка: feature/cleanup-unused-files-ai (worktree /Users/berik/Desktop/cleanup-unused-files-ai)
+- Шаг: создал отдельный Supabase проект для staging (`tg-nanobanana-staging`, ref srquwlfweefqzpowdtiw, eu-west-1), прописал новый `DATABASE_URL` в Railway staging для web/worker/beat через GraphQL, прод не трогал
+- Шаг: задокументировал разделение БД (AGENTS.md)
+- Проверки: `supabase projects list --output json` (статус ACTIVE_HEALTHY), GraphQL `variableUpsert` на staging-сервисы
+- Коммит/PR: будет оформлен после обновления доков (текущая ветка)
+- Вопросы/блокеры: нет
+
+## 2025-11-20 10:49 UTC — фикc Supabase для stg
+- Ветка: feature/cleanup-unused-files-ai (worktree /Users/berik/Desktop/cleanup-unused-files-ai)
+- Шаг: удалил неудачный stg-проект Supabase (`srquwlfweefqzpowdtiw`), создал новый `tg-nanobanana-stg` (`usacvdpwwjnkazkahfwv`, eu-west-1), обновил `DATABASE_URL` в Railway staging (web/worker/beat) на пулер `aws-1-eu-west-1.pooler.supabase.com`
+- Шаг: проверил деплой — миграции прошли, web поднялся, `/api/health` -> OK
+- Проверки: `railway logs --service web|worker|beat --environment staging`, `curl -sSf https://web-staging-70d1.up.railway.app/api/health`
+- Коммит/PR: планируется добавить изменения в docs в текущую ветку
+- Вопросы/блокеры: нет
