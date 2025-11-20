@@ -2912,9 +2912,16 @@
 - Коммит/PR: n/a
 - Следующий шаг: ревизия CI/workflows и docker/requirements по задачам агентов 3/4, сформировать план работ
 
+## 2025-11-20 — CI/DevOps cleanup (агент 3/4)
+- Ветка: feature/ci-cleanup-berik-20250203 (worktree /Users/berik/Desktop/ci-cleanup-berik-20250203)
+- Шаг: почистил CI (убрал staging/prod smoke, включил post-deploy-monitor на workflow CI, привёл ChatOps/branch protection к статусу lint), удалил неиспользуемый сервис Flower из compose/railway/requirements
+- Проверки: docker compose config (ошибка из-за отсутствия .env, структура файлов читается), python3 -m compileall botapp config (успех)
+- Коммит/PR: b22ddf3, 4bda19f1, aa1d8e6e
+- Следующий шаг: пуш feature/ci-cleanup-berik-20250203 для auto PR → staging
+
 ## 2025-11-20 — CI/DevOps cleanup (rebase на staging)
 - Ветка: feature/ci-cleanup-berik-20250203 (PR #189)
-- Шаг: ребейз на origin/staging, перенёс чистку CI (lint-only для staging, full-test для main, post-deploy-monitor на CI), удаление ChatOps workflow и сервиса Flower
-- Проверки: n/a (ребейз документации + CI файлы)
-- Коммит/PR: rebase, ожидается авто-merge после зелёного линта
-- Следующий шаг: дождаться merge PR #189 в staging
+- Шаг: ребейз на origin/staging, оставлен лог staging, добавлена запись о ветке; в ветке: lint-only для staging, full-test для main, отключён ChatOps, удалён Flower
+- Проверки: n/a (только документация/CI конфиг)
+- Коммит/PR: ребейз PR #189
+- Следующий шаг: дождаться зелёного линта и авто-мерджа в staging
