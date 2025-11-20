@@ -2919,6 +2919,13 @@
 - Коммит/PR: 5dbec793
 - Следующий шаг: при необходимости продолжить чистку/доп. проверки
 
+## 2025-11-20 — push dead code cleanup
+- Ветка: feature/cleanup-deadcode-berik
+- Шаг: git push origin feature/cleanup-deadcode-berik
+- Проверки: ruff (см. выше)
+- Коммит/PR: 5dbec793, 45fe9e19
+- Следующий шаг: авто-PR в staging (ожидание CI/auto-merge)
+
 ## 2025-11-20 — dead code cleanup (rebase на staging)
 - Ветка: feature/cleanup-deadcode-berik (PR #190)
 - Шаг: ребейз origin/staging, оставил лог staging и добавил запись; ветка чистит неиспользуемые импорты/хендлеры/tasks
