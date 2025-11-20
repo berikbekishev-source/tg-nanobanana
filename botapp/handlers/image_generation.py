@@ -9,11 +9,9 @@ from typing import List, Dict, Any
 from botapp.states import BotStates
 from botapp.keyboards import (
     get_image_models_keyboard,
-    get_back_to_menu_keyboard,
     get_model_info_message,
     get_cancel_keyboard,
     get_main_menu_inline_keyboard,
-    get_generation_complete_message,
     get_image_mode_keyboard,
 )
 from botapp.models import TgUser, AIModel, BotErrorEvent
@@ -22,7 +20,6 @@ from botapp.business.balance import BalanceService, InsufficientBalanceError
 from botapp.business.pricing import get_base_price_tokens
 from botapp.tasks import generate_image_task
 from asgiref.sync import sync_to_async
-import uuid
 from botapp.error_tracker import ErrorTracker
 
 router = Router()
@@ -335,8 +332,6 @@ async def select_image_mode(callback: CallbackQuery, state: FSMContext):
     data = await state.get_data()
     supports_images = data.get("supports_images", False)
     max_images = data.get("max_images", 0)
-    provider = data.get("model_provider")
-    supports_edit = provider in {"openai_image", "gemini"}
 
     if mode in {"edit", "remix"} and (not supports_images or max_images <= 0):
         await callback.message.answer(

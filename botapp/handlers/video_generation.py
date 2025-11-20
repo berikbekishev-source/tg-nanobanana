@@ -1,7 +1,7 @@
 """
 Обработчики генерации видео
 """
-from typing import Any, Dict, List, Optional, Tuple
+from typing import List, Optional, Tuple
 
 from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery
