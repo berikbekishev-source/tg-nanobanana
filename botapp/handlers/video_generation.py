@@ -98,12 +98,17 @@ async def _prompt_user_for_description(
     is_sora: bool = False,
 ) -> None:
     """Отправить пользователю инструкции по вводу промта."""
-    intro = [f"Формат выбран: {aspect_ratio}"]
+    segments = [
+        "✍️ Напиши в чат промт для генерации видео из текста.",
+        "🖼 Если хотите сгенерировать видео из изображения, отправьте в чат одно изображение + текстовый промт.",
+        f"Формат выбран: {aspect_ratio}",
+    ]
     if duration:
-        intro.append(f"Длительность: {duration} сек.")
+        segments.append(f"Длительность: {duration} сек.")
     if resolution:
-        intro.append(f"Качество: {resolution.upper()}")
-    intro.append("Отправьте текстовое описание для генерации видео.")
+        segments.append(f"Качество: {resolution.lower()}")
+
+    intro = ["\n\n".join(segments)]
     image_hint = _calculate_image_size_hint(
         supports_images=supports_images,
         is_sora=is_sora,
@@ -111,7 +116,6 @@ async def _prompt_user_for_description(
         aspect_ratio=aspect_ratio,
     )
     if supports_images:
-        intro.append("Либо загрузите изображение и добавьте описание, чтобы использовать режим img2video.")
         hint_text = _format_image_hint_text(image_hint)
         if hint_text:
             intro.append(hint_text)
@@ -644,7 +648,10 @@ async def handle_video_prompt(message: Message, state: FSMContext):
         return
 
     await message.answer(
-        get_generation_start_message(),
+        get_generation_start_message().format(
+            model=model.display_name,
+            prompt=prompt,
+        ),
         reply_markup=get_main_menu_inline_keyboard()
     )
 
@@ -853,7 +860,10 @@ async def handle_video_extension_prompt(message: Message, state: FSMContext):
         return
 
     await message.answer(
-        get_generation_start_message(),
+        get_generation_start_message().format(
+            model=model.display_name if model else "—",
+            prompt=text,
+        ),
         reply_markup=get_main_menu_inline_keyboard()
     )
 
@@ -888,6 +898,6 @@ async def handle_main_menu_callback(callback: CallbackQuery, state: FSMContext):
     PAYMENT_URL = getattr(settings, 'PAYMENT_MINI_APP_URL', 'https://example.com/payment')
 
     await callback.message.answer(
-        "Главное меню:",
+        "Выберите нужное  действие нажав на кнопку в меню 👇",
         reply_markup=get_main_menu_keyboard(PAYMENT_URL)
     )

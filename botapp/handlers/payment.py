@@ -11,15 +11,16 @@ from asgiref.sync import sync_to_async
 
 from botapp.states import BotStates
 from botapp.keyboards import (
-    get_back_to_menu_keyboard,
     get_cancel_keyboard,
     get_main_menu_inline_keyboard,
+    get_main_menu_keyboard,
     format_balance
 )
 from botapp.models import TgUser, Transaction, Promocode
 from botapp.business.balance import BalanceService
 
 router = Router()
+PAYMENT_URL = getattr(settings, 'PAYMENT_MINI_APP_URL', 'https://example.com/payment')
 
 
 def _format_tokens(amount: Decimal) -> str:
@@ -151,7 +152,7 @@ async def deposit_from_menu(message: Message, state: FSMContext):
     # Отправляем кнопку главного меню
     await message.answer(
         "Или вернитесь в меню:",
-        reply_markup=get_back_to_menu_keyboard()
+        reply_markup=get_main_menu_keyboard(PAYMENT_URL)
     )
 
 
@@ -360,13 +361,7 @@ async def handle_main_menu_callback(callback: CallbackQuery, state: FSMContext):
     await state.clear()
     await state.set_state(BotStates.main_menu)
 
-    # Импортируем функцию главного меню
-    from django.conf import settings
-    from botapp.keyboards import get_main_menu_keyboard
-
-    PAYMENT_URL = getattr(settings, 'PAYMENT_MINI_APP_URL', 'https://example.com/payment')
-
     await callback.message.answer(
-        "Главное меню:",
+        "Выберите нужное  действие нажав на кнопку в меню 👇",
         reply_markup=get_main_menu_keyboard(PAYMENT_URL)
     )

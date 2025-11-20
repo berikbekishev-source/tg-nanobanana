@@ -90,14 +90,24 @@ def send_telegram_message(chat_id: int, text: str, reply_markup: Optional[Dict] 
 
 
 def get_inline_menu_markup():
-    """Получение разметки inline кнопки главного меню для JSON"""
+    """Разметка reply-клавиатуры главного меню"""
+    payment_url = getattr(settings, "PAYMENT_MINI_APP_URL", "https://example.com/payment")
     return {
-        "inline_keyboard": [[
-            {
-                "text": "🏠 Главное меню",
-                "callback_data": "main_menu"
-            }
-        ]]
+        "keyboard": [
+            [
+                {"text": "🎨 Создать изображение"},
+                {"text": "🎬 Создать видео"},
+            ],
+            [
+                {"text": "💰 Мой баланс (цены)"},
+                {"text": "💳 Пополнить баланс", "web_app": {"url": payment_url}},
+            ],
+            [{"text": "Промт по рефференсу"}],
+            [{"text": "🏠Главное меню"}],
+            [{"text": "🧡 Поддержка"}],
+        ],
+        "resize_keyboard": True,
+        "one_time_keyboard": False,
     }
 
 
@@ -109,10 +119,6 @@ def get_video_result_markup(request_id: int, include_extension: bool = True) -> 
             "text": "🔁 Продлить FAST",
             "callback_data": f"extend_video:{request_id}",
         }])
-    keyboard.append([{
-        "text": "🏠 Главное меню",
-        "callback_data": "main_menu",
-    }])
     return {"inline_keyboard": keyboard}
 
 
@@ -578,6 +584,7 @@ def generate_image_task(self, request_id: int):
                 prompt=prompt,
                 generation_type=generation_type,
                 model_name=model.display_name,
+                model_display_name=model.display_name,
                 quantity=quantity,
                 aspect_ratio=req.aspect_ratio or "1:1",
                 charged_amount=charged_amount,
@@ -686,10 +693,10 @@ def generate_video_task(self, request_id: int):
             prompt=prompt,
             generation_type=generation_type,
             model_name=model.display_name,
+            model_display_name=model.display_name,
             duration=req.duration or result.duration,
             resolution=req.video_resolution or result.resolution,
             aspect_ratio=req.aspect_ratio or result.aspect_ratio,
-            model_hashtag=model.hashtag,
             charged_amount=charged_amount,
             balance_after=balance_after,
         )
@@ -838,10 +845,10 @@ def extend_video_task(self, request_id: int):
             prompt=prompt,
             generation_type=generation_type,
             model_name=model.display_name,
+            model_display_name=model.display_name,
             duration=req.duration or int(round(combined_duration)),
             resolution=req.video_resolution or final_resolution,
             aspect_ratio=req.aspect_ratio or final_aspect_ratio,
-            model_hashtag=model.hashtag,
             charged_amount=charged_amount,
             balance_after=balance_after,
         )
