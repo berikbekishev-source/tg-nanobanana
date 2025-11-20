@@ -9,9 +9,7 @@ import sys
 import json
 import time
 import requests
-import hashlib
-import hmac
-from datetime import datetime, timedelta
+from datetime import datetime
 import threading
 from http.server import HTTPServer, BaseHTTPRequestHandler
 import subprocess
@@ -23,7 +21,6 @@ os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'config.settings')
 import django
 django.setup()
 
-from django.conf import settings
 from botapp.models import TgUser, UserBalance, Transaction
 from decimal import Decimal
 

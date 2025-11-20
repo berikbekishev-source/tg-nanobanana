@@ -2951,3 +2951,10 @@
 - Проверки: n/a (docs только)
 - Коммит/PR: rebase перед авто-merge PR #191
 - Следующий шаг: дождаться зелёного линта и авто-мерджа в staging
+
+## 2025-11-20 07:49 UTC — финальный аудит и очистка
+- Ветка: feature/cleanup-final-berik-001 (worktree `../cleanup-final-berik-001`)
+- Шаг: удалил отслеживаемые `__pycache__/*.pyc`, почистил неиспользуемые импорты и перевёл стартовые print в логгер, убрал мусорные импорты в lavatop тестах
+- Проверки: `ruff check botapp lavatop dashboard config --select F401,F841`, `python3 -m compileall botapp lavatop dashboard config`
+- Коммит/PR: готовлю коммиты → origin/feature/cleanup-final-berik-001
+- Следующий шаг: оформить коммиты, пушнуть ветку, дождаться авто-PR в staging и линта

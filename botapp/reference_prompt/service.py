@@ -5,7 +5,6 @@ from __future__ import annotations
 import base64
 import json
 import logging
-import re
 import uuid
 from dataclasses import dataclass
 from typing import Any, Dict, Iterable, List, Optional, Tuple
@@ -15,7 +14,7 @@ import httpx
 from django.conf import settings
 
 from botapp.services import GEMINI_URL_TMPL
-from .downloader import DownloadedMedia, download_video, is_supported_url
+from .downloader import download_video, is_supported_url
 from .models import ReferencePromptModel, get_reference_prompt_model
 
 
