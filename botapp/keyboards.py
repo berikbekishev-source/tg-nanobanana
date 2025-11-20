@@ -46,6 +46,9 @@ def get_main_menu_keyboard(payment_url: str) -> ReplyKeyboardMarkup:
                 KeyboardButton(text="🏠Главное меню"),
             ],
             [
+                KeyboardButton(text="🎁 Ввести промокод"),
+            ],
+            [
                 KeyboardButton(text="🧡 Поддержка")
             ]
         ],

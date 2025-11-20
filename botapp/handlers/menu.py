@@ -108,12 +108,6 @@ async def show_balance(message: Message, state: FSMContext):
         parse_mode=None
     )
 
-    # Меняем клавиатуру на кнопку "Главное меню"
-    await message.answer(
-        "Выберите действие:",
-        reply_markup=get_main_menu_keyboard(PAYMENT_URL)
-    )
-
     # Устанавливаем состояние просмотра баланса
     await state.set_state(BotStates.balance_view)
 
