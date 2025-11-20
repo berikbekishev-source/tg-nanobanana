@@ -272,6 +272,12 @@ async def receive_image_for_prompt(message: Message, state: FSMContext):
 
     # режим remix
     remix_images = data.get('remix_images', [])
+    media_group_id = message.media_group_id
+    last_group_id = data.get("media_group_id")
+    group_ready_notified = data.get("group_ready_notified", False)
+
+    if media_group_id and media_group_id != last_group_id:
+        group_ready_notified = False
     if len(remix_images) >= max_images:
         await message.answer(
             f"❌ Уже загружено максимальное количество изображений ({max_images}). Теперь отправьте текстовый промт.",
@@ -284,7 +290,12 @@ async def receive_image_for_prompt(message: Message, state: FSMContext):
     if caption:
         pending_caption = caption
 
-    await state.update_data(remix_images=remix_images, pending_caption=pending_caption)
+    await state.update_data(
+        remix_images=remix_images,
+        pending_caption=pending_caption,
+        media_group_id=media_group_id,
+        group_ready_notified=group_ready_notified,
+    )
     updated_data = await state.get_data()
 
     min_needed = max(2, min(max_images, 4))
@@ -292,9 +303,18 @@ async def receive_image_for_prompt(message: Message, state: FSMContext):
         await _start_image_generation(message, state, pending_caption, updated_data)
         return
 
+    if media_group_id:
+        if len(remix_images) >= min_needed and not group_ready_notified:
+            await message.answer(
+                f"✅ {len(remix_images)} изображений загружено. Теперь напишите текстовый промт.",
+                reply_markup=get_cancel_keyboard(),
+            )
+            await state.update_data(group_ready_notified=True)
+        return
+
     if len(remix_images) < min_needed:
         await message.answer(
-            f"✅ Изображение {len(remix_images)} загружено. Загрузите ещё или отправьте текстовый промт.",
+            f"✅ {len(remix_images)} изображений загружено. Загрузите ещё или отправьте текстовый промт.",
             reply_markup=get_cancel_keyboard(),
         )
     elif len(remix_images) < max_images:
