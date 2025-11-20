@@ -2904,3 +2904,9 @@
 - Коммит: unknown
 - Проверки: Railway=SUCCESS, health=ok
 - Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-20 — DB cleanup анализ (агент: feature/integer-vscode-agent1)
+- Рабочее дерево: feature/integer-vscode-agent1 (worktree `../integer-vscode-agent1`)
+- Действия: инвентаризация моделей/полей/миграций; выделены неиспользуемые поля `UserSettings`, реферальные поля без логики по коду, `GenRequest.model` как легаси; зафиксированы Postgres-зависимые миграции 0027–0028 и managed=False `token_packages`.
+- Результат: добавлен план `Документация/DB_CLEANUP_PLAN.md` с безопасными рекомендациями (без деструктивных миграций).
+- Проверки: статический поиск использования (`rg`), миграции не применялись.
