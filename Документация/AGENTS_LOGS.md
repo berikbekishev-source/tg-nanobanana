@@ -2954,3 +2954,11 @@
 - Проверки: `rg` на упоминания удалённых файлов
 - Коммит/PR: n/a (работа в процессе)
 - Вопросы/блокеры: нет
+
+## 2025-11-20 09:54 UTC — разнесение БД staging/prod
+- Ветка: feature/cleanup-unused-files-ai (worktree /Users/berik/Desktop/cleanup-unused-files-ai)
+- Шаг: создал отдельный Supabase проект для staging (`tg-nanobanana-staging`, ref srquwlfweefqzpowdtiw, eu-west-1), прописал новый `DATABASE_URL` в Railway staging для web/worker/beat через GraphQL, прод не трогал
+- Шаг: задокументировал разделение БД (AGENTS.md)
+- Проверки: `supabase projects list --output json` (статус ACTIVE_HEALTHY), GraphQL `variableUpsert` на staging-сервисы
+- Коммит/PR: будет оформлен после обновления доков (текущая ветка)
+- Вопросы/блокеры: нет
