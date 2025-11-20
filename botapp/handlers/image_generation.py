@@ -280,17 +280,21 @@ async def receive_image_for_prompt(message: Message, state: FSMContext):
         return
 
     remix_images.append(photo.file_id)
-    await state.update_data(remix_images=remix_images)
+    pending_caption = (data.get("pending_caption") or "").strip()
+    if caption:
+        pending_caption = caption
+
+    await state.update_data(remix_images=remix_images, pending_caption=pending_caption)
     updated_data = await state.get_data()
 
     min_needed = max(2, min(max_images, 4))
-    if caption and len(remix_images) >= min_needed:
-        await _start_image_generation(message, state, caption, updated_data)
+    if pending_caption and len(remix_images) >= min_needed:
+        await _start_image_generation(message, state, pending_caption, updated_data)
         return
 
     if len(remix_images) < min_needed:
         await message.answer(
-            f"✅ Изображение {len(remix_images)} загружено. Загрузите ещё или отмените операцию.",
+            f"✅ Изображение {len(remix_images)} загружено. Загрузите ещё или отправьте текстовый промт.",
             reply_markup=get_cancel_keyboard(),
         )
     elif len(remix_images) < max_images:
