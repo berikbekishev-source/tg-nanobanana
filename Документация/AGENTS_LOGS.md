@@ -2984,3 +2984,9 @@
 - Шаги: скопировал `token_packages` из продовой Supabase в staging, добавил `xframe_options_exempt` для `/miniapp/`, пушнул, дождался авто-мержа в staging (auto-merge)
 - Проверки: `curl -s https://web-staging-70d1.up.railway.app/api/miniapp/pricing` (200, 4 пакета), `curl -I https://web-staging-70d1.up.railway.app/miniapp/` (200, без `X-Frame-Options`), `/api/health` OK
 - Результат: деплой на staging SUCCESS, миниапп оплаты открывается, готово к тестированию в боте
+
+## 2025-11-20 15:18 UTC — правка MiniApp оплаты
+- Ветка: feature/balance-payment-issue (worktree `../balance-payment-issue`)
+- Шаги: убрал DENY для /miniapp/, добавил ссылку-фолбек и построение URL из env; добавил фолбек поиска пакета по количеству токенов в create-payment
+- Проверки: `/miniapp/` 200, `/api/miniapp/pricing` 200 (4 пакета), тестовый POST /api/miniapp/create-payment с pack_100 → payment_url получен
+- Деплой: PR #213 → staging (auto-merge, CI lint green)
