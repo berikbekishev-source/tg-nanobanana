@@ -2919,9 +2919,16 @@
 - Коммит/PR: b22ddf3, 4bda19f1, aa1d8e6e
 - Следующий шаг: пуш feature/ci-cleanup-berik-20250203 для auto PR → staging
 
+## 2025-11-20 — удаление ChatOps workflow
+- Ветка: feature/ci-cleanup-berik-20250203 (worktree /Users/berik/Desktop/ci-cleanup-berik-20250203)
+- Шаг: удалил chatops-router.yml, staging-ops.yml и staging-ops-gc.yml как неиспользуемые (пайплайн без ChatOps)
+- Проверки: n/a (удаление файлов)
+- Коммит/PR: pending
+- Следующий шаг: закоммитить и запушить изменения
+
 ## 2025-11-20 — CI/DevOps cleanup (rebase на staging)
 - Ветка: feature/ci-cleanup-berik-20250203 (PR #189)
-- Шаг: ребейз на origin/staging, оставлен лог staging, добавлена запись о ветке; в ветке: lint-only для staging, full-test для main, отключён ChatOps, удалён Flower
+- Шаг: ребейз origin/staging, оставил лог staging и добавил запись; в ветке: lint-only для staging, full-test для main, отключён ChatOps, удалён Flower
 - Проверки: n/a (только документация/CI конфиг)
-- Коммит/PR: ребейз PR #189
+- Коммит/PR: rebase перед авто-merge PR #189
 - Следующий шаг: дождаться зелёного линта и авто-мерджа в staging
