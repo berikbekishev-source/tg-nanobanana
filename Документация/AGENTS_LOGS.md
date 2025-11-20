@@ -2905,6 +2905,7 @@
 - Проверки: Railway=SUCCESS, health=ok
 - Health endpoint: https://web-staging-70d1.up.railway.app/api/health
 
+<<<<<<< HEAD
 ## 2025-11-20 06:12 UTC — старт уборки шаблонов
 - Ветка: feature/tmpl-cleanup-x1 (worktree /Users/berik/Desktop/tmpl-cleanup-x1)
 - Шаг: прочитал Документация/AGENTS.md, создал worktree от origin/staging (`git fetch origin staging; git worktree add ../tmpl-cleanup-x1 -b feature/tmpl-cleanup-x1 origin/staging`), зафиксировал старт
@@ -2925,6 +2926,24 @@
 - Проверки: n/a (после compileall без изменений)
 - Коммит/PR: pending (PR авто-создается в staging)
 - Следующий шаг: дождаться авто-PR → staging, проверить CI, при необходимости добавить описание
+
+## 2025-11-20 — DB cleanup анализ (агент: feature/integer-vscode-agent1)
+- Рабочее дерево: feature/integer-vscode-agent1 (worktree `../integer-vscode-agent1`)
+- Действия: инвентаризация моделей/полей/миграций; выделены неиспользуемые поля `UserSettings`, реферальные поля без логики по коду, `GenRequest.model` как легаси; зафиксированы Postgres-зависимые миграции 0027–0028 и managed=False `token_packages`.
+- Результат: добавлен план `Документация/DB_CLEANUP_PLAN.md` с безопасными рекомендациями (без деструктивных миграций).
+- Проверки: статический поиск использования (`rg`), миграции не применялись.
+
+## 2025-11-20 07:04 UTC — синк со staging и снятие конфликта
+- Ветка: feature/tmpl-cleanup-x1
+- Шаг: подтянул origin/staging, решил конфликт в `Документация/AGENTS_LOGS.md`, принял новый файл `Документация/DB_CLEANUP_PLAN.md`, запушил merge-коммит
+- Проверки: n/a (только docs)
+- Коммит/PR: `Merge origin/staging into feature/tmpl-cleanup-x1` (push в origin)
+- Следующий шаг: дождаться авто-PR → staging, контролировать CI/авто-merge
+## 2025-11-20 — DB cleanup анализ (агент: feature/integer-vscode-agent1)
+- Рабочее дерево: feature/integer-vscode-agent1 (worktree `../integer-vscode-agent1`)
+- Действия: инвентаризация моделей/полей/миграций; выделены неиспользуемые поля `UserSettings`, реферальные поля без логики по коду, `GenRequest.model` как легаси; зафиксированы Postgres-зависимые миграции 0027–0028 и managed=False `token_packages`.
+- Результат: добавлен план `Документация/DB_CLEANUP_PLAN.md` с безопасными рекомендациями (без деструктивных миграций).
+- Проверки: статический поиск использования (`rg`), миграции не применялись.
 
 ## 2025-11-20 — tmpl cleanup (rebase на staging)
 - Ветка: feature/tmpl-cleanup-x1 (PR #191)
