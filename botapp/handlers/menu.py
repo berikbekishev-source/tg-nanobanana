@@ -19,6 +19,16 @@ from botapp.business.balance import BalanceService
 from asgiref.sync import sync_to_async
 
 router = Router()
+MAIN_MENU_ACTIONS = {
+    "🎨 Создать изображение",
+    "🎬 Создать видео",
+    "Промт по рефференсу",
+    "💰 Мой баланс (цены)",
+    "💳 Пополнить баланс",
+    "🧡 Поддержка",
+    "🏠Главное меню",
+    "🏠 Главное меню",
+}
 
 # URL для Mini App (будет браться из настроек)
 PAYMENT_URL = getattr(settings, 'PAYMENT_MINI_APP_URL', 'https://example.com/payment')
@@ -201,7 +211,7 @@ async def cmd_balance(message: Message, state: FSMContext):
     await show_balance(message, state)
 
 
-@router.message(BotStates.main_menu, F.text)
+@router.message(BotStates.main_menu, ~F.text.in_(MAIN_MENU_ACTIONS))
 async def handle_free_text_in_main_menu(message: Message):
     """Ответ на произвольный текст в главном меню"""
     await message.answer(
