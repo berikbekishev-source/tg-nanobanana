@@ -2887,12 +2887,6 @@
 - Проверки: Railway=SUCCESS, health=ok
 - Health endpoint: https://web-staging-70d1.up.railway.app/api/health
 
-## 2025-11-19 07:29 UTC — Auto-deploy to staging (PR #143)
-- Актор: berikbekishev-source
-- Коммит: unknown
-- Проверки: Railway=SUCCESS, health=ok
-- Health endpoint: https://web-staging-70d1.up.railway.app/api/health
-
 ## 2025-11-19 07:31 UTC — Auto-deploy to staging (PR #147)
 - Актор: berikbekishev-source
 - Коммит: unknown
@@ -2905,7 +2899,6 @@
 - Проверки: Railway=SUCCESS, health=ok
 - Health endpoint: https://web-staging-70d1.up.railway.app/api/health
 
-<<<<<<< HEAD
 ## 2025-11-20 06:12 UTC — старт уборки шаблонов
 - Ветка: feature/tmpl-cleanup-x1 (worktree /Users/berik/Desktop/tmpl-cleanup-x1)
 - Шаг: прочитал Документация/AGENTS.md, создал worktree от origin/staging (`git fetch origin staging; git worktree add ../tmpl-cleanup-x1 -b feature/tmpl-cleanup-x1 origin/staging`), зафиксировал старт
@@ -2939,11 +2932,6 @@
 - Проверки: n/a (только docs)
 - Коммит/PR: `Merge origin/staging into feature/tmpl-cleanup-x1` (push в origin)
 - Следующий шаг: дождаться авто-PR → staging, контролировать CI/авто-merge
-## 2025-11-20 — DB cleanup анализ (агент: feature/integer-vscode-agent1)
-- Рабочее дерево: feature/integer-vscode-agent1 (worktree `../integer-vscode-agent1`)
-- Действия: инвентаризация моделей/полей/миграций; выделены неиспользуемые поля `UserSettings`, реферальные поля без логики по коду, `GenRequest.model` как легаси; зафиксированы Postgres-зависимые миграции 0027–0028 и managed=False `token_packages`.
-- Результат: добавлен план `Документация/DB_CLEANUP_PLAN.md` с безопасными рекомендациями (без деструктивных миграций).
-- Проверки: статический поиск использования (`rg`), миграции не применялись.
 
 ## 2025-11-20 — tmpl cleanup (rebase на staging)
 - Ветка: feature/tmpl-cleanup-x1 (PR #191)
@@ -2958,3 +2946,11 @@
 - Проверки: `ruff check botapp lavatop dashboard config --select F401,F841`, `python3 -m compileall botapp lavatop dashboard config`
 - Коммит/PR: готовлю коммиты → origin/feature/cleanup-final-berik-001
 - Следующий шаг: оформить коммиты, пушнуть ветку, дождаться авто-PR в staging и линта
+
+
+## 2025-11-20 08:12 UTC — очистка лишних файлов
+- Ветка: feature/cleanup-unused-files-ai (worktree /Users/berik/Desktop/cleanup-unused-files-ai)
+- Шаг: удалил e2e-маркеры и пустой `openapi.json`, выпилил архивные/manual тесты Lava вместе с устаревшими docs, убрал маркер `STAGING_DEPLOYED.json`, обновил инструкции (Lava README, AGENTS.md), почистил конфликт в AGENTS_LOGS.md
+- Проверки: `rg` на упоминания удалённых файлов
+- Коммит/PR: n/a (работа в процессе)
+- Вопросы/блокеры: нет
