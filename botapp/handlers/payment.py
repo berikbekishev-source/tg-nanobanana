@@ -20,7 +20,14 @@ from botapp.models import TgUser, Transaction, Promocode
 from botapp.business.balance import BalanceService
 
 router = Router()
-PAYMENT_URL = getattr(settings, 'PAYMENT_MINI_APP_URL', 'https://example.com/payment')
+_configured_payment_url = getattr(settings, 'PAYMENT_MINI_APP_URL', None)
+_public_base_url = getattr(settings, 'PUBLIC_BASE_URL', '')
+if _configured_payment_url:
+    PAYMENT_URL = _configured_payment_url
+elif _public_base_url:
+    PAYMENT_URL = f"{_public_base_url.rstrip('/')}/miniapp/"
+else:
+    PAYMENT_URL = 'https://example.com/miniapp/'
 
 
 def _format_tokens(amount: Decimal) -> str:
@@ -125,7 +132,7 @@ async def deposit_from_menu(message: Message, state: FSMContext):
     # Формируем URL с параметрами пользователя
     user_id = message.from_user.id
     username = message.from_user.username or ""
-    payment_url = getattr(settings, 'PAYMENT_MINI_APP_URL', 'https://example.com/payment')
+    payment_url = PAYMENT_URL
     payment_url_with_params = f"{payment_url}?user_id={user_id}&username={username}"
 
     # Создаем inline кнопку для открытия Mini App
@@ -136,6 +143,10 @@ async def deposit_from_menu(message: Message, state: FSMContext):
     builder.button(
         text="💳 Открыть страницу оплаты",
         web_app=WebAppInfo(url=payment_url_with_params)
+    )
+    builder.button(
+        text="🌐 Открыть в браузере",
+        url=payment_url_with_params
     )
 
     await message.answer(
