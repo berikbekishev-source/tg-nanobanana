@@ -274,10 +274,10 @@ async def receive_image_for_prompt(message: Message, state: FSMContext):
     remix_images = data.get('remix_images', [])
     media_group_id = message.media_group_id
     last_group_id = data.get("media_group_id")
-    group_ready_notified = data.get("group_ready_notified", False)
+    notified_count = data.get("remix_notified_count", 0)
 
     if media_group_id and media_group_id != last_group_id:
-        group_ready_notified = False
+        notified_count = 0
     if len(remix_images) >= max_images:
         await message.answer(
             f"❌ Уже загружено максимальное количество изображений ({max_images}). Теперь отправьте текстовый промт.",
@@ -294,7 +294,7 @@ async def receive_image_for_prompt(message: Message, state: FSMContext):
         remix_images=remix_images,
         pending_caption=pending_caption,
         media_group_id=media_group_id,
-        group_ready_notified=group_ready_notified,
+        remix_notified_count=notified_count,
     )
     updated_data = await state.get_data()
 
@@ -304,12 +304,12 @@ async def receive_image_for_prompt(message: Message, state: FSMContext):
         return
 
     if media_group_id:
-        if len(remix_images) >= min_needed and not group_ready_notified:
+        if len(remix_images) >= min_needed and len(remix_images) != notified_count:
             await message.answer(
                 f"✅ {len(remix_images)} изображений загружено. Теперь напишите текстовый промт.",
                 reply_markup=get_cancel_keyboard(),
             )
-            await state.update_data(group_ready_notified=True)
+            await state.update_data(remix_notified_count=len(remix_images))
         return
 
     if len(remix_images) < min_needed:
