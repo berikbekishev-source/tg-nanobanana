@@ -83,7 +83,7 @@ def _format_image_hint_text(dimensions: Optional[Tuple[int, int]]) -> Optional[s
         return None
     width, height = dimensions
     return (
-        f"Для режима img2video используйте изображение {width}x{height}. "
+        f"Размер изображения должно быть: {width}x{height}. "
         "Если размер будет другим, мы автоматически обрежем центр под нужный формат."
     )
 
@@ -98,9 +98,18 @@ async def _prompt_user_for_description(
     is_sora: bool = False,
 ) -> None:
     """Отправить пользователю инструкции по вводу промта."""
+    image_hint = _calculate_image_size_hint(
+        supports_images=supports_images,
+        is_sora=is_sora,
+        resolution=resolution,
+        aspect_ratio=aspect_ratio,
+    )
+    size_hint = _format_image_hint_text(image_hint) if supports_images else ""
+
     segments = [
-        "✍️ Напиши в чат промт для генерации видео из текста.",
-        "🖼 Если хотите сгенерировать видео из изображения, отправьте в чат одно изображение + текстовый промт.",
+        "✍️  Напиши в чат промт для генерации видео из текста.",
+        "🖼 Если хотите сгенерировать видео из изображения, отправьте в чат одно изображение + текстовый промт."
+        f" {size_hint}".strip(),
         f"Формат выбран: {aspect_ratio}",
     ]
     if duration:
@@ -109,16 +118,6 @@ async def _prompt_user_for_description(
         segments.append(f"Качество: {resolution.lower()}")
 
     intro = ["\n\n".join(segments)]
-    image_hint = _calculate_image_size_hint(
-        supports_images=supports_images,
-        is_sora=is_sora,
-        resolution=resolution,
-        aspect_ratio=aspect_ratio,
-    )
-    if supports_images:
-        hint_text = _format_image_hint_text(image_hint)
-        if hint_text:
-            intro.append(hint_text)
 
     await message.answer(
         "\n".join(intro),

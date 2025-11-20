@@ -30,13 +30,13 @@ logger = logging.getLogger(__name__)
 
 
 def send_telegram_photo(chat_id: int, photo_bytes: bytes, caption: str, reply_markup: Optional[Dict] = None):
-    """Отправка фото в Telegram через Bot API напрямую (без aiogram)"""
-    url = f"https://api.telegram.org/bot{settings.TELEGRAM_BOT_TOKEN}/sendPhoto"
-    files = {"photo": ("image.png", photo_bytes, "image/png")}
+    """Отправка изображения файлом (document) в Telegram напрямую."""
+    url = f"https://api.telegram.org/bot{settings.TELEGRAM_BOT_TOKEN}/sendDocument"
+    files = {"document": ("image.png", photo_bytes, "image/png")}
     data = {
         "chat_id": chat_id,
         "caption": caption,
-        "parse_mode": "Markdown"
+        "parse_mode": "Markdown",
     }
     if reply_markup:
         data["reply_markup"] = json.dumps(reply_markup)
@@ -50,18 +50,18 @@ def send_telegram_photo(chat_id: int, photo_bytes: bytes, caption: str, reply_ma
 
 
 def send_telegram_video(chat_id: int, video_bytes: bytes, caption: str, reply_markup: Optional[Dict] = None):
-    """Отправка видео в Telegram через Bot API напрямую"""
-    url = f"https://api.telegram.org/bot{settings.TELEGRAM_BOT_TOKEN}/sendVideo"
-    files = {"video": ("video.mp4", video_bytes, "video/mp4")}
+    """Отправка видео файлом (document) в Telegram напрямую."""
+    url = f"https://api.telegram.org/bot{settings.TELEGRAM_BOT_TOKEN}/sendDocument"
+    files = {"document": ("video.mp4", video_bytes, "video/mp4")}
     data = {
         "chat_id": chat_id,
         "caption": caption,
-        "parse_mode": "Markdown"
+        "parse_mode": "Markdown",
     }
     if reply_markup:
         data["reply_markup"] = json.dumps(reply_markup)
 
-    with httpx.Client(timeout=60) as client:
+    with httpx.Client(timeout=120) as client:
         resp = client.post(url, files=files, data=data)
         resp.raise_for_status()
         payload = resp.json()
@@ -549,8 +549,11 @@ def generate_image_task(self, request_id: int):
 
         input_images_payload: List[Dict[str, Any]] = []
         if generation_type == 'image2image':
-            max_inputs = model.max_input_images or None
             input_sources = req.input_images or []
+            max_inputs = model.max_input_images or None
+            # Для ремикса отправляем все загруженные изображения (до 4), даже если модель задана строже.
+            if image_mode == "remix":
+                max_inputs = min(len(input_sources), 4) or None
             input_images_payload = _prepare_input_images(input_sources, max_inputs)
             if not input_images_payload:
                 generation_type = 'text2image'
