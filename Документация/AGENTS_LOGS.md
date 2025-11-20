@@ -2905,30 +2905,49 @@
 - Проверки: Railway=SUCCESS, health=ok
 - Health endpoint: https://web-staging-70d1.up.railway.app/api/health
 
-## 2025-11-20 — старт работы ci/devops cleanup
-- Ветка: feature/ci-cleanup-berik-20250203 (worktree /Users/berik/Desktop/ci-cleanup-berik-20250203)
-- Шаг: прочитал AGENTS.md (корень и Документация), сделал git fetch origin staging, создал worktree от origin/staging с уникальной веткой, зафиксировал pwd/rev-parse/worktree list
-- Проверки: git fetch origin staging
+<<<<<<< HEAD
+## 2025-11-20 06:12 UTC — старт уборки шаблонов
+- Ветка: feature/tmpl-cleanup-x1 (worktree /Users/berik/Desktop/tmpl-cleanup-x1)
+- Шаг: прочитал Документация/AGENTS.md, создал worktree от origin/staging (`git fetch origin staging; git worktree add ../tmpl-cleanup-x1 -b feature/tmpl-cleanup-x1 origin/staging`), зафиксировал старт
+- Проверки: n/a
 - Коммит/PR: n/a
-- Следующий шаг: ревизия CI/workflows и docker/requirements по задачам агентов 3/4, сформировать план работ
+- Следующий шаг: найти и удалить неиспользуемые шаблоны/ассеты в templates/lavatop/dashboard
 
-## 2025-11-20 — CI/DevOps cleanup (агент 3/4)
-- Ветка: feature/ci-cleanup-berik-20250203 (worktree /Users/berik/Desktop/ci-cleanup-berik-20250203)
-- Шаг: почистил CI (убрал staging/prod smoke, включил post-deploy-monitor на workflow CI, привёл ChatOps/branch protection к статусу lint), удалил неиспользуемый сервис Flower из compose/railway/requirements
-- Проверки: docker compose config (ошибка из-за отсутствия .env, структура файлов читается), python3 -m compileall botapp config (успех)
-- Коммит/PR: b22ddf3, 4bda19f1, aa1d8e6e
-- Следующий шаг: пуш feature/ci-cleanup-berik-20250203 для auto PR → staging
+## 2025-11-20 06:20 UTC — чистка UI-ассетов
+- Ветка: feature/tmpl-cleanup-x1
+- Шаг: удалил неиспользуемый `lava_docs.html` (страница без маршрута/использований), убрал дублирующий линк на `chat_admin.css` в `templates/admin/botapp/chatthread/dialog.html`
+- Проверки: `python3 -m compileall botapp lavatop dashboard config` (успех; `python` без суффикса недоступен)
+- Коммит/PR: n/a
+- Следующий шаг: подготовить коммит и PR → staging после ревью изменений
 
-## 2025-11-20 — удаление ChatOps workflow
-- Ветка: feature/ci-cleanup-berik-20250203 (worktree /Users/berik/Desktop/ci-cleanup-berik-20250203)
-- Шаг: удалил chatops-router.yml, staging-ops.yml и staging-ops-gc.yml как неиспользуемые (пайплайн без ChatOps)
-- Проверки: n/a (удаление файлов)
-- Коммит/PR: c12393ea (PR #189)
-- Следующий шаг: дождаться авто-PR → staging и прохождения линта/автомерджа
+## 2025-11-20 06:50 UTC — пуш ветки с чисткой шаблонов
+- Ветка: feature/tmpl-cleanup-x1
+- Шаг: запушил коммит `chore: cleanup unused ui assets` в origin/feature/tmpl-cleanup-x1
+- Проверки: n/a (после compileall без изменений)
+- Коммит/PR: pending (PR авто-создается в staging)
+- Следующий шаг: дождаться авто-PR → staging, проверить CI, при необходимости добавить описание
 
-## 2025-11-20 — CI/DevOps cleanup (rebase на staging)
-- Ветка: feature/ci-cleanup-berik-20250203 (PR #189)
-- Шаг: ребейз origin/staging, оставил лог staging и добавил запись; в ветке: lint-only для staging, full-test для main, отключён ChatOps, удалён Flower
-- Проверки: n/a (только документация/CI конфиг)
-- Коммит/PR: rebase перед авто-merge PR #189
+## 2025-11-20 — DB cleanup анализ (агент: feature/integer-vscode-agent1)
+- Рабочее дерево: feature/integer-vscode-agent1 (worktree `../integer-vscode-agent1`)
+- Действия: инвентаризация моделей/полей/миграций; выделены неиспользуемые поля `UserSettings`, реферальные поля без логики по коду, `GenRequest.model` как легаси; зафиксированы Postgres-зависимые миграции 0027–0028 и managed=False `token_packages`.
+- Результат: добавлен план `Документация/DB_CLEANUP_PLAN.md` с безопасными рекомендациями (без деструктивных миграций).
+- Проверки: статический поиск использования (`rg`), миграции не применялись.
+
+## 2025-11-20 07:04 UTC — синк со staging и снятие конфликта
+- Ветка: feature/tmpl-cleanup-x1
+- Шаг: подтянул origin/staging, решил конфликт в `Документация/AGENTS_LOGS.md`, принял новый файл `Документация/DB_CLEANUP_PLAN.md`, запушил merge-коммит
+- Проверки: n/a (только docs)
+- Коммит/PR: `Merge origin/staging into feature/tmpl-cleanup-x1` (push в origin)
+- Следующий шаг: дождаться авто-PR → staging, контролировать CI/авто-merge
+## 2025-11-20 — DB cleanup анализ (агент: feature/integer-vscode-agent1)
+- Рабочее дерево: feature/integer-vscode-agent1 (worktree `../integer-vscode-agent1`)
+- Действия: инвентаризация моделей/полей/миграций; выделены неиспользуемые поля `UserSettings`, реферальные поля без логики по коду, `GenRequest.model` как легаси; зафиксированы Postgres-зависимые миграции 0027–0028 и managed=False `token_packages`.
+- Результат: добавлен план `Документация/DB_CLEANUP_PLAN.md` с безопасными рекомендациями (без деструктивных миграций).
+- Проверки: статический поиск использования (`rg`), миграции не применялись.
+
+## 2025-11-20 — tmpl cleanup (rebase на staging)
+- Ветка: feature/tmpl-cleanup-x1 (PR #191)
+- Шаг: ребейз origin/staging, оставил лог staging и добавил запись; ветка удаляет неиспользуемые шаблоны/ассеты
+- Проверки: n/a (docs только)
+- Коммит/PR: rebase перед авто-merge PR #191
 - Следующий шаг: дождаться зелёного линта и авто-мерджа в staging
