@@ -229,17 +229,13 @@ def format_balance(balance: Decimal) -> str:
 def get_model_info_message(model: AIModel, base_price: Optional[Decimal] = None) -> str:
     """
     Формирует сообщение с информацией о модели (Шаг 2)
-    Теперь берет данные из модели в БД вместо if-else
     """
-    description = model.short_description or model.description
     price_value = base_price if base_price is not None else get_base_price_tokens(model)
-    message = (
-        f"{model.display_name}\n"
-        f"Стоимость от ⚡{price_value:.2f} токенов\n"
-        f"{description}\n\n"
-        "Выберите режим генерации ниже."
+    return (
+        f"{model.display_name}\n\n"
+        f"Стоимость ⚡{price_value:.2f} токенов\n\n"
+        "Выберите режим генерации 👇"
     )
-    return message
 
 
 def get_image_mode_keyboard() -> InlineKeyboardMarkup:

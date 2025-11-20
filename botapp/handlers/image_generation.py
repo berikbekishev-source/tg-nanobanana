@@ -214,21 +214,6 @@ async def select_image_model(callback: CallbackQuery, state: FSMContext):
     )
 
     info_message = get_model_info_message(model, base_price=model_cost)
-    add_modes = (
-        "\n\nРежимы:\n"
-        "• Создать из текста — промт без изображений\n"
-        "• Отредактировать — одно изображение + промт\n"
-        "• Ремикс — 2-4 изображения + промт"
-    )
-    if model.slug == "nano-banana":
-        info_message = (
-            "🍌 Nano Banana\n\n"
-            f"Стоимость ⚡{model_cost:.2f} токенов\n\n"
-            "Выберите режим генерации 👇"
-        )
-        add_modes = ""
-
-    info_message += add_modes
 
     await state.set_state(BotStates.image_select_mode)
     await callback.message.answer(
