@@ -2905,50 +2905,30 @@
 - Проверки: Railway=SUCCESS, health=ok
 - Health endpoint: https://web-staging-70d1.up.railway.app/api/health
 
-<<<<<<< HEAD
-## 2025-11-20 — очистка dead code (инициация)
-- Ветка: feature/cleanup-deadcode-berik
-- Шаг: прочитал Документация/AGENTS.md, создал worktree ../cleanup-deadcode-berik от origin/staging
-- Проверки: n/a
+## 2025-11-20 — старт работы ci/devops cleanup
+- Ветка: feature/ci-cleanup-berik-20250203 (worktree /Users/berik/Desktop/ci-cleanup-berik-20250203)
+- Шаг: прочитал AGENTS.md (корень и Документация), сделал git fetch origin staging, создал worktree от origin/staging с уникальной веткой, зафиксировал pwd/rev-parse/worktree list
+- Проверки: git fetch origin staging
 - Коммит/PR: n/a
-- Следующий шаг: анализ dead code в botapp/handlers/providers/api/tasks
+- Следующий шаг: ревизия CI/workflows и docker/requirements по задачам агентов 3/4, сформировать план работ
 
-## 2025-11-20 — очистка dead code (handlers/tasks)
-- Ветка: feature/cleanup-deadcode-berik
-- Шаг: убрал неиспользуемые импорты и переменную в image_generation, video_generation, tasks
-- Проверки: `ruff check --select F401,F841 botapp/handlers botapp/providers botapp/api.py botapp/tasks.py` (ok)
-- Коммит/PR: 5dbec793
-- Следующий шаг: при необходимости продолжить чистку/доп. проверки
+## 2025-11-20 — CI/DevOps cleanup (агент 3/4)
+- Ветка: feature/ci-cleanup-berik-20250203 (worktree /Users/berik/Desktop/ci-cleanup-berik-20250203)
+- Шаг: почистил CI (убрал staging/prod smoke, включил post-deploy-monitor на workflow CI, привёл ChatOps/branch protection к статусу lint), удалил неиспользуемый сервис Flower из compose/railway/requirements
+- Проверки: docker compose config (ошибка из-за отсутствия .env, структура файлов читается), python3 -m compileall botapp config (успех)
+- Коммит/PR: b22ddf3, 4bda19f1, aa1d8e6e
+- Следующий шаг: пуш feature/ci-cleanup-berik-20250203 для auto PR → staging
 
-## 2025-11-20 — push dead code cleanup
-- Ветка: feature/cleanup-deadcode-berik
-- Шаг: git push origin feature/cleanup-deadcode-berik
-- Проверки: ruff (см. выше)
-- Коммит/PR: 5dbec793, 45fe9e19
-- Следующий шаг: авто-PR в staging (ожидание CI/auto-merge)
+## 2025-11-20 — удаление ChatOps workflow
+- Ветка: feature/ci-cleanup-berik-20250203 (worktree /Users/berik/Desktop/ci-cleanup-berik-20250203)
+- Шаг: удалил chatops-router.yml, staging-ops.yml и staging-ops-gc.yml как неиспользуемые (пайплайн без ChatOps)
+- Проверки: n/a (удаление файлов)
+- Коммит/PR: c12393ea (PR #189)
+- Следующий шаг: дождаться авто-PR → staging и прохождения линта/автомерджа
 
-## 2025-11-20 — DB cleanup анализ (агент: feature/integer-vscode-agent1)
-- Рабочее дерево: feature/integer-vscode-agent1 (worktree `../integer-vscode-agent1`)
-- Действия: инвентаризация моделей/полей/миграций; выделены неиспользуемые поля `UserSettings`, реферальные поля без логики по коду, `GenRequest.model` как легаси; зафиксированы Postgres-зависимые миграции 0027–0028 и managed=False `token_packages`.
-- Результат: добавлен план `Документация/DB_CLEANUP_PLAN.md` с безопасными рекомендациями (без деструктивных миграций).
-- Проверки: статический поиск использования (`rg`), миграции не применялись.
-
-## 2025-11-20 — sync staging в feature/cleanup-deadcode-berik
-- Ветка: feature/cleanup-deadcode-berik
-- Шаг: `git pull --no-rebase origin staging`, разрешил конфликт в AGENTS_LOGS.md, принял новый файл DB_CLEANUP_PLAN.md
-- Проверки: n/a (только документация)
-- Коммит/PR: pending (после разрешения конфликта)
-- Следующий шаг: закоммитить merge, допушить для авто-PR #190
-
-## 2025-11-20 — push после sync (PR #190)
-- Ветка: feature/cleanup-deadcode-berik
-- Шаг: закоммитил merge с staging (`merge: sync staging into feature/cleanup-deadcode-berik`), `git push origin feature/cleanup-deadcode-berik`
-- Проверки: n/a (документация)
-- Коммит/PR: 514e02f4, PR #190
-- Следующий шаг: дождаться автосоздания/мерджа PR в staging, при необходимости отслеживать CI
-## 2025-11-20 — DB cleanup анализ (агент: feature/integer-vscode-agent1)
-- Рабочее дерево: feature/integer-vscode-agent1 (worktree `../integer-vscode-agent1`)
-- Действия: инвентаризация моделей/полей/миграций; выделены неиспользуемые поля `UserSettings`, реферальные поля без логики по коду, `GenRequest.model` как легаси; зафиксированы Postgres-зависимые миграции 0027–0028 и managed=False `token_packages`.
-- Результат: добавлен план `Документация/DB_CLEANUP_PLAN.md` с безопасными рекомендациями (без деструктивных миграций).
-- Проверки: статический поиск использования (`rg`), миграции не применялись.
->>>>>>> a3ca1f2158f31bd72d01b2d6d4ab8cb33326d7ce
+## 2025-11-20 — CI/DevOps cleanup (rebase на staging)
+- Ветка: feature/ci-cleanup-berik-20250203 (PR #189)
+- Шаг: ребейз origin/staging, оставил лог staging и добавил запись; в ветке: lint-only для staging, full-test для main, отключён ChatOps, удалён Flower
+- Проверки: n/a (только документация/CI конфиг)
+- Коммит/PR: rebase перед авто-merge PR #189
+- Следующий шаг: дождаться зелёного линта и авто-мерджа в staging
