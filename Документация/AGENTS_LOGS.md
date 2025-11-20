@@ -2923,8 +2923,8 @@
 - Ветка: feature/ci-cleanup-berik-20250203 (worktree /Users/berik/Desktop/ci-cleanup-berik-20250203)
 - Шаг: удалил chatops-router.yml, staging-ops.yml и staging-ops-gc.yml как неиспользуемые (пайплайн без ChatOps)
 - Проверки: n/a (удаление файлов)
-- Коммит/PR: pending
-- Следующий шаг: закоммитить и запушить изменения
+- Коммит/PR: c12393ea (PR #189)
+- Следующий шаг: дождаться авто-PR → staging и прохождения линта/автомерджа
 
 ## 2025-11-20 — CI/DevOps cleanup (rebase на staging)
 - Ветка: feature/ci-cleanup-berik-20250203 (PR #189)
