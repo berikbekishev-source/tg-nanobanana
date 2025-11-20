@@ -2911,3 +2911,10 @@
 - Проверки: n/a
 - Коммит/PR: n/a
 - Следующий шаг: анализ dead code в botapp/handlers/providers/api/tasks
+
+## 2025-11-20 — очистка dead code (handlers/tasks)
+- Ветка: feature/cleanup-deadcode-berik
+- Шаг: убрал неиспользуемые импорты и переменную в image_generation, video_generation, tasks
+- Проверки: `ruff check --select F401,F841 botapp/handlers botapp/providers botapp/api.py botapp/tasks.py` (ok)
+- Коммит/PR: 5dbec793
+- Следующий шаг: при необходимости продолжить чистку/доп. проверки
