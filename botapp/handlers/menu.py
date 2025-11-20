@@ -10,9 +10,9 @@ from django.conf import settings
 from botapp.states import BotStates
 from botapp.keyboards import (
     get_main_menu_keyboard,
-    get_back_to_menu_keyboard,
     get_balance_keyboard,
-    get_prices_info
+    get_prices_info,
+    get_support_keyboard,
 )
 from botapp.models import TgUser, UserSettings
 from botapp.business.balance import BalanceService
@@ -45,14 +45,14 @@ async def cmd_start(message: Message, state: FSMContext):
     # Создаем баланс для нового пользователя
     if created:
         await sync_to_async(BalanceService.ensure_balance)(user)
-        welcome_text = (
-            f"👋 Добро пожаловать, {message.from_user.first_name}!\n\n"
-            "Я помогу вам создавать потрясающие изображения и видео с помощью AI.\n\n"
-            "🎁 Вам начислен приветственный бонус: 5 токенов!\n\n"
-            "Выберите, что хотите создать:"
-        )
-    else:
-        welcome_text = f"👋 С возвращением, {message.from_user.first_name}!\n\nЧто будем создавать сегодня?"
+    welcome_text = (
+        f"👋 Добро пожаловать, {message.from_user.first_name}!\n\n"
+        "Меня зовут INTEGER и вот что я умею:\n\n"
+        "🖼 Генерация картинок в NanoBanana и GPT\n\n"
+        "📹 Генерация видео через Sora2, VEO 3, Kling\n\n"
+        "🔍 Промт по рефференсу. Скинь в бота ссылку на любой Reels, Shorts, TikTok и получи промт для генерации точно такого же видео!\n\n"
+        "Нажмите на кнопку в меню и выберите что хотите создать 👇"
+    )
 
     # Отправляем приветственное сообщение с главным меню
     await message.answer(
@@ -64,14 +64,14 @@ async def cmd_start(message: Message, state: FSMContext):
     await state.set_state(BotStates.main_menu)
 
 
-@router.message(F.text == "🏠 Главное меню")
+@router.message(F.text.in_({"🏠Главное меню", "🏠 Главное меню"}))
 async def back_to_main_menu(message: Message, state: FSMContext):
     """Возврат в главное меню"""
     await state.clear()
     await state.set_state(BotStates.main_menu)
 
     await message.answer(
-        "Главное меню:",
+        "Выберите нужное  действие нажав на кнопку в меню 👇",
         reply_markup=get_main_menu_keyboard(PAYMENT_URL)
     )
 
@@ -101,11 +101,20 @@ async def show_balance(message: Message, state: FSMContext):
     # Меняем клавиатуру на кнопку "Главное меню"
     await message.answer(
         "Выберите действие:",
-        reply_markup=get_back_to_menu_keyboard()
+        reply_markup=get_main_menu_keyboard(PAYMENT_URL)
     )
 
     # Устанавливаем состояние просмотра баланса
     await state.set_state(BotStates.balance_view)
+
+
+@router.message(F.text == "🧡 Поддержка")
+async def support_contact(message: Message):
+    """Контакт с админом"""
+    await message.answer(
+        "Если нужна помощь, напишите админу. Нажмите кнопку ниже, чтобы открыть чат.",
+        reply_markup=get_support_keyboard()
+    )
 
 
 @router.callback_query(F.data == "deposit")
@@ -153,7 +162,7 @@ async def cancel_action(callback: CallbackQuery, state: FSMContext):
 
     # Возвращаем в главное меню
     await callback.message.answer(
-        "Главное меню:",
+        "Выберите нужное  действие нажав на кнопку в меню 👇",
         reply_markup=get_main_menu_keyboard(PAYMENT_URL)
     )
 
@@ -190,3 +199,12 @@ async def cmd_balance(message: Message, state: FSMContext):
     """Быстрая команда для проверки баланса"""
     # Вызываем тот же обработчик, что и для кнопки
     await show_balance(message, state)
+
+
+@router.message(BotStates.main_menu, F.text)
+async def handle_free_text_in_main_menu(message: Message):
+    """Ответ на произвольный текст в главном меню"""
+    await message.answer(
+        "Для начала работы пожалуйста выберите нужное действие нажав на кнопку в меню 👇",
+        reply_markup=get_main_menu_keyboard(PAYMENT_URL)
+    )

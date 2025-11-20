@@ -289,6 +289,6 @@ async def _start_prompt_generation(message: Message, state: FSMContext, modifica
     await state.set_state(BotStates.main_menu)
 
     await message.answer(
-        "Главное меню:",
+        "Выберите нужное  действие нажав на кнопку в меню 👇",
         reply_markup=get_main_menu_keyboard(PAYMENT_URL),
     )
