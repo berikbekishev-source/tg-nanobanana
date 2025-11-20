@@ -305,12 +305,30 @@ async def handle_pre_checkout(pre_checkout_query: PreCheckoutQuery):
 
 
 @router.message(F.text.startswith("PROMO"))
+@router.message(F.text == "🎁 Ввести промокод")
 async def handle_promocode(message: Message, state: FSMContext):
     """
     Обработчик промокодов (формат: PROMOXXXX).
     Промокод может начислить фиксированное количество токенов.
     """
-    user = await sync_to_async(TgUser.objects.get)(chat_id=message.from_user.id)
+    await state.set_state(BotStates.payment_enter_promocode)
+    # Если сразу пришёл код (формат PROMOxxxx), обрабатываем; иначе просим ввести
+    if message.text.startswith("PROMO"):
+        user = await sync_to_async(TgUser.objects.get)(chat_id=message.from_user.id)
+        await _process_promocode_activation(
+            message,
+            user=user,
+            promo_code_raw=message.text,
+            success_markup=get_main_menu_inline_keyboard(),
+            failure_markup=get_main_menu_inline_keyboard(),
+        )
+        await state.clear()
+        return
+
+    await message.answer(
+        "Введите промокод в чат👇",
+        reply_markup=get_cancel_keyboard(),
+    )
 
     await _process_promocode_activation(
         message,
@@ -318,18 +336,6 @@ async def handle_promocode(message: Message, state: FSMContext):
         promo_code_raw=message.text,
         success_markup=get_main_menu_inline_keyboard(),
         failure_markup=get_main_menu_inline_keyboard(),
-    )
-
-
-@router.callback_query(F.data == "enter_promocode")
-async def prompt_promocode_input(callback: CallbackQuery, state: FSMContext):
-    """Запрос ввода промокода из раздела баланса."""
-    await callback.answer()
-    await state.set_state(BotStates.payment_enter_promocode)
-
-    await callback.message.answer(
-        "Введите промокод в чат.",
-        reply_markup=get_cancel_keyboard(),
     )
 
 
