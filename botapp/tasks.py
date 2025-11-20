@@ -20,9 +20,9 @@ from .business.balance import BalanceService
 from .business.generation import GenerationService
 from .chat_logger import ChatLogger
 from .error_tracker import ErrorTracker
-from .keyboards import get_generation_complete_message, get_main_menu_inline_keyboard
+from .keyboards import get_generation_complete_message
 from .media_utils import detect_reference_mime, ensure_png_format
-from .models import AIModel, BotErrorEvent, GenRequest, TgUser
+from .models import BotErrorEvent, GenRequest, TgUser
 from .providers import VideoGenerationError, get_video_provider
 from .services import generate_images_for_model, supabase_upload_png, supabase_upload_video
 
@@ -926,6 +926,6 @@ def process_payment_webhook(self, payment_data: Dict):
     except TgUser.DoesNotExist:
         # Пользователь не найден
         pass
-    except Exception as e:
+    except Exception:
         # Логируем ошибку
         raise

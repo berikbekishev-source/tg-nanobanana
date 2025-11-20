@@ -2904,3 +2904,10 @@
 - Коммит: unknown
 - Проверки: Railway=SUCCESS, health=ok
 - Health endpoint: https://web-staging-70d1.up.railway.app/api/health
+
+## 2025-11-20 — очистка dead code (инициация)
+- Ветка: feature/cleanup-deadcode-berik
+- Шаг: прочитал Документация/AGENTS.md, создал worktree ../cleanup-deadcode-berik от origin/staging
+- Проверки: n/a
+- Коммит/PR: n/a
+- Следующий шаг: анализ dead code в botapp/handlers/providers/api/tasks
