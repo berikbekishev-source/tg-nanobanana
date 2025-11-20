@@ -2918,3 +2918,10 @@
 - Проверки: `ruff check --select F401,F841 botapp/handlers botapp/providers botapp/api.py botapp/tasks.py` (ok)
 - Коммит/PR: 5dbec793
 - Следующий шаг: при необходимости продолжить чистку/доп. проверки
+
+## 2025-11-20 — push dead code cleanup
+- Ветка: feature/cleanup-deadcode-berik
+- Шаг: git push origin feature/cleanup-deadcode-berik
+- Проверки: ruff (см. выше)
+- Коммит/PR: 5dbec793, 45fe9e19
+- Следующий шаг: авто-PR в staging (ожидание CI/auto-merge)
