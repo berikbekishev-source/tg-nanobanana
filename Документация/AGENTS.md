@@ -397,7 +397,6 @@ railway logs --service beat --tail 20
 **Что если два агента запушили одновременно?**
 - GitHub обработает PR-ы последовательно (concurrency control)
 - Railway задеплоит кумулятивный результат обоих изменений
-- Последний PR будет "топовым" в STAGING_DEPLOYED.json
 
 ### 4.4 Production Release (Контролируемый, ~10-15 минут)
 

@@ -50,20 +50,6 @@
    - `payment.failed`, `subscription.*.failed`, `cancelled` → помечаем как неуспешный платёж;
    - неизвестные статусы → возвращаем `status: "unknown"`, чтобы Lava прекратила повторные попытки.
 
-## Manual Tools
-В каталоге `lavatop/tests/manual/` находятся скрипты для ручного тестирования:
-
-| Скрипт | Назначение |
-|--------|-----------|
-| `webhook_suite.py` | Полный регресс вебхуков (все примеры из документации Lava). Создаёт транзакции и проверяет ответы. |
-| `transaction_webhook.py` | «End-to-end» сценарий: создаёт транзакцию, отправляет webhook, проверяет начисление токенов. |
-| `single_webhook.py` | Быстрый smoke — шлёт одиночный webhook в legacy формате. |
-
-Все скрипты можно запускать напрямую (`python lavatop/tests/manual/...`). Они подтягивают параметры из
-переменных окружения (`LAVA_WEBHOOK_SECRET`, `LAVA_API_KEY`, `LAVATOP_RAILWAY_WEBHOOK_URL`).
-
-Архивные/экспериментальные утилиты перенесены в `lavatop/tests/archive/` — используйте только как пример.
-
 ## Logs & Troubleshooting
 * Успешный webhook → логи web‑сервиса содержат `Lava webhook received`, worker выдаёт
   `Payment <id> completed. Credited ... tokens`. Telegram уведомление появляется в чате fallback‑пользователя.
@@ -79,5 +65,5 @@
 1. Добавить в `.env` / Railway переменные `LAVA_API_KEY`, `LAVA_WEBHOOK_SECRET`, `LAVA_FALLBACK_CHAT_ID`.
 2. Настроить webhook в Lava согласно разделу выше.
 3. Убедиться, что fallback‑пользователь авторизовался в Telegram боте (иначе скрипты создадут запись автоматически). 
-4. Прогнать `python lavatop/tests/manual/webhook_suite.py` — все запросы должны вернуть HTTP 200. 
+4. Выполнить ручную проверку: создать транзакцию через `/api/miniapp/create-payment`, затем отправить тестовый вебхук `POST /api/miniapp/lava-webhook` с корректной авторизацией и убедиться, что токены начисляются.
 5. Проверить баланс и логи. После этого можно давать доступ пользователям.
