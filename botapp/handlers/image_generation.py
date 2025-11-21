@@ -298,124 +298,94 @@ async def receive_image_for_prompt(message: Message, state: FSMContext):
 
     # Режим remix
     remix_images = data.get('remix_images', [])
+    chat_id = message.chat.id
 
-    # Если есть подпись в текущем сообщении, запоминаем её
-    if message.caption:
-        pending_caption = message.caption
+    # Если есть подпись в текущем сообщении, запоминаем её в локальную переменную
+    # (но сохранять в стейт будем только в блоке обработки, чтобы избежать гонки)
+    current_caption = message.caption
 
-    # Если это альбом (media group)
-    if message.media_group_id:
-        redis = state.storage.redis
-        group_id = message.media_group_id
-        key_images = f"remix_group_images:{group_id}"
-        key_caption = f"remix_group_caption:{group_id}"
+    # Универсальная буферизация для режима Remix
+    # Используем chat_id как ключ группировки, чтобы ловить и альбомы, и быстрые одиночные отправки
+    redis = state.storage.redis
+    key_images = f"remix_buffer_imgs:{chat_id}"
+    key_caption = f"remix_buffer_cap:{chat_id}"
 
-        # Сохраняем file_id и caption (если есть) в Redis
-        await redis.rpush(key_images, photo.file_id)
-        await redis.expire(key_images, 60)  # TTL 60 sec
-        
-        if message.caption:
-            await redis.set(key_caption, message.caption, ex=60)
+    # Сохраняем file_id в Redis-список
+    await redis.rpush(key_images, photo.file_id)
+    await redis.expire(key_images, 60)
 
-        # Ждем, пока все сообщения из группы придут
-        await asyncio.sleep(1.0)
+    # Если пришла подпись - сохраняем её в Redis (перезаписываем, считаем актуальной последнюю/любую)
+    if current_caption:
+        await redis.set(key_caption, current_caption, ex=60)
 
-        # Используем Lua-скрипт для атомарного получения и удаления списка
-        lua_script = """
-        local list = redis.call('LRANGE', KEYS[1], 0, -1)
-        if #list > 0 then
-            redis.call('DEL', KEYS[1])
-        end
-        return list
-        """
-        
-        try:
-            stored_images = await redis.eval(lua_script, 1, key_images)
-        except Exception as e:
-            logger.error(f"Redis eval error: {e}")
-            # Fallback
-            stored_images = await redis.lrange(key_images, 0, -1)
-            if stored_images:
-                await redis.delete(key_images)
+    # Небольшая задержка, чтобы собрать пачку сообщений (альбом летит миллисекунды)
+    await asyncio.sleep(0.8)
 
-        if not stored_images:
-            # Значит другой обработчик уже забрал данные
-            return
-        
-        # Получаем caption из Redis (если был в группе)
-        stored_caption = await redis.get(key_caption)
-        if stored_caption:
-            stored_caption = stored_caption.decode('utf-8')
-            await redis.delete(key_caption)
-            pending_caption = stored_caption # Обновляем pending_caption
-        
-        # Декодируем image ids
-        new_images = [img_id.decode('utf-8') if isinstance(img_id, bytes) else img_id for img_id in stored_images]
-        
-        # Добавляем к существующим
-        remix_images.extend(new_images)
-        
-        # Убираем дубликаты
-        remix_images = list(dict.fromkeys(remix_images))
-        
-        # Сохраняем обновленный список и pending_caption
-        await state.update_data(remix_images=remix_images, pending_caption=pending_caption)
-        
-        # Проверяем авто-старт
-        min_needed = 2
-        
-        if len(remix_images) >= min_needed and pending_caption:
-            # Есть и картинки и промт (текущий или сохраненный) - запускаем
-            await _start_generation(message, state, pending_caption)
-            return
-            
-        # Иначе отправляем статус (только один раз)
-        msg_text = ""
-        if len(remix_images) >= max_images:
-             msg_text = f"✅ Загружено {len(remix_images)} изображений (максимум). Отправьте текстовый промт."
-        elif len(remix_images) < min_needed:
-             msg_text = f"✅ Загружено {len(remix_images)} изображений. Нужно минимум {min_needed}. Загрузите ещё."
-        else:
-             msg_text = f"✅ Загружено {len(remix_images)} изображений. Можно добавить ещё или отправить промт."
-             
-        await message.answer(msg_text, reply_markup=get_cancel_keyboard())
+    # Используем Lua-скрипт для атомарного получения и удаления списка
+    lua_script = """
+    local list = redis.call('LRANGE', KEYS[1], 0, -1)
+    if #list > 0 then
+        redis.call('DEL', KEYS[1])
+    end
+    return list
+    """
+    
+    try:
+        stored_images = await redis.eval(lua_script, 1, key_images)
+    except Exception as e:
+        logger.error(f"Redis eval error: {e}")
+        stored_images = []
+
+    if not stored_images:
+        # Значит другой обработчик (воркер) уже забрал данные и обрабатывает их
         return
-
-    # Обычная обработка (по одному фото)
-    if len(remix_images) >= max_images:
-        await message.answer(
-            f"❌ Уже загружено максимальное количество изображений ({max_images}). Теперь отправьте текстовый промт.",
-            reply_markup=get_cancel_keyboard(),
-        )
-        return
-
-    remix_images.append(photo.file_id)
+    
+    # Этот воркер - "победитель", он обрабатывает всю пачку
+    
+    # 1. Забираем caption из Redis (если был)
+    stored_caption = await redis.get(key_caption)
+    if stored_caption:
+        stored_caption = stored_caption.decode('utf-8')
+        await redis.delete(key_caption)
+        # Обновляем pending_caption, если нашли новый
+        pending_caption = stored_caption
+    
+    # 2. Декодируем image ids
+    new_images = [img_id.decode('utf-8') if isinstance(img_id, bytes) else img_id for img_id in stored_images]
+    
+    # 3. Получаем АКТУАЛЬНЫЙ стейт заново, так как за время sleep он мог измениться (маловероятно при такой схеме, но надежнее)
+    # Но так как мы единственные кто пишет в remix_images через этот буфер, можно брать из data, 
+    # но лучше перестраховаться, если вдруг были какие-то другие операции.
+    # data = await state.get_data() -> уже есть.
+    # remix_images = data.get('remix_images', []) -> уже есть.
+    # Просто добавляем.
+    
+    remix_images.extend(new_images)
+    remix_images = list(dict.fromkeys(remix_images)) # Уник
+    
+    # 4. Сохраняем обновленный список и pending_caption в стейт
     await state.update_data(remix_images=remix_images, pending_caption=pending_caption)
-
+    
+    # 5. Проверяем условия авто-старта
+    # Для ремикса всегда нужно минимум 2 изображения
     min_needed = 2
-
-    # Если накопили нужное кол-во и есть caption (текущий или сохраненный)
+    
     if len(remix_images) >= min_needed and pending_caption:
+        # Есть и картинки и промт - запускаем
         await _start_generation(message, state, pending_caption)
         return
-
-    if len(remix_images) < min_needed:
-        await message.answer(
-            f"✅ Изображение {len(remix_images)} загружено. Нужно минимум {min_needed} изображений."
-            f" Загрузите ещё или отмените операцию.",
-            reply_markup=get_cancel_keyboard(),
-        )
-    elif len(remix_images) < max_images:
-        await message.answer(
-            f"✅ Изображение {len(remix_images)} загружено. Можно добавить ещё {max_images - len(remix_images)} "
-            "или отправить текстовый промт.",
-            reply_markup=get_cancel_keyboard(),
-        )
+        
+    # 6. Если автостарт не сработал - отправляем статус (ОДИН РАЗ на пачку)
+    msg_text = ""
+    if len(remix_images) >= max_images:
+            msg_text = f"✅ Загружено {len(remix_images)} изображений (максимум). Отправьте текстовый промт."
+    elif len(remix_images) < min_needed:
+            msg_text = f"✅ Загружено {len(remix_images)} изображений. Нужно минимум {min_needed}. Загрузите ещё."
     else:
-        await message.answer(
-            "✅ Достаточно изображений! Отправьте текстовый промт для запуска ремикса.",
-            reply_markup=get_cancel_keyboard(),
-        )
+            msg_text = f"✅ Загружено {len(remix_images)} изображений. Можно добавить ещё или отправить промт."
+            
+    await message.answer(msg_text, reply_markup=get_cancel_keyboard())
+    return
 
 
 @router.callback_query(F.data == "main_menu")
