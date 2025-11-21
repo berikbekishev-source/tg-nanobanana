@@ -4,6 +4,7 @@
 from typing import List, Optional, Tuple
 
 from aiogram import Router, F
+from aiogram.filters import StateFilter
 from aiogram.types import Message, CallbackQuery
 from aiogram.fsm.context import FSMContext
 
@@ -306,7 +307,15 @@ async def wait_resolution_selection(message: Message, state: FSMContext):
     )
 
 
-@router.callback_query(BotStates.video_select_format, F.data.startswith("video_format:"))
+@router.callback_query(
+    StateFilter(
+        BotStates.video_select_format,
+        BotStates.video_select_duration,
+        BotStates.video_select_resolution,
+        BotStates.video_wait_prompt,
+    ),
+    F.data.startswith("video_format:"),
+)
 async def set_video_format(callback: CallbackQuery, state: FSMContext):
     """Сохраняем выбранное соотношение сторон и переходим к сбору промта."""
     await callback.answer()
@@ -353,7 +362,14 @@ async def set_video_format(callback: CallbackQuery, state: FSMContext):
     await state.set_state(BotStates.video_wait_prompt)
 
 
-@router.callback_query(BotStates.video_select_duration, F.data.startswith("video_duration:"))
+@router.callback_query(
+    StateFilter(
+        BotStates.video_select_duration,
+        BotStates.video_wait_prompt,
+        BotStates.video_select_resolution,
+    ),
+    F.data.startswith("video_duration:"),
+)
 async def set_video_duration(callback: CallbackQuery, state: FSMContext):
     """Сохраняем выбранную длительность и переходим к сбору промта."""
     await callback.answer()
@@ -399,7 +415,10 @@ async def set_video_duration(callback: CallbackQuery, state: FSMContext):
     await state.set_state(BotStates.video_wait_prompt)
 
 
-@router.callback_query(BotStates.video_select_resolution, F.data.startswith("video_resolution:"))
+@router.callback_query(
+    StateFilter(BotStates.video_select_resolution, BotStates.video_wait_prompt),
+    F.data.startswith("video_resolution:"),
+)
 async def set_video_resolution(callback: CallbackQuery, state: FSMContext):
     """Сохраняем выбранное качество и переходим к сбору промта."""
     await callback.answer()

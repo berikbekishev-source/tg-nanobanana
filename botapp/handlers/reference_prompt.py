@@ -9,12 +9,10 @@ from typing import List, Optional, Tuple
 from aiogram import F, Router
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
-from django.conf import settings
 
 from botapp.error_tracker import ErrorTracker
 from botapp.keyboards import (
     get_cancel_keyboard,
-    get_main_menu_keyboard,
     get_reference_prompt_mods_keyboard,
     get_reference_prompt_models_keyboard,
 )
@@ -34,7 +32,6 @@ router = Router()
 service = ReferencePromptService()
 
 URL_RE = re.compile(r"(https?://[^\s]+|www\.[^\s]+)", re.IGNORECASE)
-PAYMENT_URL = getattr(settings, "PAYMENT_MINI_APP_URL", "https://example.com/payment")
 
 
 def _extract_urls(text: Optional[str]) -> List[str]:
@@ -248,7 +245,7 @@ async def _start_prompt_generation(message: Message, state: FSMContext, modifica
 
     await message.answer(
         "Создаю промт для генерация видео по указанному рефференсу, ожидайте пару минут ⏳",
-        reply_markup=get_cancel_keyboard()
+        reply_markup=get_cancel_keyboard(),
     )
     await state.set_state(BotStates.reference_prompt_processing)
 
