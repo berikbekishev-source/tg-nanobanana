@@ -2,6 +2,7 @@
 
 | Status | Commit | Description | Date |
 | :--- | :--- | :--- | :--- |
+| 🔧 LOCAL | `pending` | **Fix Vertex AI Image Generation**: Добавлено детальное логирование всех попыток запросов к Vertex AI (credentials, URL, response). Логирование с префиксами [VERTEX], [IMAGE_GEN], [IMAGE_EDIT] для легкой диагностики. Приоритет Vertex AI сохранён. | 2025-11-21 |
 | ✅ STAGING | `f08cf8f` | **UX Improvements & Remix Tweak**: 1) Allowed all Menu/Inline buttons to work from any FSM state (auto-clear state). 2) Increased Remix media group buffer to 2.0s for better reliability. | 2025-11-21 || ✅ STAGING | `7c51e41` | **Fix Remix Media Group (Unified Buffer)**: Implemented universal Redis buffer to collect all remix images (single or album) for 1.0s. Uses Lua script for atomic fetching. Fixes race conditions and double responses. | 2025-11-21 |
 | ✅ STAGING | `a0e2b4c` | **Fix Remix Media Group (Robust)**: Added Lua script for atomic Redis operations to handle media groups correctly. Enhanced `pending_caption` logic to capture caption from any photo in the group. Fixed `min_needed` to 2. | 2025-11-21 |
 | ✅ STAGING | `5655735` | **Fix Remix Media Group**: Added support for collecting photos from `media_group_id`. Auto-start generation when `min_needed` (2) photos + caption are received. Fixed issue where bot ignored multiple photos. | 2025-11-21 |

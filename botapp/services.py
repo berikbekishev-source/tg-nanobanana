@@ -809,11 +809,17 @@ _VERTEX_SCOPES = [
 
 
 def _authorized_vertex_session() -> AuthorizedSession:
+    """Создает авторизованную сессию для Vertex AI с логированием."""
+    print("[VERTEX] Loading service account credentials...", flush=True)
     creds_info = _load_service_account_info()
+    print(f"[VERTEX] Credentials loaded. Project from creds: {creds_info.get('project_id', 'N/A')}", flush=True)
+    print(f"[VERTEX] Service account email: {creds_info.get('client_email', 'N/A')}", flush=True)
+    
     credentials = service_account.Credentials.from_service_account_info(
         creds_info,
         scopes=_VERTEX_SCOPES,
     )
+    print(f"[VERTEX] Credentials initialized with scopes: {_VERTEX_SCOPES}", flush=True)
     return AuthorizedSession(credentials)
 
 
@@ -889,10 +895,20 @@ def _gemini_vertex_request(
     quantity: int,
     params: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
+    """Запрос к Vertex AI Imagen/Gemini с детальным логированием."""
+    print(f"[VERTEX] Preparing request to Vertex AI", flush=True)
+    print(f"[VERTEX] Project: {project_id}, Location: {location}, Model: {model_path}", flush=True)
+    
     session = _authorized_vertex_session()
     url = f"https://{location}-aiplatform.googleapis.com/v1/projects/{project_id}/locations/{location}/{model_path}:generateContent"
     payload = _build_gemini_payload(parts, quantity, params)
+    
+    print(f"[VERTEX] Sending POST request to: {url}", flush=True)
+    print(f"[VERTEX] Payload keys: {list(payload.keys())}", flush=True)
+    
     response = session.post(url, json=payload, timeout=120)
+    
+    print(f"[VERTEX] Response status: {response.status_code}", flush=True)
     
     # Если ошибка - кидаем исключение, чтобы верхний уровень (gemini_vertex_generate) мог его поймать и решить что делать
     if response.status_code != 200:
@@ -901,7 +917,10 @@ def _gemini_vertex_request(
             detail = response.json()
         except ValueError:
             pass
+        print(f"[VERTEX] ERROR Response: {str(detail)[:500]}", flush=True)
         raise ValueError(f"Vertex AI error ({response.status_code}): {detail}")
+    
+    print(f"[VERTEX] Request successful!", flush=True)
     return response.json()
 
 def gemini_vertex_edit(
@@ -935,10 +954,11 @@ def gemini_vertex_edit(
     vertex_error = None
     # Пробуем Vertex по умолчанию
     try:
-        print(f"Attempting Vertex AI edit for model {model_path}...", flush=True)
+        print(f"[IMAGE_EDIT] Attempting Vertex AI edit for model {model_path}...", flush=True)
         creds_info = _load_service_account_info()
         project_id = getattr(settings, "GCP_PROJECT_ID", creds_info.get("project_id"))
         location = getattr(settings, "GCP_LOCATION", "us-central1")
+        print(f"[IMAGE_EDIT] Using Project: {project_id}, Location: {location}", flush=True)
         
         data = _gemini_vertex_request(
             project_id=project_id,
@@ -948,15 +968,16 @@ def gemini_vertex_edit(
             quantity=quantity,
             params=params,
         )
-        print("Vertex AI edit successful.", flush=True)
+        print("[IMAGE_EDIT] ✓ Vertex AI edit successful.", flush=True)
     except Exception as e:
         vertex_error = e
-        print(f"Vertex AI edit failed: {e}. Falling back to Gemini API.", flush=True)
+        print(f"[IMAGE_EDIT] ✗ Vertex AI edit failed: {e}", flush=True)
+        print(f"[IMAGE_EDIT] Falling back to Gemini API...", flush=True)
         data = None
 
     if not data:
         if api_key:
-            print(f"Attempting Gemini API fallback (edit)...", flush=True)
+            print(f"[IMAGE_EDIT] Attempting Gemini API fallback for model {_gemini_model_name(model_path)}...", flush=True)
             try:
                 data = _gemini_google_api_request(
                     model_name=_gemini_model_name(model_path),
@@ -965,10 +986,12 @@ def gemini_vertex_edit(
                     params=params,
                     api_key=api_key,
                 )
-                print("Gemini API edit successful.", flush=True)
+                print("[IMAGE_EDIT] ✓ Gemini API edit successful (fallback).", flush=True)
             except Exception as e:
+                print(f"[IMAGE_EDIT] ✗ Gemini API failed: {e}", flush=True)
                 raise ValueError(f"Edit generation failed. Vertex error: {vertex_error}. Gemini error: {e}")
         else:
+            print(f"[IMAGE_EDIT] ✗ No Gemini API key available for fallback", flush=True)
             raise ValueError(f"Vertex AI edit failed and no Gemini API key provided. Error: {vertex_error}")
 
     outputs = data.get("candidates") or []
@@ -1004,10 +1027,12 @@ def gemini_vertex_generate(
 
     # 1. Попытка через Vertex AI
     try:
-        print(f"Attempting Vertex AI generation for model {model_path}...", flush=True)
+        print(f"[IMAGE_GEN] Attempting Vertex AI generation for model {model_path}...", flush=True)
+        print(f"[IMAGE_GEN] Prompt: {prompt[:100]}...", flush=True)
         creds_info = _load_service_account_info()
         project_id = getattr(settings, "GCP_PROJECT_ID", creds_info.get("project_id"))
         location = getattr(settings, "GCP_LOCATION", "us-central1")
+        print(f"[IMAGE_GEN] Using Project: {project_id}, Location: {location}", flush=True)
         
         data = _gemini_vertex_request(
             project_id=project_id,
@@ -1017,16 +1042,17 @@ def gemini_vertex_generate(
             quantity=quantity,
             params=params,
         )
-        print("Vertex AI generation successful.", flush=True)
+        print("[IMAGE_GEN] ✓ Vertex AI generation successful.", flush=True)
     except Exception as e:
         vertex_error = e
-        print(f"Vertex AI failed: {e}. Falling back to Gemini API.", flush=True)
+        print(f"[IMAGE_GEN] ✗ Vertex AI failed: {e}", flush=True)
+        print(f"[IMAGE_GEN] Falling back to Gemini API...", flush=True)
         data = None
 
     # 2. Fallback на Gemini API
     if not data:
         if api_key:
-            print(f"Attempting Gemini API fallback for model {_gemini_model_name(model_path)}...", flush=True)
+            print(f"[IMAGE_GEN] Attempting Gemini API fallback for model {_gemini_model_name(model_path)}...", flush=True)
             try:
                 data = _gemini_google_api_request(
                     model_name=_gemini_model_name(model_path),
@@ -1035,12 +1061,13 @@ def gemini_vertex_generate(
                     params=params,
                     api_key=api_key,
                 )
-                print("Gemini API generation successful.", flush=True)
+                print("[IMAGE_GEN] ✓ Gemini API generation successful (fallback).", flush=True)
             except Exception as e:
-                print(f"Gemini API failed: {e}", flush=True)
+                print(f"[IMAGE_GEN] ✗ Gemini API failed: {e}", flush=True)
                 raise ValueError(f"Generation failed. Vertex error: {vertex_error}. Gemini error: {e}")
         else:
             # Если ключа нет, а Vertex упал
+            print(f"[IMAGE_GEN] ✗ No Gemini API key available for fallback", flush=True)
             raise ValueError(f"Vertex AI generation failed and no Gemini API key provided. Error: {vertex_error}")
 
     # Обработка ответа (одинаковая для обоих)
