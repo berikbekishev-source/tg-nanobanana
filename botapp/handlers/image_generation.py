@@ -88,10 +88,13 @@ async def _start_generation(message: Message, state: FSMContext, prompt: str):
         if max_images is None or max_images <= 0:
             max_images = min_required
         max_allowed = max(min_required, max_images)
+        # Детальное логирование для диагностики
         logger.info(
             f"[HANDLER] Remix mode: remix_images={len(remix_images)}, "
-            f"max_allowed={max_allowed}, model_id={data.get('model_id')}"
+            f"max_allowed={max_allowed}, model_id={data.get('model_id')}, "
+            f"max_images={max_images}"
         )
+        logger.info(f"[HANDLER DEBUG] remix_images file_ids: {remix_images}")
         if len(remix_images) < min_required:
             await message.answer(
                 f"Для режима «Ремикс» нужно минимум {min_required} изображений. Загрузите ещё и повторите попытку.",
@@ -103,7 +106,7 @@ async def _start_generation(message: Message, state: FSMContext, prompt: str):
             {"telegram_file_id": file_id, "type": "subject"}
             for file_id in remix_images[:max_allowed]
         ]
-        logger.info(f"[HANDLER] Created input_entries with {len(input_entries)} images")
+        logger.info(f"[HANDLER] Created input_entries with {len(input_entries)} images from {len(remix_images)} available")
     else:
         input_entries = []
 
@@ -288,17 +291,20 @@ async def receive_image_for_prompt(message: Message, state: FSMContext):
     # 2. Декодируем image ids
     new_images = [img_id.decode('utf-8') if isinstance(img_id, bytes) else img_id for img_id in stored_images]
     logger.info(f"[REMIX_BUFFER] Decoded {len(new_images)} images from Redis")
-    
+    logger.info(f"[REMIX_BUFFER DEBUG] new_images from Redis: {new_images}")
+
     # 3. Получаем АКТУАЛЬНЫЙ стейт заново, так как за время sleep он мог измениться (маловероятно при такой схеме, но надежнее)
-    # Но так как мы единственные кто пишет в remix_images через этот буфер, можно брать из data, 
+    # Но так как мы единственные кто пишет в remix_images через этот буфер, можно брать из data,
     # но лучше перестраховаться, если вдруг были какие-то другие операции.
     # data = await state.get_data() -> уже есть.
     # remix_images = data.get('remix_images', []) -> уже есть.
     # Просто добавляем.
-    
+
+    logger.info(f"[REMIX_BUFFER DEBUG] remix_images before extend: {remix_images}")
     remix_images.extend(new_images)
     remix_images = list(dict.fromkeys(remix_images)) # Уник
     logger.info(f"[REMIX_BUFFER] Updated remix_images list: count={len(remix_images)}, has_caption={bool(pending_caption)}")
+    logger.info(f"[REMIX_BUFFER DEBUG] remix_images after unique: {remix_images}")
 
     # 4. Сохраняем обновленный список и pending_caption в стейт
     await state.update_data(remix_images=remix_images, pending_caption=pending_caption)
