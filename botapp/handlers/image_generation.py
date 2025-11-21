@@ -222,6 +222,11 @@ async def receive_image_for_prompt(message: Message, state: FSMContext):
     remix_images = data.get('remix_images', [])
     chat_id = message.chat.id
 
+    # Логирование входящего изображения
+    logger.info(f"[REMIX INCOMING] New photo received: file_id={photo.file_id[:20]}..., "
+                f"media_group_id={message.media_group_id}, caption={bool(message.caption)}, "
+                f"current_remix_count={len(remix_images)}")
+
     # Если есть подпись в текущем сообщении, запоминаем её в локальную переменную
     # (но сохранять в стейт будем только в блоке обработки, чтобы избежать гонки)
     current_caption = message.caption
@@ -314,8 +319,12 @@ async def receive_image_for_prompt(message: Message, state: FSMContext):
     # Для ремикса всегда нужно минимум 2 изображения
     min_needed = 2
 
+    logger.info(f"[REMIX AUTO-START CHECK] remix_images={len(remix_images)}, "
+                f"min_needed={min_needed}, has_caption={bool(pending_caption)}")
+
     if len(remix_images) >= min_needed and pending_caption:
         # Есть и картинки (2+) и промт - запускаем генерацию сразу
+        logger.info(f"[REMIX AUTO-START] Triggering generation with {len(remix_images)} images")
         await _start_generation(message, state, pending_caption)
         return
 
