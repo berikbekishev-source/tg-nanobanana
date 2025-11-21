@@ -247,16 +247,20 @@ async def global_select_image_model(callback: CallbackQuery, state: FSMContext):
         price_label = f"⚡{model_cost:.2f} токенов"
         base = PUBLIC_BASE_URL or "https://example.com"
         webapp_url = f"{base}/midjourney/?price={quote_plus(price_label)}"
-        keyboard = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(
-                text="⚙️ Настройки Midjourney",
-                web_app=WebAppInfo(url=webapp_url)
-            )]
-        ])
-        await callback.message.answer(
-            "Настройки Midjourney",
-            reply_markup=keyboard,
-        )
+        try:
+            await callback.answer(url=webapp_url)
+        except Exception:
+            # Если Telegram не открыл WebApp через callback, покажем кнопку.
+            keyboard = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(
+                    text="⚙️ Открыть настройки Midjourney",
+                    web_app=WebAppInfo(url=webapp_url)
+                )]
+            ])
+            await callback.message.answer(
+                "Откройте настройки Midjourney",
+                reply_markup=keyboard,
+            )
         await state.set_state(BotStates.midjourney_wait_settings)
         return
 
