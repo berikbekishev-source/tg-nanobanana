@@ -225,10 +225,12 @@ async def receive_image_for_prompt(message: Message, state: FSMContext):
     # Сохраняем file_id в Redis-список
     await redis.rpush(key_images, photo.file_id)
     await redis.expire(key_images, 60)
+    logger.info(f"[REMIX_BUFFER] Added photo to Redis buffer: chat_id={chat_id}, file_id={photo.file_id[:20]}..., media_group_id={message.media_group_id}")
 
     # Если пришла подпись - сохраняем её в Redis (перезаписываем, считаем актуальной последнюю/любую)
     if current_caption:
         await redis.set(key_caption, current_caption, ex=60)
+        logger.info(f"[REMIX_BUFFER] Saved caption to Redis: chat_id={chat_id}, caption_len={len(current_caption)}")
 
     # Оптимизированная задержка:
     # - Для альбомов С описанием (caption): минимальная задержка 0.3 сек - только для сбора пачки
@@ -262,10 +264,12 @@ async def receive_image_for_prompt(message: Message, state: FSMContext):
 
     if not stored_images:
         # Значит другой обработчик (воркер) уже забрал данные и обрабатывает их
+        logger.info(f"[REMIX_BUFFER] No images in buffer (already processed by another worker): chat_id={chat_id}")
         return
-    
+
     # Этот воркер - "победитель", он обрабатывает всю пачку
-    
+    logger.info(f"[REMIX_BUFFER] Processing buffer: chat_id={chat_id}, stored_images_count={len(stored_images)}")
+
     # 1. Забираем caption из Redis (если был)
     stored_caption = await redis.get(key_caption)
     if stored_caption:
@@ -273,9 +277,11 @@ async def receive_image_for_prompt(message: Message, state: FSMContext):
         await redis.delete(key_caption)
         # Обновляем pending_caption, если нашли новый
         pending_caption = stored_caption
-    
+        logger.info(f"[REMIX_BUFFER] Got caption from Redis: caption_len={len(stored_caption)}")
+
     # 2. Декодируем image ids
     new_images = [img_id.decode('utf-8') if isinstance(img_id, bytes) else img_id for img_id in stored_images]
+    logger.info(f"[REMIX_BUFFER] Decoded {len(new_images)} images from Redis")
     
     # 3. Получаем АКТУАЛЬНЫЙ стейт заново, так как за время sleep он мог измениться (маловероятно при такой схеме, но надежнее)
     # Но так как мы единственные кто пишет в remix_images через этот буфер, можно брать из data, 
@@ -286,9 +292,11 @@ async def receive_image_for_prompt(message: Message, state: FSMContext):
     
     remix_images.extend(new_images)
     remix_images = list(dict.fromkeys(remix_images)) # Уник
-    
+    logger.info(f"[REMIX_BUFFER] Updated remix_images list: count={len(remix_images)}, has_caption={bool(pending_caption)}")
+
     # 4. Сохраняем обновленный список и pending_caption в стейт
     await state.update_data(remix_images=remix_images, pending_caption=pending_caption)
+    logger.info(f"[REMIX_BUFFER] Saved to FSM state: remix_images_count={len(remix_images)}")
     
     # 5. Проверяем условия авто-старта
     # Для ремикса всегда нужно минимум 2 изображения
