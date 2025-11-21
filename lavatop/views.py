@@ -19,3 +19,18 @@ def miniapp_payment(request):
         html_content = f.read()
 
     return HttpResponse(html_content, content_type='text/html')
+
+
+@csrf_exempt
+@xframe_options_exempt
+def midjourney_webapp(request):
+    """
+    Мини-приложение настроек Midjourney (Telegram WebApp).
+    """
+    webapp_dir = os.path.join(os.path.dirname(__file__), 'webapp')
+    page_path = os.path.join(webapp_dir, 'midjourney.html')
+
+    with open(page_path, 'r', encoding='utf-8') as f:
+        html_content = f.read()
+
+    return HttpResponse(html_content, content_type='text/html')

@@ -3,9 +3,10 @@
 Эти обработчики должны работать из ЛЮБОГО состояния.
 """
 from typing import List, Tuple
+from urllib.parse import quote_plus
 
 from aiogram import Router, F
-from aiogram.types import Message, CallbackQuery
+from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
 from aiogram.filters import StateFilter, Command
 from aiogram.fsm.context import FSMContext
 from django.conf import settings
@@ -238,7 +239,27 @@ async def global_select_image_model(callback: CallbackQuery, state: FSMContext):
         image_mode=None,
         remix_images=[],
         edit_base_id=None,
+        midjourney_params=None,
     )
+
+    if model.provider == "midjourney":
+        price_label = f"⚡{model_cost:.2f} токенов"
+        base_url = getattr(settings, "PUBLIC_BASE_URL", "").rstrip("/")
+        webapp_url = f"{base_url}/midjourney/?price={quote_plus(price_label)}" if base_url else "https://example.com/midjourney/"
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(
+                text="⚙️ Открыть настройки Midjourney",
+                web_app=WebAppInfo(url=webapp_url)
+            )],
+            [InlineKeyboardButton(text="❌ Отмена", callback_data="cancel")]
+        ])
+        await callback.message.answer(
+            "Откройте настройки Midjourney, задайте параметры и нажмите «Сгенерировать».\n\n"
+            "Если выберете режим «Изображение → Изображение», после закрытия отправьте картинку в чат — я использую её вместе с промтом.",
+            reply_markup=keyboard,
+        )
+        await state.set_state(BotStates.midjourney_wait_settings)
+        return
 
     remix_max = model.max_input_images or 4
     info_message = (
