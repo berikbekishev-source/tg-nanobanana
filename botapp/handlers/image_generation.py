@@ -220,18 +220,6 @@ async def receive_image_for_prompt(message: Message, state: FSMContext):
     key_images = f"remix_buffer_imgs:{chat_id}"
     key_caption = f"remix_buffer_cap:{chat_id}"
 
-    # Проверяем текущее количество изображений в буфере
-    current_buffer_count = await redis.llen(key_images)
-    total_images = len(remix_images) + current_buffer_count
-
-    # Если уже достигли максимума - не добавляем больше
-    if total_images >= max_images:
-        await message.answer(
-            f"⚠️ Достигнут максимум изображений ({max_images}). Дополнительные фото игнорируются.",
-            reply_markup=get_cancel_keyboard()
-        )
-        return
-
     # Сохраняем file_id в Redis-список
     await redis.rpush(key_images, photo.file_id)
     await redis.expire(key_images, 60)
