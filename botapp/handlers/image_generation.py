@@ -281,21 +281,23 @@ async def receive_image_for_prompt(message: Message, state: FSMContext):
     # 5. Проверяем условия авто-старта
     # Для ремикса всегда нужно минимум 2 изображения
     min_needed = 2
-    
+
     if len(remix_images) >= min_needed and pending_caption:
-        # Есть и картинки и промт - запускаем
+        # Есть и картинки (2+) и промт - запускаем генерацию сразу
         await _start_generation(message, state, pending_caption)
         return
-        
+
     # 6. Если автостарт не сработал - отправляем статус (ОДИН РАЗ на пачку)
+    # Показываем статус только если НЕТ промта или не хватает изображений
     msg_text = ""
     if len(remix_images) >= max_images:
-            msg_text = f"✅ Загружено {len(remix_images)} изображений (максимум). Отправьте текстовый промт."
+        msg_text = f"✅ Загружено {len(remix_images)} изображений (максимум). Отправьте текстовый промт."
     elif len(remix_images) < min_needed:
-            msg_text = f"✅ Загружено {len(remix_images)} изображений. Нужно минимум {min_needed}. Загрузите ещё."
+        msg_text = f"✅ Загружено {len(remix_images)} изображений. Нужно минимум {min_needed}. Загрузите ещё."
     else:
-            msg_text = f"✅ Загружено {len(remix_images)} изображений. Можно добавить ещё или отправить промт."
-            
+        # 2 или больше изображений, но нет промта
+        msg_text = f"✅ Загружено {len(remix_images)} изображений. Можно добавить ещё или отправить промт."
+
     await message.answer(msg_text, reply_markup=get_cancel_keyboard())
     return
 

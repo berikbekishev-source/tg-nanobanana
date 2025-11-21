@@ -565,7 +565,11 @@ def generate_image_task(self, request_id: int):
             # Для ремикса отправляем все загруженные изображения (до 4), даже если модель задана строже.
             if image_mode == "remix":
                 max_inputs = min(len(input_sources), 4) or None
+
+            logger.info(f"[TASK] Подготовка изображений для запроса {req.id}: input_sources={len(input_sources)}, max_inputs={max_inputs}, mode={image_mode}")
             input_images_payload = _prepare_input_images(input_sources, max_inputs)
+            logger.info(f"[TASK] Подготовлено {len(input_images_payload)} изображений для передачи в модель")
+
             if not input_images_payload:
                 generation_type = 'text2image'
         if generation_type != 'image2image':
