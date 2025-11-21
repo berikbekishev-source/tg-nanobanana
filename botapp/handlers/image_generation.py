@@ -89,6 +89,10 @@ async def _start_generation(message: Message, state: FSMContext, prompt: str):
             max_images = min_required
         max_allowed = max(min_required, max_images)
         # Детальное логирование для диагностики
+        print(f"[START_GENERATION] Remix mode: remix_images={len(remix_images)}, "
+              f"max_allowed={max_allowed}, model_id={data.get('model_id')}, "
+              f"max_images={max_images}", flush=True)
+        print(f"[START_GENERATION] remix_images file_ids: {remix_images}", flush=True)
         logger.info(
             f"[HANDLER] Remix mode: remix_images={len(remix_images)}, "
             f"max_allowed={max_allowed}, model_id={data.get('model_id')}, "
@@ -223,6 +227,9 @@ async def receive_image_for_prompt(message: Message, state: FSMContext):
     chat_id = message.chat.id
 
     # Логирование входящего изображения
+    print(f"[REMIX INCOMING] New photo received: file_id={photo.file_id[:20]}..., "
+          f"media_group_id={message.media_group_id}, caption={bool(message.caption)}, "
+          f"current_remix_count={len(remix_images)}", flush=True)
     logger.info(f"[REMIX INCOMING] New photo received: file_id={photo.file_id[:20]}..., "
                 f"media_group_id={message.media_group_id}, caption={bool(message.caption)}, "
                 f"current_remix_count={len(remix_images)}")
@@ -319,11 +326,14 @@ async def receive_image_for_prompt(message: Message, state: FSMContext):
     # Для ремикса всегда нужно минимум 2 изображения
     min_needed = 2
 
+    print(f"[REMIX AUTO-START CHECK] remix_images={len(remix_images)}, "
+          f"min_needed={min_needed}, has_caption={bool(pending_caption)}", flush=True)
     logger.info(f"[REMIX AUTO-START CHECK] remix_images={len(remix_images)}, "
                 f"min_needed={min_needed}, has_caption={bool(pending_caption)}")
 
     if len(remix_images) >= min_needed and pending_caption:
         # Есть и картинки (2+) и промт - запускаем генерацию сразу
+        print(f"[REMIX AUTO-START] Triggering generation with {len(remix_images)} images", flush=True)
         logger.info(f"[REMIX AUTO-START] Triggering generation with {len(remix_images)} images")
         await _start_generation(message, state, pending_caption)
         return
