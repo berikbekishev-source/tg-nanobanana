@@ -331,14 +331,27 @@ async def receive_image_for_prompt(message: Message, state: FSMContext):
     logger.info(f"[REMIX AUTO-START CHECK] remix_images={len(remix_images)}, "
                 f"min_needed={min_needed}, has_caption={bool(pending_caption)}")
 
-    if len(remix_images) >= min_needed and pending_caption:
-        # Есть и картинки (2+) и промт - запускаем генерацию сразу
-        print(f"[REMIX AUTO-START] Triggering generation with {len(remix_images)} images", flush=True)
-        logger.info(f"[REMIX AUTO-START] Triggering generation with {len(remix_images)} images")
+    # ИСПРАВЛЕНИЕ: Автостарт только для одиночных изображений
+    # Для альбомов (media_group_id) НЕ запускаем генерацию здесь,
+    # так как это вызывало потерю 3+ изображений
+    # Альбомы будут запускаться через обработчик текстового сообщения после полного сбора
+
+    if len(remix_images) >= min_needed and pending_caption and not message.media_group_id:
+        # Автостарт ТОЛЬКО для одиночных изображений с подписью
+        print(f"[REMIX AUTO-START] Triggering generation with {len(remix_images)} images (single mode)", flush=True)
+        logger.info(f"[REMIX AUTO-START] Triggering generation with {len(remix_images)} images (single mode)")
         await _start_generation(message, state, pending_caption)
         return
 
-    # 6. Если автостарт не сработал - отправляем статус (ОДИН РАЗ на пачку)
+    # 6. Проверяем автостарт для альбомов после полного сбора
+    # Это нужно для альбомов с подписью - они собираются через буфер и запускаются здесь
+    if len(remix_images) >= min_needed and pending_caption and message.media_group_id:
+        print(f"[REMIX AUTO-START ALBUM] Triggering generation with {len(remix_images)} images after full collection", flush=True)
+        logger.info(f"[REMIX AUTO-START ALBUM] Triggering generation with {len(remix_images)} images after full collection")
+        await _start_generation(message, state, pending_caption)
+        return
+
+    # 7. Если автостарт не сработал - отправляем статус (ОДИН РАЗ на пачку)
     # Показываем статус только если НЕТ промта или не хватает изображений
     # НЕ показываем промежуточные статусы для альбомов с caption (они обрабатываются после задержки)
     msg_text = ""
