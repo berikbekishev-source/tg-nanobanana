@@ -880,6 +880,24 @@ def _gemini_google_api_request(
     """Запрос в Generative Language API с авторизацией через service account."""
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent"
     payload = _build_gemini_payload(parts, quantity, params)
+
+    # Детальное логирование структуры contents для диагностики
+    print(f"[GEMINI_API] Sending request to: {url}", flush=True)
+    contents = payload.get("contents", [])
+    if contents:
+        for idx, content in enumerate(contents):
+            parts_list = content.get("parts", [])
+            print(f"[GEMINI_API] Content[{idx}] has {len(parts_list)} parts", flush=True)
+            for part_idx, part in enumerate(parts_list):
+                if "text" in part:
+                    print(f"[GEMINI_API]   Part[{part_idx}]: text ({len(part['text'])} chars)", flush=True)
+                elif "inlineData" in part:
+                    mime = part["inlineData"].get("mimeType", "unknown")
+                    data_len = len(part["inlineData"].get("data", ""))
+                    print(f"[GEMINI_API]   Part[{part_idx}]: inlineData ({mime}, {data_len} bytes base64)", flush=True)
+                else:
+                    print(f"[GEMINI_API]   Part[{part_idx}]: {list(part.keys())}", flush=True)
+
     if api_key:
         headers = {"x-goog-api-key": api_key, "Content-Type": "application/json"}
         response = httpx.post(url, headers=headers, json=payload, timeout=120)
@@ -946,7 +964,23 @@ def _gemini_vertex_request(
     
     print(f"[VERTEX] Sending POST request to: {url}", flush=True)
     print(f"[VERTEX] Payload keys: {list(payload.keys())}", flush=True)
-    
+
+    # Детальное логирование структуры contents для диагностики
+    contents = payload.get("contents", [])
+    if contents:
+        for idx, content in enumerate(contents):
+            parts = content.get("parts", [])
+            print(f"[VERTEX] Content[{idx}] has {len(parts)} parts", flush=True)
+            for part_idx, part in enumerate(parts):
+                if "text" in part:
+                    print(f"[VERTEX]   Part[{part_idx}]: text ({len(part['text'])} chars)", flush=True)
+                elif "inlineData" in part:
+                    mime = part["inlineData"].get("mimeType", "unknown")
+                    data_len = len(part["inlineData"].get("data", ""))
+                    print(f"[VERTEX]   Part[{part_idx}]: inlineData ({mime}, {data_len} bytes base64)", flush=True)
+                else:
+                    print(f"[VERTEX]   Part[{part_idx}]: {list(part.keys())}", flush=True)
+
     timeout = httpx.Timeout(120.0, connect=30.0)
     with httpx.Client(timeout=timeout) as client:
         response = client.post(url, json=payload, headers=headers)
