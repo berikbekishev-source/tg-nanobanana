@@ -76,3 +76,61 @@
 - Альбомы (2+ фото) обрабатываются корректно.
 - Если есть подпись к любому фото в серии → авто-старт.
 - Если подписи нет → бот ждет ввода текста после загрузки всех фото.
+
+## [2025-11-21] Изучение документации и настройка окружения
+
+**Агент:** Claude Opus 4.1
+**Ветка:** feature/agent-opus-docs-review
+**Worktree:** /Users/berik/Desktop/agent-opus-docs-review
+
+### Выполненные действия:
+1. Изучен файл `Документация/AGENTS.md` с правилами работы агентов
+2. Создан отдельный worktree `agent-opus-docs-review` для изолированной работы
+3. Проверен доступ к Railway CLI:
+   - Авторизация: Berik (berik.bekishev@gmail.com) ✅
+   - Линковка проекта: Telegram_bot (staging) ✅
+   - Чтение логов: доступно ✅
+
+### Ключевые правила из документации:
+- **НИКОГДА не пушить без разрешения** - всегда запрашивать подтверждение
+- Работать только в изолированном worktree
+- Использовать `GH_TOKEN` для GitHub (не `gh auth login`)
+- Railway CLI только для мониторинга (logs, status)
+- Все коммуникации на русском языке
+- Не использовать `railway deploy/up/redeploy`
+- Staging деплой автоматический через GitHub Actions
+- Production релиз только с разрешения человека
+
+### Результат:
+✅ Окружение настроено, доступы проверены, готов к работе
+
+## [2025-11-21] Исправление бага с потерей 3-го изображения в режиме remix
+
+**Агент:** Claude Opus 4.1
+**Ветка:** feature/agent-opus-docs-review
+**Worktree:** /Users/berik/Desktop/agent-opus-docs-review
+**Коммит:** c68898d8
+
+### Описание проблемы:
+При отправке 3+ изображений альбомом в режиме remix модель NanoBanana обрабатывала только 2 изображения.
+При отправке по одному изображению все работало корректно.
+
+### Анализ:
+1. В логах Railway обнаружено: `input_sources=2, max_inputs=2` при `model.max_input_images=6`
+2. Найдена проблема в `botapp/handlers/image_generation.py:86`:
+   ```python
+   max_images = data.get("max_images") or min_required  # БАГ!
+   ```
+3. При `max_images=0` оператор `or` возвращал `min_required=2`
+
+### Исправление:
+Добавлена корректная проверка max_images:
+```python
+max_images = data.get("max_images", min_required)
+if max_images is None or max_images <= 0:
+    max_images = min_required
+```
+
+### Результат:
+✅ Баг исправлен, теперь модель корректно обрабатывает все изображения из альбома
+⏳ Ожидает разрешения на push для деплоя в staging
