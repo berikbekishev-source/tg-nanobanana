@@ -562,11 +562,16 @@ def generate_image_task(self, request_id: int):
         if generation_type == 'image2image':
             input_sources = req.input_images or []
             max_inputs = model.max_input_images or None
-            # Для ремикса используем max_input_images модели (до 6 для Nano Banana Pro)
+            # Для ремикса отдаем все разрешенные моделью референсы (документация Gemini допускает до 14 для Pro).
             if image_mode == "remix":
-                max_inputs = min(len(input_sources), model.max_input_images or 4) or None
-
-            logger.info(f"[TASK] Подготовка изображений для запроса {req.id}: input_sources={len(input_sources)}, max_inputs={max_inputs}, model.max_input_images={model.max_input_images}, mode={image_mode}")
+                if max_inputs:
+                    max_inputs = min(len(input_sources), max_inputs)
+                else:
+                    max_inputs = len(input_sources) or None
+            logger.info(
+                f"[TASK] Подготовка изображений для запроса {req.id}: input_sources={len(input_sources)}, "
+                f"max_inputs={max_inputs}, model.max_input_images={model.max_input_images}, mode={image_mode}"
+            )
             input_images_payload = _prepare_input_images(input_sources, max_inputs)
             logger.info(f"[TASK] Подготовлено {len(input_images_payload)} изображений для передачи в модель")
 

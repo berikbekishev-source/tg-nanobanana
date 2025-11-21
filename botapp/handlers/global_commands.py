@@ -240,12 +240,13 @@ async def global_select_image_model(callback: CallbackQuery, state: FSMContext):
         edit_base_id=None,
     )
 
+    remix_max = model.max_input_images or 4
     info_message = (
         get_model_info_message(model, base_price=model_cost)
         + "\n\nРежимы:\n"
         "• Создать из текста — промт без изображений\n"
         "• Отредактировать — одно изображение + промт\n"
-        "• Ремикс — 2-4 изображения + промт"
+        f"• Ремикс — 2-{remix_max} изображений + промт"
     )
 
     await callback.message.answer(

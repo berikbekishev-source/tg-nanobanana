@@ -83,8 +83,12 @@ async def _start_generation(message: Message, state: FSMContext, prompt: str):
         ]
     elif mode == "remix":
         min_required = 2
-        max_allowed = data.get("max_images", 4)  # Убираем хардкод лимит 4
-        logger.info(f"[HANDLER] Remix mode: remix_images={len(remix_images)}, max_allowed={max_allowed}, model_id={data.get('model_id')}")
+        max_images = data.get("max_images") or min_required
+        max_allowed = max(min_required, max_images)
+        logger.info(
+            f"[HANDLER] Remix mode: remix_images={len(remix_images)}, "
+            f"max_allowed={max_allowed}, model_id={data.get('model_id')}"
+        )
         if len(remix_images) < min_required:
             await message.answer(
                 f"Для режима «Ремикс» нужно минимум {min_required} изображений. Загрузите ещё и повторите попытку.",
