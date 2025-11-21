@@ -241,14 +241,18 @@ async def receive_image_for_prompt(message: Message, state: FSMContext):
     # - Для альбомов БЕЗ описания: 1.5 сек - ждём пока пользователь добавит описание
     # - Для одиночных фото: 0.5 сек
     if message.media_group_id and current_caption:
-        # Альбом с описанием - быстрая обработка
-        delay = 0.3
+        # Альбом с описанием — ждём дольше, чтобы собрать 3+ фото
+        delay = 1.0
     elif message.media_group_id:
         # Альбом без описания - даём время на добавление описания
         delay = 1.5
     else:
         # Одиночное фото
         delay = 0.5
+    logger.info(
+        f"[REMIX_BUFFER] Delay before flush: delay={delay}, media_group={bool(message.media_group_id)}, "
+        f"has_caption={bool(current_caption)}"
+    )
     await asyncio.sleep(delay)
 
     # Используем Lua-скрипт для атомарного получения и удаления списка
