@@ -228,9 +228,19 @@ async def receive_image_for_prompt(message: Message, state: FSMContext):
     if current_caption:
         await redis.set(key_caption, current_caption, ex=60)
 
-    # Небольшая задержка, чтобы собрать пачку сообщений
-    # Для альбомов (media_group) ставим задержку больше, чтобы точно собрать все фото
-    delay = 2.0 if message.media_group_id else 0.5
+    # Оптимизированная задержка:
+    # - Для альбомов С описанием (caption): минимальная задержка 0.3 сек - только для сбора пачки
+    # - Для альбомов БЕЗ описания: 1.5 сек - ждём пока пользователь добавит описание
+    # - Для одиночных фото: 0.5 сек
+    if message.media_group_id and current_caption:
+        # Альбом с описанием - быстрая обработка
+        delay = 0.3
+    elif message.media_group_id:
+        # Альбом без описания - даём время на добавление описания
+        delay = 1.5
+    else:
+        # Одиночное фото
+        delay = 0.5
     await asyncio.sleep(delay)
 
     # Используем Lua-скрипт для атомарного получения и удаления списка
@@ -281,22 +291,28 @@ async def receive_image_for_prompt(message: Message, state: FSMContext):
     # 5. Проверяем условия авто-старта
     # Для ремикса всегда нужно минимум 2 изображения
     min_needed = 2
-    
+
     if len(remix_images) >= min_needed and pending_caption:
-        # Есть и картинки и промт - запускаем
+        # Есть и картинки (2+) и промт - запускаем генерацию сразу
         await _start_generation(message, state, pending_caption)
         return
-        
+
     # 6. Если автостарт не сработал - отправляем статус (ОДИН РАЗ на пачку)
+    # Показываем статус только если НЕТ промта или не хватает изображений
+    # НЕ показываем промежуточные статусы для альбомов с caption (они обрабатываются после задержки)
     msg_text = ""
     if len(remix_images) >= max_images:
-            msg_text = f"✅ Загружено {len(remix_images)} изображений (максимум). Отправьте текстовый промт."
+        msg_text = f"✅ Загружено {len(remix_images)} изображений (максимум). Отправьте текстовый промт."
     elif len(remix_images) < min_needed:
+        # Для альбомов с caption не показываем "Загружено 1" - ждём сбора всех фото
+        if not (message.media_group_id and current_caption):
             msg_text = f"✅ Загружено {len(remix_images)} изображений. Нужно минимум {min_needed}. Загрузите ещё."
     else:
-            msg_text = f"✅ Загружено {len(remix_images)} изображений. Можно добавить ещё или отправить промт."
-            
-    await message.answer(msg_text, reply_markup=get_cancel_keyboard())
+        # 2 или больше изображений, но нет промта
+        msg_text = f"✅ Загружено {len(remix_images)} изображений. Можно добавить ещё или отправить промт."
+
+    if msg_text:
+        await message.answer(msg_text, reply_markup=get_cancel_keyboard())
     return
 
 
