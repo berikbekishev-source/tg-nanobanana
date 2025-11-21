@@ -521,8 +521,19 @@ def generate_images_for_model(
         return gemini_generate_images(prompt, quantity, params=merged_params)
     elif provider == "gemini_vertex":
         if generation_type == "image2image":
-            return gemini_vertex_edit(prompt, quantity, input_images or [], merged_params)
-        return gemini_vertex_generate(prompt, quantity, params=merged_params)
+            return gemini_vertex_edit(
+                prompt, 
+                quantity, 
+                input_images or [], 
+                merged_params,
+                model_name=model.api_model_name,
+            )
+        return gemini_vertex_generate(
+            prompt, 
+            quantity, 
+            params=merged_params,
+            model_name=model.api_model_name,
+        )
     elif provider == "midjourney":
         return midjourney_generate_images(
             prompt,
@@ -893,44 +904,48 @@ def _gemini_vertex_request(
     parts: List[Dict[str, Any]],
     quantity: int,
     params: Optional[Dict[str, Any]] = None,
+    api_key: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """Запрос к Vertex AI Imagen/Gemini с детальным логированием и явным получением access_token."""
+    """Запрос к Vertex AI Imagen/Gemini с поддержкой API Key или Service Account."""
     print(f"[VERTEX] Preparing request to Vertex AI", flush=True)
     print(f"[VERTEX] Project: {project_id}, Location: {location}, Model: {model_path}", flush=True)
-    
-    # Получаем access token явно (НЕ через AuthorizedSession)
-    print("[VERTEX] Loading service account credentials...", flush=True)
-    creds_info = _load_service_account_info()
-    print(f"[VERTEX] Credentials loaded. Project from creds: {creds_info.get('project_id', 'N/A')}", flush=True)
-    print(f"[VERTEX] Service account email: {creds_info.get('client_email', 'N/A')}", flush=True)
-    
-    credentials = service_account.Credentials.from_service_account_info(
-        creds_info,
-        scopes=_VERTEX_SCOPES,
-    )
-    print(f"[VERTEX] Credentials initialized with scopes: {_VERTEX_SCOPES}", flush=True)
-    
-    # Явно refresh для получения access_token
-    from google.auth.transport.requests import Request
-    credentials.refresh(Request())
-    access_token = credentials.token
-    
-    print(f"[VERTEX] Access token obtained: {access_token[:50]}..." if access_token else "[VERTEX] ERROR: No access token!", flush=True)
-    
-    if not access_token:
-        raise ValueError("Failed to obtain access token from Google OAuth")
     
     url = f"https://{location}-aiplatform.googleapis.com/v1/projects/{project_id}/locations/{location}/{model_path}:generateContent"
     payload = _build_gemini_payload(parts, quantity, params)
     
+    headers = {"Content-Type": "application/json"}
+    
+    # Приоритет: API Key > Service Account
+    if api_key:
+        print(f"[VERTEX] Using API Key authentication (key: {api_key[:20]}...)", flush=True)
+        headers["x-goog-api-key"] = api_key
+    else:
+        print("[VERTEX] Using Service Account authentication", flush=True)
+        print("[VERTEX] Loading service account credentials...", flush=True)
+        creds_info = _load_service_account_info()
+        print(f"[VERTEX] Credentials loaded. Project: {creds_info.get('project_id', 'N/A')}", flush=True)
+        print(f"[VERTEX] Service account email: {creds_info.get('client_email', 'N/A')}", flush=True)
+        
+        credentials = service_account.Credentials.from_service_account_info(
+            creds_info,
+            scopes=_VERTEX_SCOPES,
+        )
+        print(f"[VERTEX] Credentials initialized with scopes: {_VERTEX_SCOPES}", flush=True)
+        
+        # Явно refresh для получения access_token
+        from google.auth.transport.requests import Request
+        credentials.refresh(Request())
+        access_token = credentials.token
+        
+        print(f"[VERTEX] Access token obtained: {access_token[:50]}..." if access_token else "[VERTEX] ERROR: No access token!", flush=True)
+        
+        if not access_token:
+            raise ValueError("Failed to obtain access token from Google OAuth")
+        
+        headers["Authorization"] = f"Bearer {access_token}"
+    
     print(f"[VERTEX] Sending POST request to: {url}", flush=True)
     print(f"[VERTEX] Payload keys: {list(payload.keys())}", flush=True)
-    
-    # Используем httpx вместо AuthorizedSession
-    headers = {
-        "Authorization": f"Bearer {access_token}",
-        "Content-Type": "application/json",
-    }
     
     timeout = httpx.Timeout(120.0, connect=30.0)
     with httpx.Client(timeout=timeout) as client:
@@ -956,11 +971,14 @@ def gemini_vertex_edit(
     quantity: int,
     input_images: List[Dict[str, Any]],
     params: Optional[Dict[str, Any]] = None,
+    *,
+    model_name: Optional[str] = None,
 ) -> List[bytes]:
     if not input_images:
         raise ValueError("Для режима image2image необходимо загрузить изображение.")
 
-    model_path = _vertex_model_path(getattr(settings, "NANO_BANANA_GEMINI_MODEL", None))
+    # Используем переданный model_name или дефолтный из настроек
+    model_path = _vertex_model_path(model_name or getattr(settings, "NANO_BANANA_GEMINI_MODEL", None))
     api_key = getattr(settings, "NANO_BANANA_API_KEY", getattr(settings, "GEMINI_API_KEY", None))
 
     parts: List[Dict[str, Any]] = [{"text": prompt}]
@@ -983,9 +1001,18 @@ def gemini_vertex_edit(
     # Пробуем Vertex по умолчанию
     try:
         print(f"[IMAGE_EDIT] Attempting Vertex AI edit for model {model_path}...", flush=True)
-        creds_info = _load_service_account_info()
-        project_id = getattr(settings, "GCP_PROJECT_ID", creds_info.get("project_id"))
-        location = getattr(settings, "GCP_LOCATION", "us-central1")
+        
+        # Если есть API key, используем его для Vertex AI
+        if api_key:
+            print(f"[IMAGE_EDIT] Using NANO_BANANA_API_KEY for Vertex AI", flush=True)
+            project_id = getattr(settings, "GCP_PROJECT_ID", "gen-lang-client-0838548551")
+            location = getattr(settings, "GCP_LOCATION", "us-central1")
+        else:
+            print(f"[IMAGE_EDIT] Using Service Account for Vertex AI", flush=True)
+            creds_info = _load_service_account_info()
+            project_id = getattr(settings, "GCP_PROJECT_ID", creds_info.get("project_id"))
+            location = getattr(settings, "GCP_LOCATION", "us-central1")
+        
         print(f"[IMAGE_EDIT] Using Project: {project_id}, Location: {location}", flush=True)
         
         data = _gemini_vertex_request(
@@ -995,6 +1022,7 @@ def gemini_vertex_edit(
             parts=parts,
             quantity=quantity,
             params=params,
+            api_key=api_key,
         )
         print("[IMAGE_EDIT] ✓ Vertex AI edit successful.", flush=True)
     except Exception as e:
@@ -1037,6 +1065,8 @@ def gemini_vertex_generate(
     prompt: str,
     quantity: int,
     params: Optional[Dict[str, Any]] = None,
+    *,
+    model_name: Optional[str] = None,
 ) -> List[bytes]:
     """
     Генерация изображений через Vertex AI (Imagen 3 / Gemini 3) с автоматическим фоллбэком на Gemini API.
@@ -1044,7 +1074,8 @@ def gemini_vertex_generate(
     1. Всегда пробуем Vertex AI первым.
     2. Если Vertex упал (любая ошибка) -> пробуем Gemini API (если есть ключ).
     """
-    model_path = _vertex_model_path(getattr(settings, "NANO_BANANA_GEMINI_MODEL", None))
+    # Используем переданный model_name или дефолтный из настроек
+    model_path = _vertex_model_path(model_name or getattr(settings, "NANO_BANANA_GEMINI_MODEL", None))
     # Используем NANO_BANANA_API_KEY, а если нет - GEMINI_API_KEY как запасной
     api_key = getattr(settings, "NANO_BANANA_API_KEY", getattr(settings, "GEMINI_API_KEY", None))
     
@@ -1057,9 +1088,20 @@ def gemini_vertex_generate(
     try:
         print(f"[IMAGE_GEN] Attempting Vertex AI generation for model {model_path}...", flush=True)
         print(f"[IMAGE_GEN] Prompt: {prompt[:100]}...", flush=True)
-        creds_info = _load_service_account_info()
-        project_id = getattr(settings, "GCP_PROJECT_ID", creds_info.get("project_id"))
-        location = getattr(settings, "GCP_LOCATION", "us-central1")
+        
+        # Если есть API key, используем его для Vertex AI (через x-goog-api-key)
+        # Иначе используем Service Account
+        if api_key:
+            print(f"[IMAGE_GEN] Using NANO_BANANA_API_KEY for Vertex AI", flush=True)
+            # Для API key аутентификации нужен project_id из настроек
+            project_id = getattr(settings, "GCP_PROJECT_ID", "gen-lang-client-0838548551")
+            location = getattr(settings, "GCP_LOCATION", "us-central1")
+        else:
+            print(f"[IMAGE_GEN] Using Service Account for Vertex AI", flush=True)
+            creds_info = _load_service_account_info()
+            project_id = getattr(settings, "GCP_PROJECT_ID", creds_info.get("project_id"))
+            location = getattr(settings, "GCP_LOCATION", "us-central1")
+        
         print(f"[IMAGE_GEN] Using Project: {project_id}, Location: {location}", flush=True)
         
         data = _gemini_vertex_request(
@@ -1069,6 +1111,7 @@ def gemini_vertex_generate(
             parts=parts,
             quantity=quantity,
             params=params,
+            api_key=api_key,
         )
         print("[IMAGE_GEN] ✓ Vertex AI generation successful.", flush=True)
     except Exception as e:
