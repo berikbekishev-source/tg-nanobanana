@@ -1,11 +1,13 @@
 """
 Обработчики генерации изображений
 """
+import logging
+from typing import List, Dict, Any
+
 from aiogram import Router, F
 from aiogram.filters import StateFilter
 from aiogram.types import Message, CallbackQuery
 from aiogram.fsm.context import FSMContext
-from typing import List, Dict, Any
 
 from botapp.states import BotStates
 from botapp.keyboards import (
@@ -24,6 +26,7 @@ from asgiref.sync import sync_to_async
 from botapp.error_tracker import ErrorTracker
 
 router = Router()
+logger = logging.getLogger(__name__)
 
 
 async def _start_image_generation(
@@ -32,12 +35,29 @@ async def _start_image_generation(
     prompt: str,
     data: Dict[str, Any],
 ) -> bool:
-    """Стартует генерацию на основе промта и данных состояния."""
+    """Стартует генерацию изображения с учётом режима."""
     mode = data.get("image_mode") or "text"
-    remix_images = data.get("remix_images") or []
+    remix_images = list(data.get("remix_images") or [])
     edit_base_id = data.get("edit_base_id")
 
-    model = await sync_to_async(AIModel.objects.get)(id=data["model_id"])
+    try:
+        model = await sync_to_async(AIModel.objects.get)(id=data["model_id"])
+        user = await sync_to_async(TgUser.objects.get)(chat_id=message.from_user.id)
+    except Exception as exc:  # noqa: BLE001
+        await ErrorTracker.alog(
+            origin=BotErrorEvent.Origin.TELEGRAM,
+            severity=BotErrorEvent.Severity.WARNING,
+            handler="image_generation._start_image_generation",
+            chat_id=message.chat.id,
+            payload={"has_model": bool(data.get("model_id"))},
+            exc=exc,
+        )
+        await message.answer(
+            "Не удалось подготовить генерацию. Попробуйте ещё раз.",
+            reply_markup=get_cancel_keyboard(),
+        )
+        return False
+
     if len(prompt) > model.max_prompt_length:
         await message.answer(
             f"❌ Промт слишком длинный!\n"
@@ -46,8 +66,6 @@ async def _start_image_generation(
             reply_markup=get_cancel_keyboard(),
         )
         return False
-
-    user = await sync_to_async(TgUser.objects.get)(chat_id=message.from_user.id)
 
     generation_type = "text2image"
     input_entries: List[Dict[str, Any]] = []
@@ -62,8 +80,18 @@ async def _start_image_generation(
         input_entries = [{"telegram_file_id": edit_base_id}]
     elif mode == "remix":
         min_required = 2
-        max_allowed = max(min_required, min(data.get("max_images", 4), 4))
-        if len(remix_images) < min_required:
+        max_images_limit = data.get("max_images")
+        safe_limit = max_images_limit if isinstance(max_images_limit, int) and max_images_limit > 0 else 4
+        max_allowed = max(min_required, min(safe_limit, 4))
+
+        unique_ids: List[str] = []
+        for file_id in remix_images:
+            if file_id and file_id not in unique_ids:
+                unique_ids.append(file_id)
+            if len(unique_ids) >= max_allowed:
+                break
+
+        if len(unique_ids) < min_required:
             await message.answer(
                 f"Для режима «Ремикс» нужно минимум {min_required} изображений. Загрузите ещё и повторите попытку.",
                 reply_markup=get_cancel_keyboard(),
@@ -72,7 +100,7 @@ async def _start_image_generation(
         generation_type = "image2image"
         input_entries = [
             {"telegram_file_id": file_id, "type": "subject"}
-            for file_id in remix_images[:max_allowed]
+            for file_id in unique_ids
         ]
 
     try:
@@ -80,7 +108,7 @@ async def _start_image_generation(
             user=user,
             ai_model=model,
             prompt=prompt,
-            quantity=1,  # По умолчанию 1 изображение
+            quantity=1,
             generation_type=generation_type,
             input_images=input_entries,
             generation_params={"image_mode": mode},
@@ -100,23 +128,23 @@ async def _start_image_generation(
         await state.clear()
         return True
 
-    except InsufficientBalanceError as e:
+    except InsufficientBalanceError as exc:
         await message.answer(
-            f"❌ {str(e)}",
+            f"❌ {str(exc)}",
             reply_markup=get_main_menu_inline_keyboard()
         )
         await state.clear()
         return False
 
-    except Exception as e:
+    except Exception as exc:  # noqa: BLE001
         await message.answer(
-            f"❌ Произошла ошибка: {str(e)}",
+            f"❌ Произошла ошибка: {str(exc)}",
             reply_markup=get_main_menu_inline_keyboard()
         )
         await ErrorTracker.alog(
             origin=BotErrorEvent.Origin.TELEGRAM,
             severity=BotErrorEvent.Severity.WARNING,
-            handler="image_generation.receive_image_prompt",
+            handler="image_generation._start_image_generation",
             chat_id=message.chat.id,
             payload={
                 "mode": mode,
@@ -125,13 +153,13 @@ async def _start_image_generation(
                 "has_remix_images": bool(remix_images),
                 "has_edit_base": bool(edit_base_id),
             },
-            exc=e,
+            exc=exc,
         )
         await state.clear()
         return False
 
 
-@router.message(F.text == "🎨 Создать изображение")
+@router.message(StateFilter("*"), F.text == "🎨 Создать изображение")
 async def create_image_start(message: Message, state: FSMContext):
     """
     Шаг 1: Выбор модели генерации изображений
@@ -214,7 +242,13 @@ async def select_image_model(callback: CallbackQuery, state: FSMContext):
         edit_base_id=None,
     )
 
-    info_message = get_model_info_message(model, base_price=model_cost)
+    info_message = (
+        get_model_info_message(model, base_price=model_cost)
+        + "\n\nРежимы:\n"
+        "• Создать из текста — промт без изображений\n"
+        "• Отредактировать — одно изображение + промт\n"
+        "• Ремикс — 2-4 изображения + промт"
+    )
 
     await state.set_state(BotStates.image_select_mode)
     await callback.message.answer(
@@ -229,7 +263,8 @@ async def receive_image_prompt(message: Message, state: FSMContext):
     Получаем текстовый промт для генерации
     """
     data = await state.get_data()
-    await _start_image_generation(message, state, message.text, data)
+    prompt = message.text
+    await _start_image_generation(message, state, prompt, data)
 
 
 @router.message(BotStates.image_wait_prompt, F.photo)
@@ -262,10 +297,6 @@ async def receive_image_for_prompt(message: Message, state: FSMContext):
 
     if mode == "edit":
         await state.update_data(edit_base_id=photo.file_id)
-        if caption:
-            updated_data = await state.get_data()
-            await _start_image_generation(message, state, caption, updated_data)
-            return
         await message.answer(
             "🖼️ Изображение получено. Теперь отправьте текстовый промт.",
             reply_markup=get_cancel_keyboard(),
@@ -273,19 +304,22 @@ async def receive_image_for_prompt(message: Message, state: FSMContext):
         return
 
     # режим remix
-    media_group_id = message.media_group_id
-    last_group_id = data.get("media_group_id")
-    same_album = bool(media_group_id and media_group_id == last_group_id)
-
     remix_images = list(data.get("remix_images") or [])
-    pending_caption = (data.get("pending_caption") or "").strip() if same_album else ""
-    notified_count = data.get("remix_notified_count", 0) if same_album else 0
     if len(remix_images) >= max_images:
         await message.answer(
             f"❌ Уже загружено максимальное количество изображений ({max_images}). Теперь отправьте текстовый промт.",
             reply_markup=get_cancel_keyboard(),
         )
         return
+
+    media_group_id = message.media_group_id
+    last_group_id = data.get("media_group_id")
+    notified_count = data.get("remix_notified_count", 0)
+    pending_caption = (data.get("pending_caption") or "").strip()
+
+    if media_group_id and media_group_id != last_group_id:
+        notified_count = 0
+        pending_caption = ""
 
     remix_images.append(photo.file_id)
     if caption:
@@ -316,7 +350,8 @@ async def receive_image_for_prompt(message: Message, state: FSMContext):
 
     if len(remix_images) < min_needed:
         await message.answer(
-            f"✅ {len(remix_images)} изображений загружено. Загрузите ещё или отправьте текстовый промт.",
+            f"✅ Изображение {len(remix_images)} загружено. Нужно минимум {min_needed} изображений."
+            f" Загрузите ещё или отмените операцию.",
             reply_markup=get_cancel_keyboard(),
         )
     elif len(remix_images) < max_images:
@@ -350,15 +385,10 @@ async def handle_main_menu_callback(callback: CallbackQuery, state: FSMContext):
     PAYMENT_URL = getattr(settings, 'PAYMENT_MINI_APP_URL', 'https://example.com/payment')
 
     await callback.message.answer(
-        "Выберите нужное  действие нажав на кнопку в меню 👇",
+        "Главное меню:",
         reply_markup=get_main_menu_keyboard(PAYMENT_URL)
     )
-
-
-@router.callback_query(
-    StateFilter(BotStates.image_select_mode, BotStates.image_wait_prompt),
-    F.data.startswith("image_mode:"),
-)
+@router.callback_query(F.data.startswith("image_mode:"))
 async def select_image_mode(callback: CallbackQuery, state: FSMContext):
     """Обработка выбора режима генерации изображений."""
     await callback.answer()
@@ -388,6 +418,7 @@ async def select_image_mode(callback: CallbackQuery, state: FSMContext):
         edit_base_id=None,
         pending_caption="",
         media_group_id=None,
+        remix_notified_count=0,
     )
 
     if mode == "text":
@@ -408,8 +439,7 @@ async def select_image_mode(callback: CallbackQuery, state: FSMContext):
 
     if mode == "remix":
         await callback.message.answer(
-            f"🎭 Режим ремикс позволяет загрузить сразу несколько изображений в качестве промта.\n"
-            f"Загрузите от 2 до {max_images} изображений и напишите текстовый промт.",
+            f"🎭 Режим ремикса.\nЗагрузите от 2 до {max_images} изображений (одним за другим), затем отправьте текстовый промт.",
             reply_markup=get_cancel_keyboard(),
         )
         await state.set_state(BotStates.image_wait_prompt)

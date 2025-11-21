@@ -7,6 +7,7 @@ import re
 from typing import List, Optional, Tuple
 
 from aiogram import F, Router
+from aiogram.filters import StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 
@@ -127,7 +128,7 @@ def _collect_reference_payload(message: Message) -> Optional[ReferenceInputPaylo
     return None
 
 
-@router.message(F.text == "📲Промт по рефференсу")
+@router.message(StateFilter("*"), F.text.in_({"Промт по рефференсу", "📲Промт по рефференсу"}))
 async def prompt_by_reference_entry(message: Message, state: FSMContext):
     """Точка входа в сценарий генерации промта по референсу."""
 
@@ -157,7 +158,7 @@ async def prompt_by_reference_entry(message: Message, state: FSMContext):
     await state.set_state(BotStates.reference_prompt_wait_reference)
 
 
-@router.callback_query(BotStates.reference_prompt_select_model, F.data.startswith("ref_prompt_model:"))
+@router.callback_query(F.data.startswith("ref_prompt_model:"))
 async def prompt_by_reference_select_model(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
 
@@ -204,14 +205,14 @@ async def prompt_by_reference_collect(message: Message, state: FSMContext):
     await state.set_state(BotStates.reference_prompt_confirm_mods)
 
 
-@router.callback_query(BotStates.reference_prompt_confirm_mods, F.data == "ref_prompt_mods:edit")
+@router.callback_query(F.data == "ref_prompt_mods:edit")
 async def prompt_by_reference_mods_yes(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
     await callback.message.answer("Напиши правки одним сообщением 🔧")
     await state.set_state(BotStates.reference_prompt_wait_mods)
 
 
-@router.callback_query(BotStates.reference_prompt_confirm_mods, F.data == "ref_prompt_mods:skip")
+@router.callback_query(F.data == "ref_prompt_mods:skip")
 async def prompt_by_reference_mods_skip(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
     await _start_prompt_generation(callback.message, state, modifications=None)
