@@ -1,6 +1,7 @@
 """
 Обработчики генерации изображений
 """
+import asyncio
 import logging
 from typing import List, Dict, Any
 
@@ -262,6 +263,8 @@ async def receive_image_prompt(message: Message, state: FSMContext):
     """
     Получаем текстовый промт для генерации
     """
+    if not await state.get_state():
+        return
     data = await state.get_data()
     prompt = message.text
     await _start_image_generation(message, state, prompt, data)
@@ -272,6 +275,8 @@ async def receive_image_for_prompt(message: Message, state: FSMContext):
     """
     Получаем изображения или маску в зависимости от выбранного режима.
     """
+    if not await state.get_state():
+        return
     data = await state.get_data()
     mode = data.get("image_mode") or "text"
     caption = (message.caption or "").strip()
@@ -336,6 +341,7 @@ async def receive_image_for_prompt(message: Message, state: FSMContext):
     updated_data = await state.get_data()
 
     if pending_caption and len(remix_images) >= min_needed:
+        await state.update_data(remix_autostarted=True)
         await _start_image_generation(message, state, pending_caption, updated_data)
         return
 
@@ -365,6 +371,26 @@ async def receive_image_for_prompt(message: Message, state: FSMContext):
             "✅ Достаточно изображений! Отправьте текстовый промт для запуска ремикса.",
             reply_markup=get_cancel_keyboard(),
         )
+
+    if media_group_id and pending_caption and len(remix_images) >= min_needed and not updated_data.get("remix_autostarted"):
+        # Фолбек для альбомов: если поколение не стартовало сразу из-за гонки, пробуем повторно.
+        async def _delayed_autostart():
+            await asyncio.sleep(0.4)
+            latest = await state.get_data()
+            if not await state.get_state():
+                return
+            if latest.get("remix_autostarted"):
+                return
+            images = list(dict.fromkeys(latest.get("remix_images") or []))
+            if len(images) < min_needed:
+                return
+            caption_text = (latest.get("pending_caption") or "").strip()
+            if not caption_text:
+                return
+            await state.update_data(remix_autostarted=True)
+            await _start_image_generation(message, state, caption_text, latest)
+
+        asyncio.create_task(_delayed_autostart())
 
 
 @router.callback_query(F.data == "main_menu")
