@@ -237,15 +237,10 @@ async def receive_image_for_prompt(message: Message, state: FSMContext):
         logger.info(f"[REMIX_BUFFER] Saved caption to Redis: chat_id={chat_id}, caption_len={len(current_caption)}")
 
     # Оптимизированная задержка:
-    # - Для альбомов С описанием (caption): минимальная задержка 0.3 сек - только для сбора пачки
-    # - Для альбомов БЕЗ описания: 1.5 сек - ждём пока пользователь добавит описание
-    # - Для одиночных фото: 0.5 сек
-    if message.media_group_id and current_caption:
-        # Альбом с описанием — ждём дольше, чтобы собрать 3+ фото
-        delay = 1.0
-    elif message.media_group_id:
-        # Альбом без описания - даём время на добавление описания
-        delay = 1.5
+    # - Альбом (с подписью или без): 2.0 c — гарантированно соберёт 3+ фото, отправленных одним батчем
+    # - Одиночные фото: 0.5 c
+    if message.media_group_id:
+        delay = 2.0
     else:
         # Одиночное фото
         delay = 0.5
