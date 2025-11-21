@@ -893,24 +893,15 @@ def _gemini_vertex_request(
     url = f"https://{location}-aiplatform.googleapis.com/v1/projects/{project_id}/locations/{location}/{model_path}:generateContent"
     payload = _build_gemini_payload(parts, quantity, params)
     response = session.post(url, json=payload, timeout=120)
-    if response.status_code in (403, 404):
-        print(f"Vertex AI WARNING: Request failed ({response.status_code}), falling back to Gemini API. URL: {url}, Response: {response.text[:500]}")
-        # Vertex недоступен или не выдаёт модель — пробуем публичный Generative Language API.
-        model_name = _gemini_model_name(model_path)
-        return _gemini_google_api_request(
-            model_name=model_name,
-            parts=parts,
-            quantity=quantity,
-            params=params,
-            session=session,
-        )
-    if response.status_code >= 400:
+    
+    # Если ошибка - кидаем исключение, чтобы верхний уровень (gemini_vertex_generate) мог его поймать и решить что делать
+    if response.status_code != 200:
         detail = response.text
         try:
             detail = response.json()
         except ValueError:
             pass
-        raise ValueError(f"Gemini Vertex error ({response.status_code}): {detail}")
+        raise ValueError(f"Vertex AI error ({response.status_code}): {detail}")
     return response.json()
 
 def gemini_vertex_edit(
@@ -923,7 +914,7 @@ def gemini_vertex_edit(
         raise ValueError("Для режима image2image необходимо загрузить изображение.")
 
     model_path = _vertex_model_path(getattr(settings, "NANO_BANANA_GEMINI_MODEL", None))
-    api_key = getattr(settings, "NANO_BANANA_API_KEY", None)
+    api_key = getattr(settings, "NANO_BANANA_API_KEY", getattr(settings, "GEMINI_API_KEY", None))
 
     parts: List[Dict[str, Any]] = [{"text": prompt}]
     for image in input_images:
@@ -940,18 +931,15 @@ def gemini_vertex_edit(
             }
         )
 
-    if api_key:
-        data = _gemini_google_api_request(
-            model_name=_gemini_model_name(model_path),
-            parts=parts,
-            quantity=quantity,
-            params=params,
-            api_key=api_key,
-        )
-    else:
+    data = None
+    vertex_error = None
+    # Пробуем Vertex по умолчанию
+    try:
+        print(f"Attempting Vertex AI edit for model {model_path}...", flush=True)
         creds_info = _load_service_account_info()
         project_id = getattr(settings, "GCP_PROJECT_ID", creds_info.get("project_id"))
         location = getattr(settings, "GCP_LOCATION", "us-central1")
+        
         data = _gemini_vertex_request(
             project_id=project_id,
             location=location,
@@ -960,11 +948,34 @@ def gemini_vertex_edit(
             quantity=quantity,
             params=params,
         )
+        print("Vertex AI edit successful.", flush=True)
+    except Exception as e:
+        vertex_error = e
+        print(f"Vertex AI edit failed: {e}. Falling back to Gemini API.", flush=True)
+        data = None
+
+    if not data:
+        if api_key:
+            print(f"Attempting Gemini API fallback (edit)...", flush=True)
+            try:
+                data = _gemini_google_api_request(
+                    model_name=_gemini_model_name(model_path),
+                    parts=parts,
+                    quantity=quantity,
+                    params=params,
+                    api_key=api_key,
+                )
+                print("Gemini API edit successful.", flush=True)
+            except Exception as e:
+                raise ValueError(f"Edit generation failed. Vertex error: {vertex_error}. Gemini error: {e}")
+        else:
+            raise ValueError(f"Vertex AI edit failed and no Gemini API key provided. Error: {vertex_error}")
+
     outputs = data.get("candidates") or []
     results: List[bytes] = []
     for candidate in outputs:
-        parts = candidate.get("content", {}).get("parts", [])
-        for part in parts:
+        content_parts = candidate.get("content", {}).get("parts", [])
+        for part in content_parts:
             inline = part.get("inlineData")
             if inline and inline.get("data"):
                 results.append(base64.b64decode(inline["data"]))
@@ -976,35 +987,73 @@ def gemini_vertex_generate(
     quantity: int,
     params: Optional[Dict[str, Any]] = None,
 ) -> List[bytes]:
+    """
+    Генерация изображений через Vertex AI (Imagen 3 / Gemini 3) с автоматическим фоллбэком на Gemini API.
+    Логика:
+    1. Всегда пробуем Vertex AI первым.
+    2. Если Vertex упал (любая ошибка) -> пробуем Gemini API (если есть ключ).
+    """
     model_path = _vertex_model_path(getattr(settings, "NANO_BANANA_GEMINI_MODEL", None))
-    api_key = getattr(settings, "NANO_BANANA_API_KEY", None)
+    # Используем NANO_BANANA_API_KEY, а если нет - GEMINI_API_KEY как запасной
+    api_key = getattr(settings, "NANO_BANANA_API_KEY", getattr(settings, "GEMINI_API_KEY", None))
+    
+    parts = [{"text": prompt}]
+    
+    data = None
+    vertex_error = None
 
-    if api_key:
-        data = _gemini_google_api_request(
-            model_name=_gemini_model_name(model_path),
-            parts=[{"text": prompt}],
-            quantity=quantity,
-            params=params,
-            api_key=api_key,
-        )
-    else:
+    # 1. Попытка через Vertex AI
+    try:
+        print(f"Attempting Vertex AI generation for model {model_path}...", flush=True)
         creds_info = _load_service_account_info()
         project_id = getattr(settings, "GCP_PROJECT_ID", creds_info.get("project_id"))
         location = getattr(settings, "GCP_LOCATION", "us-central1")
+        
         data = _gemini_vertex_request(
             project_id=project_id,
             location=location,
             model_path=model_path,
-            parts=[{"text": prompt}],
+            parts=parts,
             quantity=quantity,
             params=params,
         )
+        print("Vertex AI generation successful.", flush=True)
+    except Exception as e:
+        vertex_error = e
+        print(f"Vertex AI failed: {e}. Falling back to Gemini API.", flush=True)
+        data = None
+
+    # 2. Fallback на Gemini API
+    if not data:
+        if api_key:
+            print(f"Attempting Gemini API fallback for model {_gemini_model_name(model_path)}...", flush=True)
+            try:
+                data = _gemini_google_api_request(
+                    model_name=_gemini_model_name(model_path),
+                    parts=parts,
+                    quantity=quantity,
+                    params=params,
+                    api_key=api_key,
+                )
+                print("Gemini API generation successful.", flush=True)
+            except Exception as e:
+                print(f"Gemini API failed: {e}", flush=True)
+                raise ValueError(f"Generation failed. Vertex error: {vertex_error}. Gemini error: {e}")
+        else:
+            # Если ключа нет, а Vertex упал
+            raise ValueError(f"Vertex AI generation failed and no Gemini API key provided. Error: {vertex_error}")
+
+    # Обработка ответа (одинаковая для обоих)
     outputs = data.get("candidates") or []
     results: List[bytes] = []
     for candidate in outputs:
-        parts = candidate.get("content", {}).get("parts", [])
-        for part in parts:
+        content_parts = candidate.get("content", {}).get("parts", [])
+        for part in content_parts:
             inline = part.get("inlineData")
             if inline and inline.get("data"):
                 results.append(base64.b64decode(inline["data"]))
+    
+    if not results:
+        raise ValueError(f"No images returned from generation. Response: {str(data)[:200]}")
+        
     return results
