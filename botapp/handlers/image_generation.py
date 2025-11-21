@@ -305,6 +305,7 @@ async def receive_image_for_prompt(message: Message, state: FSMContext):
 
     # Режим remix
     remix_images = data.get('remix_images', [])
+    print(f"[DEBUG] Handler started, mode={mode}, existing_remix_images={len(remix_images)}", flush=True)
     chat_id = message.chat.id
 
     # Логирование входящего изображения
@@ -321,6 +322,7 @@ async def receive_image_for_prompt(message: Message, state: FSMContext):
 
     # Универсальная буферизация для режима Remix
     # Используем chat_id как ключ группировки, чтобы ловить и альбомы, и быстрые одиночные отправки
+    print(f"[DEBUG] Starting Redis buffer operations for chat_id={chat_id}", flush=True)
     redis = state.storage.redis
     key_images = f"remix_buffer_imgs:{chat_id}"
     key_caption = f"remix_buffer_cap:{chat_id}"
