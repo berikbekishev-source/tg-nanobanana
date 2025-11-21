@@ -276,6 +276,26 @@
             margin-top: 6px;
         }
 
+        .upload {
+            display: none;
+            margin-top: 10px;
+            padding: 12px;
+            border: 1px dashed var(--border);
+            border-radius: 12px;
+            background: rgba(15, 28, 45, 0.7);
+        }
+
+        .upload input {
+            width: 100%;
+            color: var(--muted);
+        }
+
+        .upload .preview {
+            margin-top: 8px;
+            font-size: 13px;
+            color: var(--muted);
+        }
+
         @media (min-width: 640px) {
             body { padding: 28px; }
             .card { max-width: 640px; margin: 0 auto; }
@@ -310,6 +330,12 @@
             <p class="label" style="margin-top: 14px;">Текстовый запрос</p>
             <textarea id="prompt" placeholder="Опишите, что нужно сгенерировать..." maxlength="2000"></textarea>
             <div class="count" id="promptCount">0/2000</div>
+
+            <div class="upload" id="imgBlock">
+                <p class="label" style="margin:0 0 6px;">Изображение для img2img</p>
+                <input type="file" id="imgInput" accept="image/*">
+                <div class="preview" id="imgPreview">Файл не выбран</div>
+            </div>
         </div>
 
         <div class="section">
@@ -408,7 +434,10 @@
             stylization: 200,
             weirdness: 0,
             variety: 10,
-            priceLabel: "—"
+            priceLabel: "—",
+            imageData: null,
+            imageMime: null,
+            imageName: null,
         };
 
         const els = {
@@ -458,6 +487,10 @@
                 setError("Введите промт, чтобы продолжить.");
                 return;
             }
+            if (state.taskType === "mj_img2img" && !state.imageData) {
+                setError("Загрузите изображение для режима Изображение → Изображение.");
+                return;
+            }
             setError("");
             const payload = {
                 kind: "midjourney_settings",
@@ -469,25 +502,19 @@
                 stylization: state.stylization,
                 weirdness: state.weirdness,
                 variety: state.variety,
+                imageData: state.imageData,
+                imageMime: state.imageMime,
+                imageName: state.imageName,
             };
             try {
                 if (tg) {
                     tg.sendData(JSON.stringify(payload));
-                    tg.close();
                 } else {
                     alert(JSON.stringify(payload, null, 2));
                 }
             } catch (e) {
                 setError("Не удалось отправить данные. Попробуйте ещё раз.");
             }
-        }
-
-        // Инициализация акцентной кнопки Telegram
-        if (tg) {
-            tg.expand();
-            tg.MainButton.show();
-            tg.MainButton.setText("Сгенерировать");
-            tg.MainButton.onClick(sendData);
         }
 
         // Handlers
@@ -498,6 +525,8 @@
             if (!btn) return;
             setActive(els.typeToggle, btn);
             state.taskType = btn.dataset.type;
+            const imageBlock = document.getElementById("imgBlock");
+            imageBlock.style.display = state.taskType === "mj_img2img" ? "block" : "none";
         });
 
         els.speedToggle.addEventListener("click", (e) => {
@@ -530,6 +559,54 @@
             });
         });
 
+        // Загрузка изображения
+        const imgInput = document.getElementById("imgInput");
+        const imgPreview = document.getElementById("imgPreview");
+        const MAX_SIZE = 3 * 1024 * 1024; // 3 MB
+
+        function resetImage() {
+            state.imageData = null;
+            state.imageMime = null;
+            state.imageName = null;
+            imgInput.value = "";
+            imgPreview.textContent = "Файл не выбран";
+        }
+
+        imgInput.addEventListener("change", (e) => {
+            const file = e.target.files?.[0];
+            if (!file) {
+                resetImage();
+                return;
+            }
+            if (!file.type.startsWith("image/")) {
+                setError("Нужен файл изображения.");
+                resetImage();
+                return;
+            }
+            if (file.size > MAX_SIZE) {
+                setError("Изображение слишком большое (макс 3 МБ).");
+                resetImage();
+                return;
+            }
+            const reader = new FileReader();
+            reader.onload = () => {
+                const result = reader.result;
+                if (typeof result === "string") {
+                    const base64 = result.split(",")[1] || result;
+                    state.imageData = base64;
+                    state.imageMime = file.type;
+                    state.imageName = file.name;
+                    imgPreview.textContent = `${file.name} · ${(file.size / 1024).toFixed(1)} КБ`;
+                    setError("");
+                }
+            };
+            reader.onerror = () => {
+                setError("Не удалось прочитать файл.");
+                resetImage();
+            };
+            reader.readAsDataURL(file);
+        });
+
         els.submitBtn.addEventListener("click", sendData);
 
         // Установим цену из query (?price=...) или initData.start_param = price=...
@@ -551,6 +628,7 @@
         }
 
         updateCounts();
+        document.getElementById("imgBlock").style.display = "none";
     </script>
 </body>
 </html>
