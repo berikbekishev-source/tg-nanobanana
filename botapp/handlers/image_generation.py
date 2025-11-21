@@ -30,108 +30,11 @@ router = Router()
 logger = logging.getLogger(__name__)
 
 
-@router.message(StateFilter("*"), F.text == "🎨 Создать изображение")
-async def create_image_start(message: Message, state: FSMContext):
-    """
-    Шаг 1: Выбор модели генерации изображений
-    """
-    # Сбрасываем состояние, если оно было
-    await state.clear()
+# Обработчик кнопки "🎨 Создать изображение" перенесен в global_commands.py
+# чтобы работать из любого состояния
 
-    # Получаем активные модели для изображений
-    models = await sync_to_async(list)(
-        AIModel.objects.filter(type='image', is_active=True).order_by('order')
-    )
-
-    if not models:
-        await message.answer(
-            "😔 К сожалению, сейчас нет доступных моделей для генерации изображений.\n"
-            "Попробуйте позже.",
-            reply_markup=get_main_menu_inline_keyboard()
-        )
-        return
-
-    # Отправляем список моделей с inline кнопкой меню
-    await message.answer(
-        "🎨 **Выберите модель для генерации изображений:**",
-        reply_markup=get_image_models_keyboard(models),
-        parse_mode="Markdown"
-    )
-
-    # Устанавливаем состояние выбора модели
-    await state.set_state(BotStates.image_select_model)
-
-
-@router.callback_query(StateFilter("*"), F.data.startswith("img_model:"))
-async def select_image_model(callback: CallbackQuery, state: FSMContext):
-    """
-    Шаг 2: После выбора модели показываем информацию и ждем промт
-    """
-    await callback.answer()
-
-    # Сбрасываем состояние перед выбором новой модели
-    await state.clear()
-
-    # Получаем slug модели из callback data
-    model_slug = callback.data.split(":")[1]
-
-    # Получаем модель из БД
-    try:
-        model = await sync_to_async(AIModel.objects.get)(slug=model_slug, is_active=True)
-    except AIModel.DoesNotExist:
-        await callback.message.answer(
-            "❌ Модель не найдена или недоступна.",
-            reply_markup=get_main_menu_inline_keyboard()
-        )
-        return
-
-    # Сохраняем выбранную модель в состояние
-    await state.update_data(selected_model=model_slug, model_id=model.id)
-
-    # Проверяем баланс пользователя
-    user = await sync_to_async(TgUser.objects.get)(chat_id=callback.from_user.id)
-    balance = await sync_to_async(BalanceService.get_balance)(user)
-    model_cost = await sync_to_async(get_base_price_tokens)(model)
-
-    if balance < model_cost:
-        await callback.message.answer(
-            f"❌ **Недостаточно токенов**\n\n"
-            f"Ваш баланс: ⚡ {balance:.2f} токенов\n"
-            f"Стоимость генерации: ⚡ {model_cost:.2f} токенов\n\n"
-            f"Необходимо пополнить баланс на ⚡ {model_cost - balance:.2f} токенов",
-            parse_mode="Markdown",
-            reply_markup=get_main_menu_inline_keyboard()
-        )
-        await state.clear()
-        return
-
-    # Сохраняем данные для генерации
-    await state.update_data(
-        model_slug=model_slug,
-        model_id=model.id,
-        model_name=model.display_name,
-        model_provider=model.provider,
-        model_price=float(model_cost),
-        max_images=model.max_input_images,
-        supports_images=model.supports_image_input,
-        image_mode=None,
-        remix_images=[],
-        edit_base_id=None,
-    )
-
-    info_message = (
-        get_model_info_message(model, base_price=model_cost)
-        + "\n\nРежимы:\n"
-        "• Создать из текста — промт без изображений\n"
-        "• Отредактировать — одно изображение + промт\n"
-        "• Ремикс — 2-4 изображения + промт"
-    )
-
-    await state.set_state(BotStates.image_select_mode)
-    await callback.message.answer(
-        info_message,
-        reply_markup=get_image_mode_keyboard(),
-    )
+# Обработчик выбора модели "img_model:" также перенесен в global_commands.py
+# чтобы работать из любого состояния
 
 
 async def _start_generation(message: Message, state: FSMContext, prompt: str):

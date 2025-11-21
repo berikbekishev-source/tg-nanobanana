@@ -82,42 +82,11 @@ async def cmd_start(message: Message, state: FSMContext):
     await state.set_state(BotStates.main_menu)
 
 
-@router.message(StateFilter("*"), F.text.in_({"🏠Главное меню", "🏠 Главное меню"}))
-async def back_to_main_menu(message: Message, state: FSMContext):
-    """Возврат в главное меню"""
-    await state.clear()
-    await state.set_state(BotStates.main_menu)
+# Обработчик кнопки "🏠 Главное меню" перенесен в global_commands.py
+# чтобы работать из любого состояния
 
-    await message.answer(
-        "Выберите нужное  действие нажав на кнопку в меню 👇",
-        reply_markup=get_main_menu_keyboard(PAYMENT_URL)
-    )
-
-
-@router.message(StateFilter("*"), F.text == "💰 Мой баланс (цены)")
-async def show_balance(message: Message, state: FSMContext):
-    """
-    Обработчик кнопки 'Мой баланс (цены)'
-    Отправляет сообщение с текущим балансом пользователя и ценами
-    """
-    # Получаем пользователя
-    user = await sync_to_async(TgUser.objects.get)(chat_id=message.from_user.id)
-
-    # Получаем баланс пользователя
-    balance = await sync_to_async(BalanceService.get_balance)(user)
-
-    # Формируем сообщение с балансом и ценами
-    balance_message = await sync_to_async(get_prices_info)(balance)
-
-    # Отправляем сообщение с балансом + inline кнопка "Пополнить баланс"
-    await message.answer(
-        balance_message,
-        reply_markup=get_balance_keyboard(),
-        parse_mode=None
-    )
-
-    # Устанавливаем состояние просмотра баланса
-    await state.set_state(BotStates.balance_view)
+# Обработчик кнопки "💰 Мой баланс (цены)" перенесен в global_commands.py
+# чтобы работать из любого состояния
 
 
 @router.message(StateFilter("*"), F.text == "🧡 Поддержка")

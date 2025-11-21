@@ -128,34 +128,8 @@ def _collect_reference_payload(message: Message) -> Optional[ReferenceInputPaylo
     return None
 
 
-@router.message(StateFilter("*"), F.text.in_({"Промт по рефференсу", "📲Промт по рефференсу"}))
-async def prompt_by_reference_entry(message: Message, state: FSMContext):
-    """Точка входа в сценарий генерации промта по референсу."""
-
-    await state.clear()
-
-    if not REFERENCE_PROMPT_MODELS:
-        await message.answer(
-            "😔 Сейчас нет доступных моделей для создания промта по референсу.",
-            reply_markup=get_cancel_keyboard(),
-        )
-        return
-
-    default_model = next(iter(REFERENCE_PROMPT_MODELS.values()), None)
-    if not default_model:
-        await message.answer(
-            "😔 Сейчас нет доступных моделей для создания промта по референсу.",
-            reply_markup=get_cancel_keyboard(),
-        )
-        return
-
-    await state.update_data(reference_prompt_model=default_model.slug)
-
-    await message.answer(
-        "🔍 Скиньте в бота ссылку на любой Reels, Shorts, TikTok или загрузите в чат видео/изображениеи и получите промт для генерации точно такого же видео!",
-        reply_markup=get_cancel_keyboard(),
-    )
-    await state.set_state(BotStates.reference_prompt_wait_reference)
+# Обработчик кнопки "Промт по рефференсу" перенесен в global_commands.py
+# чтобы работать из любого состояния
 
 
 @router.callback_query(StateFilter("*"), F.data.startswith("ref_prompt_model:"))
