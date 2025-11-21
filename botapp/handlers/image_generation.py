@@ -261,6 +261,7 @@ async def receive_image_for_prompt(message: Message, state: FSMContext):
     """
     data = await state.get_data()
     mode = data.get("image_mode") or "text"
+    pending_caption = data.get("pending_caption")
 
     if not data.get('supports_images'):
         await message.answer(
@@ -285,6 +286,9 @@ async def receive_image_for_prompt(message: Message, state: FSMContext):
         # Если есть подпись, используем её как промт сразу
         if message.caption:
             await _start_generation(message, state, message.caption)
+        elif pending_caption:
+            # Если вдруг был сохранен промт ранее (маловероятно для edit, но для порядка)
+            await _start_generation(message, state, pending_caption)
         else:
             await message.answer(
                 "🖼️ Изображение получено. Теперь отправьте текстовый промт.",
@@ -294,6 +298,10 @@ async def receive_image_for_prompt(message: Message, state: FSMContext):
 
     # Режим remix
     remix_images = data.get('remix_images', [])
+
+    # Если есть подпись в текущем сообщении, запоминаем её
+    if message.caption:
+        pending_caption = message.caption
 
     # Если это альбом (media group)
     if message.media_group_id:
@@ -312,23 +320,37 @@ async def receive_image_for_prompt(message: Message, state: FSMContext):
         # Ждем, пока все сообщения из группы придут
         await asyncio.sleep(1.0)
 
-        # Пытаемся забрать данные (кто первый забрал - тот и обрабатывает)
-        stored_images = await redis.lrange(key_images, 0, -1)
+        # Используем Lua-скрипт для атомарного получения и удаления списка
+        lua_script = """
+        local list = redis.call('LRANGE', KEYS[1], 0, -1)
+        if #list > 0 then
+            redis.call('DEL', KEYS[1])
+        end
+        return list
+        """
+        
+        try:
+            stored_images = await redis.eval(lua_script, 1, key_images)
+        except Exception as e:
+            logger.error(f"Redis eval error: {e}")
+            # Fallback
+            stored_images = await redis.lrange(key_images, 0, -1)
+            if stored_images:
+                await redis.delete(key_images)
+
         if not stored_images:
             # Значит другой обработчик уже забрал данные
             return
-
-        # Удаляем ключ, чтобы другие не обработали
-        await redis.delete(key_images)
         
-        # Получаем caption
+        # Получаем caption из Redis (если был в группе)
         stored_caption = await redis.get(key_caption)
         if stored_caption:
             stored_caption = stored_caption.decode('utf-8')
             await redis.delete(key_caption)
-
+            pending_caption = stored_caption # Обновляем pending_caption
+        
         # Декодируем image ids
-        new_images = [img_id.decode('utf-8') for img_id in stored_images]
+        new_images = [img_id.decode('utf-8') if isinstance(img_id, bytes) else img_id for img_id in stored_images]
         
         # Добавляем к существующим
         remix_images.extend(new_images)
@@ -336,14 +358,15 @@ async def receive_image_for_prompt(message: Message, state: FSMContext):
         # Убираем дубликаты
         remix_images = list(dict.fromkeys(remix_images))
         
-        await state.update_data(remix_images=remix_images)
+        # Сохраняем обновленный список и pending_caption
+        await state.update_data(remix_images=remix_images, pending_caption=pending_caption)
         
         # Проверяем авто-старт
-        min_needed = max(2, min(max_images, 4))
+        min_needed = 2
         
-        if len(remix_images) >= min_needed and stored_caption:
-            # Есть и картинки и промт - запускаем
-            await _start_generation(message, state, stored_caption)
+        if len(remix_images) >= min_needed and pending_caption:
+            # Есть и картинки и промт (текущий или сохраненный) - запускаем
+            await _start_generation(message, state, pending_caption)
             return
             
         # Иначе отправляем статус (только один раз)
@@ -367,20 +390,30 @@ async def receive_image_for_prompt(message: Message, state: FSMContext):
         return
 
     remix_images.append(photo.file_id)
-    await state.update_data(remix_images=remix_images)
+    await state.update_data(remix_images=remix_images, pending_caption=pending_caption)
 
-    # Если есть caption - пробуем запустить
-    if message.caption:
-         min_needed = max(2, min(max_images, 4))
-         if len(remix_images) >= min_needed:
-             await _start_generation(message, state, message.caption)
-             return
+    min_needed = 2
 
-    min_needed = max(2, min(max_images, 4))
+    # Если накопили нужное кол-во и есть caption (текущий или сохраненный)
+    if len(remix_images) >= min_needed and pending_caption:
+        await _start_generation(message, state, pending_caption)
+        return
+
     if len(remix_images) < min_needed:
         await message.answer(
             f"✅ Изображение {len(remix_images)} загружено. Нужно минимум {min_needed} изображений."
             f" Загрузите ещё или отмените операцию.",
+            reply_markup=get_cancel_keyboard(),
+        )
+    elif len(remix_images) < max_images:
+        await message.answer(
+            f"✅ Изображение {len(remix_images)} загружено. Можно добавить ещё {max_images - len(remix_images)} "
+            "или отправить текстовый промт.",
+            reply_markup=get_cancel_keyboard(),
+        )
+    else:
+        await message.answer(
+            "✅ Достаточно изображений! Отправьте текстовый промт для запуска ремикса.",
             reply_markup=get_cancel_keyboard(),
         )
     elif len(remix_images) < max_images:
