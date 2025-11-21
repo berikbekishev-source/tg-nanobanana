@@ -174,7 +174,7 @@ async def deposit_from_menu(message: Message, state: FSMContext):
     )
 
 
-@router.callback_query(F.data.startswith("payment_success:"))
+@router.callback_query(StateFilter("*"), F.data.startswith("payment_success:"))
 async def handle_payment_success(callback: CallbackQuery, state: FSMContext):
     """
     Обработчик успешной оплаты через Mini App
@@ -235,7 +235,7 @@ async def handle_payment_success(callback: CallbackQuery, state: FSMContext):
         )
 
 
-@router.callback_query(F.data.startswith("payment_failed:"))
+@router.callback_query(StateFilter("*"), F.data.startswith("payment_failed:"))
 async def handle_payment_failed(callback: CallbackQuery, state: FSMContext):
     """
     Обработчик неудачной оплаты через Mini App
@@ -322,39 +322,33 @@ async def handle_pre_checkout(pre_checkout_query: PreCheckoutQuery):
     await pre_checkout_query.answer(ok=True)
 
 
-@router.message(F.text.startswith("PROMO"))
-@router.message(F.text == "🎁 Ввести промокод")
+@router.message(StateFilter("*"), F.text.startswith("PROMO"))
+@router.message(StateFilter("*"), F.text == "🎁 Ввести промокод")
 async def handle_promocode(message: Message, state: FSMContext):
     """
-    Обработчик промокодов (формат: PROMOXXXX).
-    Промокод может начислить фиксированное количество токенов.
+    Обработчик промокодов (формат: PROMOXXXX) и входа в меню промокодов.
     """
-    await state.set_state(BotStates.payment_enter_promocode)
-    # Если сразу пришёл код (формат PROMOxxxx), обрабатываем; иначе просим ввести
-    if message.text.startswith("PROMO"):
-        user = await sync_to_async(TgUser.objects.get)(chat_id=message.from_user.id)
-        await _process_promocode_activation(
-            message,
-            user=user,
-            promo_code_raw=message.text,
-            success_markup=get_main_menu_inline_keyboard(),
-            failure_markup=get_main_menu_inline_keyboard(),
-        )
+    # Если это кнопка меню - просто переводим в состояние
+    if message.text == "🎁 Ввести промокод":
         await state.clear()
+        await state.set_state(BotStates.payment_enter_promocode)
+        await message.answer(
+            "Введите промокод в чат👇",
+            reply_markup=get_cancel_keyboard(),
+        )
         return
 
-    await message.answer(
-        "Введите промокод в чат👇",
-        reply_markup=get_cancel_keyboard(),
-    )
-
-    await _process_promocode_activation(
+    # Если это сам промокод (начинается с PROMO)
+    user = await sync_to_async(TgUser.objects.get)(chat_id=message.from_user.id)
+    success = await _process_promocode_activation(
         message,
         user=user,
         promo_code_raw=message.text,
         success_markup=get_main_menu_inline_keyboard(),
         failure_markup=get_main_menu_inline_keyboard(),
     )
+    if success:
+        await state.clear()
 
 
 @router.message(BotStates.payment_enter_promocode)
@@ -374,7 +368,7 @@ async def process_promocode_input(message: Message, state: FSMContext):
         await state.set_state(BotStates.main_menu)
 
 
-@router.callback_query(F.data == "main_menu")
+@router.callback_query(StateFilter("*"), F.data == "main_menu")
 async def handle_main_menu_callback(callback: CallbackQuery, state: FSMContext):
     """
     Обработчик inline кнопки "Главное меню"
