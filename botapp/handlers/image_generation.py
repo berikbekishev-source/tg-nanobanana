@@ -230,7 +230,8 @@ async def receive_image_for_prompt(message: Message, state: FSMContext):
 
     # Небольшая задержка, чтобы собрать пачку сообщений
     # Для альбомов (media_group) ставим задержку больше, чтобы точно собрать все фото
-    delay = 2.0 if message.media_group_id else 0.5
+    # Увеличена до 3 секунд для надёжного сбора альбомов из 3-4 фото
+    delay = 3.0 if message.media_group_id else 0.5
     await asyncio.sleep(delay)
 
     # Используем Lua-скрипт для атомарного получения и удаления списка
@@ -289,16 +290,20 @@ async def receive_image_for_prompt(message: Message, state: FSMContext):
 
     # 6. Если автостарт не сработал - отправляем статус (ОДИН РАЗ на пачку)
     # Показываем статус только если НЕТ промта или не хватает изображений
+    # НЕ показываем промежуточные статусы для альбомов с caption (они обрабатываются после задержки)
     msg_text = ""
     if len(remix_images) >= max_images:
         msg_text = f"✅ Загружено {len(remix_images)} изображений (максимум). Отправьте текстовый промт."
     elif len(remix_images) < min_needed:
-        msg_text = f"✅ Загружено {len(remix_images)} изображений. Нужно минимум {min_needed}. Загрузите ещё."
+        # Для альбомов с caption не показываем "Загружено 1" - ждём сбора всех фото
+        if not (message.media_group_id and current_caption):
+            msg_text = f"✅ Загружено {len(remix_images)} изображений. Нужно минимум {min_needed}. Загрузите ещё."
     else:
         # 2 или больше изображений, но нет промта
         msg_text = f"✅ Загружено {len(remix_images)} изображений. Можно добавить ещё или отправить промт."
 
-    await message.answer(msg_text, reply_markup=get_cancel_keyboard())
+    if msg_text:
+        await message.answer(msg_text, reply_markup=get_cancel_keyboard())
     return
 
 
