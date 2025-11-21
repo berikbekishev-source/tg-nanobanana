@@ -412,12 +412,17 @@ async def receive_image_for_prompt(message: Message, state: FSMContext):
     logger.info(f"[REMIX AUTO-START CHECK] remix_images={len(remix_images)}, "
                 f"min_needed={min_needed}, has_caption={bool(pending_caption)}")
 
-    if len(remix_images) >= min_needed and pending_caption:
-        # Есть и картинки (2+) и промт - запускаем генерацию сразу
-        print(f"[REMIX AUTO-START] Triggering generation with {len(remix_images)} images", flush=True)
-        logger.info(f"[REMIX AUTO-START] Triggering generation with {len(remix_images)} images")
+    # Проверка автостарта с учетом типа загрузки:
+    # - Для одиночных изображений: запуск сразу при достижении min_needed
+    # - Для альбомов: НЕ запускаем сразу, ждем сбора всех изображений через буфер
+    if len(remix_images) >= min_needed and pending_caption and not message.media_group_id:
+        # Автостарт ТОЛЬКО для одиночных изображений с подписью
+        print(f"[REMIX AUTO-START] Single image mode: Triggering generation with {len(remix_images)} images", flush=True)
+        logger.info(f"[REMIX AUTO-START] Single image mode: Triggering generation with {len(remix_images)} images")
         await _start_generation(message, state, pending_caption)
         return
+
+    # Для альбомов генерация запустится после сбора всех изображений через Redis буфер (после 2с задержки)
 
     # 6. Если автостарт не сработал - отправляем статус (ОДИН РАЗ на пачку)
     # Показываем статус только если НЕТ промта или не хватает изображений
