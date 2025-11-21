@@ -228,10 +228,19 @@ async def receive_image_for_prompt(message: Message, state: FSMContext):
     if current_caption:
         await redis.set(key_caption, current_caption, ex=60)
 
-    # Небольшая задержка, чтобы собрать пачку сообщений
-    # Для альбомов (media_group) ставим задержку больше, чтобы точно собрать все фото
-    # Увеличена до 3 секунд для надёжного сбора альбомов из 3-4 фото
-    delay = 3.0 if message.media_group_id else 0.5
+    # Оптимизированная задержка:
+    # - Для альбомов С описанием (caption): минимальная задержка 0.3 сек - только для сбора пачки
+    # - Для альбомов БЕЗ описания: 1.5 сек - ждём пока пользователь добавит описание
+    # - Для одиночных фото: 0.5 сек
+    if message.media_group_id and current_caption:
+        # Альбом с описанием - быстрая обработка
+        delay = 0.3
+    elif message.media_group_id:
+        # Альбом без описания - даём время на добавление описания
+        delay = 1.5
+    else:
+        # Одиночное фото
+        delay = 0.5
     await asyncio.sleep(delay)
 
     # Используем Lua-скрипт для атомарного получения и удаления списка
