@@ -83,7 +83,10 @@ async def _start_generation(message: Message, state: FSMContext, prompt: str):
         ]
     elif mode == "remix":
         min_required = 2
-        max_images = data.get("max_images") or min_required
+        # Исправлено: корректная обработка max_images (0 не должен превращаться в min_required)
+        max_images = data.get("max_images", min_required)
+        if max_images is None or max_images <= 0:
+            max_images = min_required
         max_allowed = max(min_required, max_images)
         logger.info(
             f"[HANDLER] Remix mode: remix_images={len(remix_images)}, "
