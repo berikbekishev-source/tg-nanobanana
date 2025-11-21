@@ -1062,6 +1062,13 @@ def gemini_vertex_edit(
             inline = part.get("inlineData")
             if inline and inline.get("data"):
                 results.append(base64.b64decode(inline["data"]))
+
+    # Проверка на пустой результат (критично для режима ремикс!)
+    if not results:
+        print(f"[IMAGE_EDIT] ✗ No images returned from edit. Response: {str(data)[:300]}", flush=True)
+        raise ValueError(f"No images returned from edit generation. Response: {str(data)[:200]}")
+
+    print(f"[IMAGE_EDIT] ✓ Successfully decoded {len(results)} image(s)", flush=True)
     return results
 
 

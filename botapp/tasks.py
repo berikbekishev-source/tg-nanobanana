@@ -582,36 +582,61 @@ def generate_image_task(self, request_id: int):
             image_mode=image_mode,
         )
 
+        # Проверка что генерация вернула результаты
+        if not imgs:
+            error_msg = f"Генерация не вернула изображений. Model: {model.display_name}, Type: {generation_type}, Mode: {image_mode}"
+            logger.error(f"[TASK] {error_msg}")
+            raise ValueError(error_msg)
+
+        logger.info(f"[TASK] Успешно сгенерировано {len(imgs)} изображений для запроса {req.id}")
+
         urls = []
         inline_markup = get_inline_menu_markup()
         charged_amount, balance_after = _extract_charge_details(req)
 
         # Загружаем и отправляем каждое изображение
         for idx, img in enumerate(imgs, start=1):
-            # Загружаем в Storage
-            url_obj = supabase_upload_png(img)
-            url = url_obj.get("public_url") if isinstance(url_obj, dict) else url_obj
-            urls.append(url)
+            try:
+                # Загружаем в Storage
+                logger.info(f"[TASK] Загрузка изображения {idx}/{quantity} в Supabase для запроса {req.id}")
+                url_obj = supabase_upload_png(img)
+                url = url_obj.get("public_url") if isinstance(url_obj, dict) else url_obj
+                urls.append(url)
+                logger.info(f"[TASK] Изображение {idx}/{quantity} загружено: {url}")
 
-            # Формируем системное сообщение после генерации
-            system_message = get_generation_complete_message(
-                prompt=prompt,
-                generation_type=generation_type,
-                model_name=model.display_name,
-                model_display_name=model.display_name,
-                quantity=quantity,
-                aspect_ratio=req.aspect_ratio or "1:1",
-                charged_amount=charged_amount,
-                balance_after=balance_after,
-            )
+                # Формируем системное сообщение после генерации
+                system_message = get_generation_complete_message(
+                    prompt=prompt,
+                    generation_type=generation_type,
+                    model_name=model.display_name,
+                    model_display_name=model.display_name,
+                    quantity=quantity,
+                    aspect_ratio=req.aspect_ratio or "1:1",
+                    charged_amount=charged_amount,
+                    balance_after=balance_after,
+                )
 
-            # Отправляем изображение с системным сообщением
-            send_telegram_photo(
-                chat_id=req.chat_id,
-                photo_bytes=img,
-                caption=system_message + f"\n\n📷 Изображение {idx}/{quantity}",
-                reply_markup=inline_markup
-            )
+                # Отправляем изображение с системным сообщением
+                logger.info(f"[TASK] Отправка изображения {idx}/{quantity} в Telegram (chat_id={req.chat_id})")
+                send_telegram_photo(
+                    chat_id=req.chat_id,
+                    photo_bytes=img,
+                    caption=system_message + f"\n\n📷 Изображение {idx}/{quantity}",
+                    reply_markup=inline_markup
+                )
+                logger.info(f"[TASK] Изображение {idx}/{quantity} успешно отправлено в Telegram")
+            except Exception as img_error:
+                logger.exception(f"[TASK] Ошибка при обработке изображения {idx}/{quantity} для запроса {req.id}: {img_error}")
+                # Продолжаем обработку остальных изображений
+                continue
+
+        # Проверка что хотя бы одно изображение было успешно обработано
+        if not urls:
+            error_msg = f"Ни одно изображение не было успешно загружено или отправлено для запроса {req.id}"
+            logger.error(f"[TASK] {error_msg}")
+            raise ValueError(error_msg)
+
+        logger.info(f"[TASK] Запрос {req.id} завершен успешно. Загружено и отправлено {len(urls)}/{quantity} изображений")
 
         # Обновляем статус запроса
         req.status = "done"
