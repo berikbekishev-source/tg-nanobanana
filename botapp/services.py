@@ -979,7 +979,10 @@ def gemini_vertex_edit(
 
     # Используем переданный model_name или дефолтный из настроек
     model_path = _vertex_model_path(model_name or getattr(settings, "NANO_BANANA_GEMINI_MODEL", None))
-    api_key = getattr(settings, "NANO_BANANA_API_KEY", getattr(settings, "GEMINI_API_KEY", None))
+    
+    # Разделяем ключи:
+    vertex_api_key = getattr(settings, "NANO_BANANA_API_KEY", None)
+    gemini_api_key = getattr(settings, "GEMINI_API_KEY", None)
 
     parts: List[Dict[str, Any]] = [{"text": prompt}]
     for image in input_images:
@@ -1002,9 +1005,9 @@ def gemini_vertex_edit(
     try:
         print(f"[IMAGE_EDIT] Attempting Vertex AI edit for model {model_path}...", flush=True)
         
-        # Если есть API key, используем его для Vertex AI
-        if api_key:
-            print(f"[IMAGE_EDIT] Using NANO_BANANA_API_KEY for Vertex AI", flush=True)
+        # Если есть Vertex API key, используем его для Vertex AI
+        if vertex_api_key:
+            print(f"[IMAGE_EDIT] Using Vertex AI API Key", flush=True)
             project_id = getattr(settings, "GCP_PROJECT_ID", "gen-lang-client-0838548551")
             location = getattr(settings, "GCP_LOCATION", "us-central1")
         else:
@@ -1022,7 +1025,7 @@ def gemini_vertex_edit(
             parts=parts,
             quantity=quantity,
             params=params,
-            api_key=api_key,
+            api_key=vertex_api_key,
         )
         print("[IMAGE_EDIT] ✓ Vertex AI edit successful.", flush=True)
     except Exception as e:
@@ -1032,15 +1035,16 @@ def gemini_vertex_edit(
         data = None
 
     if not data:
-        if api_key:
+        if gemini_api_key:
             print(f"[IMAGE_EDIT] Attempting Gemini API fallback for model {_gemini_model_name(model_path)}...", flush=True)
+            print(f"[IMAGE_EDIT] Using GEMINI_API_KEY for fallback", flush=True)
             try:
                 data = _gemini_google_api_request(
                     model_name=_gemini_model_name(model_path),
                     parts=parts,
                     quantity=quantity,
                     params=params,
-                    api_key=api_key,
+                    api_key=gemini_api_key,
                 )
                 print("[IMAGE_EDIT] ✓ Gemini API edit successful (fallback).", flush=True)
             except Exception as e:
@@ -1076,8 +1080,12 @@ def gemini_vertex_generate(
     """
     # Используем переданный model_name или дефолтный из настроек
     model_path = _vertex_model_path(model_name or getattr(settings, "NANO_BANANA_GEMINI_MODEL", None))
-    # Используем NANO_BANANA_API_KEY, а если нет - GEMINI_API_KEY как запасной
-    api_key = getattr(settings, "NANO_BANANA_API_KEY", getattr(settings, "GEMINI_API_KEY", None))
+    
+    # Разделяем ключи:
+    # - NANO_BANANA_API_KEY (Vertex AI key, формат AQ.xxx) - только для Vertex AI
+    # - GEMINI_API_KEY (Gemini API key, формат AIza...) - для Gemini API fallback
+    vertex_api_key = getattr(settings, "NANO_BANANA_API_KEY", None)
+    gemini_api_key = getattr(settings, "GEMINI_API_KEY", None)
     
     parts = [{"text": prompt}]
     
@@ -1089,10 +1097,10 @@ def gemini_vertex_generate(
         print(f"[IMAGE_GEN] Attempting Vertex AI generation for model {model_path}...", flush=True)
         print(f"[IMAGE_GEN] Prompt: {prompt[:100]}...", flush=True)
         
-        # Если есть API key, используем его для Vertex AI (через x-goog-api-key)
+        # Если есть Vertex API key, используем его для Vertex AI (через x-goog-api-key)
         # Иначе используем Service Account
-        if api_key:
-            print(f"[IMAGE_GEN] Using NANO_BANANA_API_KEY for Vertex AI", flush=True)
+        if vertex_api_key:
+            print(f"[IMAGE_GEN] Using Vertex AI API Key", flush=True)
             # Для API key аутентификации нужен project_id из настроек
             project_id = getattr(settings, "GCP_PROJECT_ID", "gen-lang-client-0838548551")
             location = getattr(settings, "GCP_LOCATION", "us-central1")
@@ -1111,7 +1119,7 @@ def gemini_vertex_generate(
             parts=parts,
             quantity=quantity,
             params=params,
-            api_key=api_key,
+            api_key=vertex_api_key,
         )
         print("[IMAGE_GEN] ✓ Vertex AI generation successful.", flush=True)
     except Exception as e:
@@ -1122,15 +1130,16 @@ def gemini_vertex_generate(
 
     # 2. Fallback на Gemini API
     if not data:
-        if api_key:
+        if gemini_api_key:
             print(f"[IMAGE_GEN] Attempting Gemini API fallback for model {_gemini_model_name(model_path)}...", flush=True)
+            print(f"[IMAGE_GEN] Using GEMINI_API_KEY for fallback", flush=True)
             try:
                 data = _gemini_google_api_request(
                     model_name=_gemini_model_name(model_path),
                     parts=parts,
                     quantity=quantity,
                     params=params,
-                    api_key=api_key,
+                    api_key=gemini_api_key,
                 )
                 print("[IMAGE_GEN] ✓ Gemini API generation successful (fallback).", flush=True)
             except Exception as e:
