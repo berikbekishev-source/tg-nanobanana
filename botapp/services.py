@@ -895,18 +895,47 @@ def _gemini_vertex_request(
     quantity: int,
     params: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
-    """Запрос к Vertex AI Imagen/Gemini с детальным логированием."""
+    """Запрос к Vertex AI Imagen/Gemini с детальным логированием и явным получением access_token."""
     print(f"[VERTEX] Preparing request to Vertex AI", flush=True)
     print(f"[VERTEX] Project: {project_id}, Location: {location}, Model: {model_path}", flush=True)
     
-    session = _authorized_vertex_session()
+    # Получаем access token явно (НЕ через AuthorizedSession)
+    print("[VERTEX] Loading service account credentials...", flush=True)
+    creds_info = _load_service_account_info()
+    print(f"[VERTEX] Credentials loaded. Project from creds: {creds_info.get('project_id', 'N/A')}", flush=True)
+    print(f"[VERTEX] Service account email: {creds_info.get('client_email', 'N/A')}", flush=True)
+    
+    credentials = service_account.Credentials.from_service_account_info(
+        creds_info,
+        scopes=_VERTEX_SCOPES,
+    )
+    print(f"[VERTEX] Credentials initialized with scopes: {_VERTEX_SCOPES}", flush=True)
+    
+    # Явно refresh для получения access_token
+    from google.auth.transport.requests import Request
+    credentials.refresh(Request())
+    access_token = credentials.token
+    
+    print(f"[VERTEX] Access token obtained: {access_token[:50]}..." if access_token else "[VERTEX] ERROR: No access token!", flush=True)
+    
+    if not access_token:
+        raise ValueError("Failed to obtain access token from Google OAuth")
+    
     url = f"https://{location}-aiplatform.googleapis.com/v1/projects/{project_id}/locations/{location}/{model_path}:generateContent"
     payload = _build_gemini_payload(parts, quantity, params)
     
     print(f"[VERTEX] Sending POST request to: {url}", flush=True)
     print(f"[VERTEX] Payload keys: {list(payload.keys())}", flush=True)
     
-    response = session.post(url, json=payload, timeout=120)
+    # Используем httpx вместо AuthorizedSession
+    headers = {
+        "Authorization": f"Bearer {access_token}",
+        "Content-Type": "application/json",
+    }
+    
+    timeout = httpx.Timeout(120.0, connect=30.0)
+    with httpx.Client(timeout=timeout) as client:
+        response = client.post(url, json=payload, headers=headers)
     
     print(f"[VERTEX] Response status: {response.status_code}", flush=True)
     
