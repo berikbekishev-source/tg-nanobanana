@@ -850,12 +850,27 @@ def _gemini_model_name(model_path: Optional[str]) -> str:
 
 
 def _build_gemini_payload(parts: List[Dict[str, Any]], quantity: int, params: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    # Собираем contents в формате, рекомендованном Gemini: отдельные сообщения пользователя,
+    # чтобы корректно передавать несколько референсов (в т.ч. больше двух).
+    contents: List[Dict[str, Any]] = []
+    current_parts: List[Dict[str, Any]] = []
+    for part in parts:
+        is_image_part = "inlineData" in part or "inline_data" in part
+        if is_image_part:
+            if current_parts:
+                contents.append({"role": "user", "parts": current_parts})
+                current_parts = []
+            contents.append({"role": "user", "parts": [part]})
+        else:
+            current_parts.append(part)
+
+    if current_parts:
+        contents.append({"role": "user", "parts": current_parts})
+    elif not contents:
+        contents.append({"role": "user", "parts": parts})
+
     payload: Dict[str, Any] = {
-        "contents": [
-            {
-                "parts": parts,
-            }
-        ],
+        "contents": contents,
         "generationConfig": {
             "candidateCount": max(1, min(quantity, 4)),
         },
