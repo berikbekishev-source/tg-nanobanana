@@ -8,6 +8,7 @@ from typing import List, Dict, Any, Optional
 from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery
 from aiogram.fsm.context import FSMContext
+from aiogram.filters import StateFilter
 from asgiref.sync import sync_to_async
 
 from botapp.states import BotStates
@@ -29,11 +30,14 @@ router = Router()
 logger = logging.getLogger(__name__)
 
 
-@router.message(F.text == "🎨 Создать изображение")
+@router.message(StateFilter("*"), F.text == "🎨 Создать изображение")
 async def create_image_start(message: Message, state: FSMContext):
     """
     Шаг 1: Выбор модели генерации изображений
     """
+    # Сбрасываем состояние, если оно было
+    await state.clear()
+
     # Получаем активные модели для изображений
     models = await sync_to_async(list)(
         AIModel.objects.filter(type='image', is_active=True).order_by('order')
@@ -58,12 +62,15 @@ async def create_image_start(message: Message, state: FSMContext):
     await state.set_state(BotStates.image_select_model)
 
 
-@router.callback_query(F.data.startswith("img_model:"))
+@router.callback_query(StateFilter("*"), F.data.startswith("img_model:"))
 async def select_image_model(callback: CallbackQuery, state: FSMContext):
     """
     Шаг 2: После выбора модели показываем информацию и ждем промт
     """
     await callback.answer()
+
+    # Сбрасываем состояние перед выбором новой модели
+    await state.clear()
 
     # Получаем slug модели из callback data
     model_slug = callback.data.split(":")[1]
@@ -318,8 +325,10 @@ async def receive_image_for_prompt(message: Message, state: FSMContext):
     if current_caption:
         await redis.set(key_caption, current_caption, ex=60)
 
-    # Небольшая задержка, чтобы собрать пачку сообщений (альбом летит миллисекунды)
-    await asyncio.sleep(0.8)
+    # Небольшая задержка, чтобы собрать пачку сообщений
+    # Для альбомов (media_group) ставим задержку больше, чтобы точно собрать все фото
+    delay = 2.0 if message.media_group_id else 0.5
+    await asyncio.sleep(delay)
 
     # Используем Lua-скрипт для атомарного получения и удаления списка
     lua_script = """
@@ -388,7 +397,7 @@ async def receive_image_for_prompt(message: Message, state: FSMContext):
     return
 
 
-@router.callback_query(F.data == "main_menu")
+@router.callback_query(StateFilter("*"), F.data == "main_menu")
 async def handle_main_menu_callback(callback: CallbackQuery, state: FSMContext):
     """
     Обработчик inline кнопки "Главное меню"
@@ -411,13 +420,21 @@ async def handle_main_menu_callback(callback: CallbackQuery, state: FSMContext):
     )
 
 
-@router.callback_query(BotStates.image_select_mode, F.data.startswith("image_mode:"))
+@router.callback_query(StateFilter("*"), F.data.startswith("image_mode:"))
 async def select_image_mode(callback: CallbackQuery, state: FSMContext):
     """Обработка выбора режима генерации изображений."""
     await callback.answer()
     mode = callback.data.split(":", maxsplit=1)[1]
 
     data = await state.get_data()
+    # Если данных нет (стерся стейт), но кнопку нажали - пытаемся восстановить или просим заново
+    if not data:
+         await callback.message.answer(
+            "⚠️ Сессия устарела. Пожалуйста, выберите модель заново.",
+            reply_markup=get_main_menu_inline_keyboard()
+        )
+         return
+         
     supports_images = data.get("supports_images", False)
     max_images = data.get("max_images", 0)
 

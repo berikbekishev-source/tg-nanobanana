@@ -178,12 +178,15 @@ async def create_video_start(message: Message, state: FSMContext):
     await state.set_state(BotStates.video_select_model)
 
 
-@router.callback_query(F.data.startswith("vid_model:"))
+@router.callback_query(StateFilter("*"), F.data.startswith("vid_model:"))
 async def select_video_model(callback: CallbackQuery, state: FSMContext):
     """
     Шаг 2: После выбора модели показываем информацию и ждем промт
     """
     await callback.answer()
+
+    # Сбрасываем состояние перед выбором новой модели
+    await state.clear()
 
     # Получаем slug модели из callback data
     model_slug = callback.data.split(":")[1]
@@ -308,12 +311,7 @@ async def wait_resolution_selection(message: Message, state: FSMContext):
 
 
 @router.callback_query(
-    StateFilter(
-        BotStates.video_select_format,
-        BotStates.video_select_duration,
-        BotStates.video_select_resolution,
-        BotStates.video_wait_prompt,
-    ),
+    StateFilter("*"),
     F.data.startswith("video_format:"),
 )
 async def set_video_format(callback: CallbackQuery, state: FSMContext):
@@ -324,6 +322,14 @@ async def set_video_format(callback: CallbackQuery, state: FSMContext):
     aspect_ratio = ratio_raw.replace("_", ":") if "_" in ratio_raw else ratio_raw
 
     data = await state.get_data()
+    # Если стейт пустой (потерян), а пользователь нажал кнопку формата
+    if not data:
+        await callback.message.answer(
+            "⚠️ Сессия устарела. Пожалуйста, начните создание видео заново.",
+            reply_markup=get_main_menu_inline_keyboard()
+        )
+        return
+
     supports_images = data.get('supports_images', False)
     duration_options = data.get('duration_options') or []
     default_duration = data.get('default_duration')
@@ -363,11 +369,7 @@ async def set_video_format(callback: CallbackQuery, state: FSMContext):
 
 
 @router.callback_query(
-    StateFilter(
-        BotStates.video_select_duration,
-        BotStates.video_wait_prompt,
-        BotStates.video_select_resolution,
-    ),
+    StateFilter("*"),
     F.data.startswith("video_duration:"),
 )
 async def set_video_duration(callback: CallbackQuery, state: FSMContext):
@@ -375,6 +377,13 @@ async def set_video_duration(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
 
     data = await state.get_data()
+    if not data:
+        await callback.message.answer(
+            "⚠️ Сессия устарела. Пожалуйста, начните создание видео заново.",
+            reply_markup=get_main_menu_inline_keyboard()
+        )
+        return
+
     duration_options = data.get('duration_options') or []
     keyboard_options = duration_options or [data.get('default_duration', 8)]
 
@@ -416,7 +425,7 @@ async def set_video_duration(callback: CallbackQuery, state: FSMContext):
 
 
 @router.callback_query(
-    StateFilter(BotStates.video_select_resolution, BotStates.video_wait_prompt),
+    StateFilter("*"),
     F.data.startswith("video_resolution:"),
 )
 async def set_video_resolution(callback: CallbackQuery, state: FSMContext):
@@ -424,6 +433,13 @@ async def set_video_resolution(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
 
     data = await state.get_data()
+    if not data:
+         await callback.message.answer(
+            "⚠️ Сессия устарела. Пожалуйста, начните создание видео заново.",
+            reply_markup=get_main_menu_inline_keyboard()
+        )
+         return
+         
     options = [opt.lower() for opt in (data.get('resolution_options') or [])]
 
     try:
@@ -677,10 +693,13 @@ async def handle_video_prompt(message: Message, state: FSMContext):
     await state.clear()
 
 
-@router.callback_query(F.data.startswith("extend_video:"))
+@router.callback_query(StateFilter("*"), F.data.startswith("extend_video:"))
 async def prompt_video_extension(callback: CallbackQuery, state: FSMContext):
     """Подготовить пользователя к продлению видео."""
     await callback.answer()
+    
+    # Очищаем стейт, так как это начало нового флоу (продления)
+    await state.clear()
 
     try:
         request_id = int(callback.data.split(":", maxsplit=1)[1])
@@ -898,7 +917,7 @@ async def remind_extension_prompt(message: Message):
     )
 
 
-@router.callback_query(F.data == "main_menu")
+@router.callback_query(StateFilter("*"), F.data == "main_menu")
 async def handle_main_menu_callback(callback: CallbackQuery, state: FSMContext):
     """
     Обработчик inline кнопки "Главное меню"

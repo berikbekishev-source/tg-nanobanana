@@ -158,9 +158,12 @@ async def prompt_by_reference_entry(message: Message, state: FSMContext):
     await state.set_state(BotStates.reference_prompt_wait_reference)
 
 
-@router.callback_query(F.data.startswith("ref_prompt_model:"))
+@router.callback_query(StateFilter("*"), F.data.startswith("ref_prompt_model:"))
 async def prompt_by_reference_select_model(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
+    
+    # Сбрасываем состояние
+    await state.clear()
 
     slug = callback.data.split(":", maxsplit=1)[1]
 
