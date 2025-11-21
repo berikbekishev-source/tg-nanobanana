@@ -207,6 +207,7 @@ VERTEX_PROJECT_ID = os.getenv("VERTEX_PROJECT_ID", GCP_PROJECT_ID)
 VERTEX_LOCATION = os.getenv("VERTEX_LOCATION", GCP_LOCATION or "us-central1")
 NANO_BANANA_API_KEY = os.getenv("NANO_BANANA_API_KEY")
 NANO_BANANA_GEMINI_MODEL = os.getenv("NANO_BANANA_GEMINI_MODEL")
+NANO_BANANA_PRO_MODEL = os.getenv("NANO_BANANA_PRO_MODEL", "publishers/google/models/gemini-3-pro-image-preview")
 
 # --- OpenAI Sora ---
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
