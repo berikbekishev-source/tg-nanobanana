@@ -999,6 +999,10 @@ def gemini_vertex_edit(
             }
         )
 
+    # Логируем промт и количество изображений
+    print(f"[IMAGE_EDIT] Prompt: {prompt[:200]}{'...' if len(prompt) > 200 else ''}", flush=True)
+    print(f"[IMAGE_EDIT] Input images: {len(input_images)}", flush=True)
+
     data = None
     vertex_error = None
     # Пробуем Vertex по умолчанию
@@ -1056,7 +1060,20 @@ def gemini_vertex_edit(
 
     outputs = data.get("candidates") or []
     results: List[bytes] = []
+
+    # Проверяем finishReason для обнаружения отказов модели
     for candidate in outputs:
+        finish_reason = candidate.get("finishReason", "")
+        finish_message = candidate.get("finishMessage", "")
+
+        # IMAGE_OTHER означает что модель отказалась генерировать (контент-политика, некорректный промт и т.д.)
+        if finish_reason in ["IMAGE_OTHER", "SAFETY", "PROHIBITED_CONTENT"]:
+            error_msg = f"Модель отказалась генерировать изображение. Причина: {finish_reason}"
+            if finish_message:
+                error_msg += f". Сообщение: {finish_message[:200]}"
+            print(f"[IMAGE_EDIT] ✗ {error_msg}", flush=True)
+            raise ValueError(error_msg)
+
         content_parts = candidate.get("content", {}).get("parts", [])
         for part in content_parts:
             inline = part.get("inlineData")
@@ -1160,14 +1177,29 @@ def gemini_vertex_generate(
     # Обработка ответа (одинаковая для обоих)
     outputs = data.get("candidates") or []
     results: List[bytes] = []
+
+    # Проверяем finishReason для обнаружения отказов модели
     for candidate in outputs:
+        finish_reason = candidate.get("finishReason", "")
+        finish_message = candidate.get("finishMessage", "")
+
+        # IMAGE_OTHER означает что модель отказалась генерировать (контент-политика, некорректный промт и т.д.)
+        if finish_reason in ["IMAGE_OTHER", "SAFETY", "PROHIBITED_CONTENT"]:
+            error_msg = f"Модель отказалась генерировать изображение. Причина: {finish_reason}"
+            if finish_message:
+                error_msg += f". Сообщение: {finish_message[:200]}"
+            print(f"[IMAGE_GEN] ✗ {error_msg}", flush=True)
+            raise ValueError(error_msg)
+
         content_parts = candidate.get("content", {}).get("parts", [])
         for part in content_parts:
             inline = part.get("inlineData")
             if inline and inline.get("data"):
                 results.append(base64.b64decode(inline["data"]))
-    
+
     if not results:
+        print(f"[IMAGE_GEN] ✗ No images returned. Response: {str(data)[:300]}", flush=True)
         raise ValueError(f"No images returned from generation. Response: {str(data)[:200]}")
-        
+
+    print(f"[IMAGE_GEN] ✓ Successfully decoded {len(results)} image(s)", flush=True)
     return results
