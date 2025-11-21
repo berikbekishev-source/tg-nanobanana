@@ -2,22 +2,32 @@
 Глобальные обработчики команд и кнопок меню.
 Эти обработчики должны работать из ЛЮБОГО состояния.
 """
+from typing import List, Tuple
+
 from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery
 from aiogram.filters import StateFilter, Command
 from aiogram.fsm.context import FSMContext
 from django.conf import settings
+from asgiref.sync import sync_to_async
 
 from botapp.states import BotStates
 from botapp.keyboards import (
     get_main_menu_keyboard,
-    get_back_to_menu_keyboard,
     get_balance_keyboard,
-    get_prices_info
+    get_prices_info,
+    get_image_models_keyboard,
+    get_main_menu_inline_keyboard,
+    get_model_info_message,
+    get_image_mode_keyboard,
+    get_video_models_keyboard,
+    get_video_format_keyboard,
+    get_cancel_keyboard,
 )
-from botapp.models import TgUser
+from botapp.models import TgUser, AIModel
 from botapp.business.balance import BalanceService
-from asgiref.sync import sync_to_async
+from botapp.business.pricing import get_base_price_tokens
+from botapp.reference_prompt import REFERENCE_PROMPT_MODELS
 
 router = Router()
 
@@ -62,12 +72,6 @@ async def global_show_balance(message: Message, state: FSMContext):
         parse_mode=None
     )
 
-    # Меняем клавиатуру на кнопку "Главное меню"
-    await message.answer(
-        "Выберите действие:",
-        reply_markup=get_back_to_menu_keyboard()
-    )
-
     # Устанавливаем состояние просмотра баланса
     await state.set_state(BotStates.balance_view)
 
@@ -87,9 +91,6 @@ async def global_create_image_start(message: Message, state: FSMContext):
     Обработчик кнопки 'Создать изображение' - работает из любого состояния.
     Перенаправляет к выбору модели для генерации изображений.
     """
-    from botapp.models import AIModel
-    from botapp.keyboards import get_image_models_keyboard, get_main_menu_inline_keyboard
-    
     # Очищаем предыдущее состояние
     await state.clear()
     
@@ -122,9 +123,6 @@ async def global_create_video_start(message: Message, state: FSMContext):
     Обработчик кнопки 'Создать видео' - работает из любого состояния.
     Перенаправляет к выбору модели для генерации видео.
     """
-    from botapp.models import AIModel
-    from botapp.keyboards import get_video_models_keyboard, get_main_menu_inline_keyboard
-    
     # Очищаем предыдущее состояние
     await state.clear()
     
@@ -157,9 +155,6 @@ async def global_prompt_by_reference_entry(message: Message, state: FSMContext):
     Обработчик кнопки 'Промт по рефференсу' - работает из любого состояния.
     Автоматически выбирает первую доступную модель.
     """
-    from botapp.reference_prompt import REFERENCE_PROMPT_MODELS
-    from botapp.keyboards import get_cancel_keyboard
-    
     await state.clear()
 
     if not REFERENCE_PROMPT_MODELS:
@@ -193,14 +188,6 @@ async def global_select_image_model(callback: CallbackQuery, state: FSMContext):
     Обработчик выбора модели для генерации изображений.
     Работает из любого состояния (переопределяет текущее состояние).
     """
-    from botapp.models import AIModel
-    from botapp.keyboards import (
-        get_main_menu_inline_keyboard,
-        get_model_info_message,
-        get_image_mode_keyboard
-    )
-    from botapp.business.pricing import get_base_price_tokens
-    
     await callback.answer()
 
     # Получаем slug модели из callback data
@@ -277,14 +264,6 @@ async def global_select_video_model(callback: CallbackQuery, state: FSMContext):
     Обработчик выбора модели для генерации видео.
     Работает из любого состояния (переопределяет текущее состояние).
     """
-    from botapp.models import AIModel
-    from botapp.keyboards import (
-        get_main_menu_inline_keyboard,
-        get_model_info_message,
-        get_video_format_keyboard
-    )
-    from botapp.business.pricing import get_base_price_tokens
-    
     await callback.answer()
 
     # Получаем slug модели из callback data
