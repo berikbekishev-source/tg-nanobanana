@@ -894,6 +894,12 @@ def _gemini_vertex_request(
     payload = _build_gemini_payload(parts, quantity, params)
     response = session.post(url, json=payload, timeout=120)
     if response.status_code in (403, 404):
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.warning(
+            f"Vertex AI request failed ({response.status_code}), falling back to Gemini API. "
+            f"URL: {url}, Response: {response.text[:200]}"
+        )
         # Vertex недоступен или не выдаёт модель — пробуем публичный Generative Language API.
         model_name = _gemini_model_name(model_path)
         return _gemini_google_api_request(
