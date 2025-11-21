@@ -15,7 +15,6 @@ from aiogram.types import (
     Sticker,
     CallbackQuery,
     InlineKeyboardMarkup,
-    InlineKeyboardButton,
 )
 from asgiref.sync import sync_to_async
 from django.utils import timezone

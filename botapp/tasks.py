@@ -20,23 +20,34 @@ from .business.balance import BalanceService
 from .business.generation import GenerationService
 from .chat_logger import ChatLogger
 from .error_tracker import ErrorTracker
-from .keyboards import get_generation_complete_message, get_main_menu_inline_keyboard
+from .keyboards import get_generation_complete_message
 from .media_utils import detect_reference_mime, ensure_png_format
-from .models import AIModel, BotErrorEvent, GenRequest, TgUser
+from .models import BotErrorEvent, GenRequest, TgUser
 from .providers import VideoGenerationError, get_video_provider
 from .services import generate_images_for_model, supabase_upload_png, supabase_upload_video
 
 logger = logging.getLogger(__name__)
 
+MAX_TELEGRAM_CAPTION = 1024  # ограничение Telegram на caption для медиа
+
+
+def _shorten_caption(text: str, limit: int = MAX_TELEGRAM_CAPTION) -> str:
+    """Обрезает caption до лимита Telegram."""
+    if not text:
+        return text
+    if len(text) <= limit:
+        return text
+    return text[: limit - 1] + "…"
+
 
 def send_telegram_photo(chat_id: int, photo_bytes: bytes, caption: str, reply_markup: Optional[Dict] = None):
-    """Отправка фото в Telegram через Bot API напрямую (без aiogram)"""
-    url = f"https://api.telegram.org/bot{settings.TELEGRAM_BOT_TOKEN}/sendPhoto"
-    files = {"photo": ("image.png", photo_bytes, "image/png")}
+    """Отправка изображения файлом (document) в Telegram напрямую."""
+    url = f"https://api.telegram.org/bot{settings.TELEGRAM_BOT_TOKEN}/sendDocument"
+    files = {"document": ("image.png", photo_bytes, "image/png")}
     data = {
         "chat_id": chat_id,
-        "caption": caption,
-        "parse_mode": "Markdown"
+        "caption": _shorten_caption(caption),
+        "parse_mode": "Markdown",
     }
     if reply_markup:
         data["reply_markup"] = json.dumps(reply_markup)
@@ -50,18 +61,18 @@ def send_telegram_photo(chat_id: int, photo_bytes: bytes, caption: str, reply_ma
 
 
 def send_telegram_video(chat_id: int, video_bytes: bytes, caption: str, reply_markup: Optional[Dict] = None):
-    """Отправка видео в Telegram через Bot API напрямую"""
-    url = f"https://api.telegram.org/bot{settings.TELEGRAM_BOT_TOKEN}/sendVideo"
-    files = {"video": ("video.mp4", video_bytes, "video/mp4")}
+    """Отправка видео файлом (document) в Telegram напрямую."""
+    url = f"https://api.telegram.org/bot{settings.TELEGRAM_BOT_TOKEN}/sendDocument"
+    files = {"document": ("video.mp4", video_bytes, "video/mp4")}
     data = {
         "chat_id": chat_id,
-        "caption": caption,
-        "parse_mode": "Markdown"
+        "caption": _shorten_caption(caption),
+        "parse_mode": "Markdown",
     }
     if reply_markup:
         data["reply_markup"] = json.dumps(reply_markup)
 
-    with httpx.Client(timeout=60) as client:
+    with httpx.Client(timeout=120) as client:
         resp = client.post(url, files=files, data=data)
         resp.raise_for_status()
         payload = resp.json()
@@ -90,14 +101,24 @@ def send_telegram_message(chat_id: int, text: str, reply_markup: Optional[Dict] 
 
 
 def get_inline_menu_markup():
-    """Получение разметки inline кнопки главного меню для JSON"""
+    """Разметка reply-клавиатуры главного меню"""
+    payment_url = getattr(settings, "PAYMENT_MINI_APP_URL", "https://example.com/payment")
     return {
-        "inline_keyboard": [[
-            {
-                "text": "🏠 Главное меню",
-                "callback_data": "main_menu"
-            }
-        ]]
+        "keyboard": [
+            [
+                {"text": "🎨 Создать изображение"},
+                {"text": "🎬 Создать видео"},
+            ],
+            [
+                {"text": "💰 Мой баланс (цены)"},
+                {"text": "💳 Пополнить баланс", "web_app": {"url": payment_url}},
+            ],
+            [{"text": "📲Промт по рефференсу"}],
+            [{"text": "🏠Главное меню"}],
+            [{"text": "🧡 Поддержка"}],
+        ],
+        "resize_keyboard": True,
+        "one_time_keyboard": False,
     }
 
 
@@ -109,10 +130,6 @@ def get_video_result_markup(request_id: int, include_extension: bool = True) -> 
             "text": "🔁 Продлить FAST",
             "callback_data": f"extend_video:{request_id}",
         }])
-    keyboard.append([{
-        "text": "🏠 Главное меню",
-        "callback_data": "main_menu",
-    }])
     return {"inline_keyboard": keyboard}
 
 
@@ -543,8 +560,11 @@ def generate_image_task(self, request_id: int):
 
         input_images_payload: List[Dict[str, Any]] = []
         if generation_type == 'image2image':
-            max_inputs = model.max_input_images or None
             input_sources = req.input_images or []
+            max_inputs = model.max_input_images or None
+            # Для ремикса отправляем все загруженные изображения (до 4), даже если модель задана строже.
+            if image_mode == "remix":
+                max_inputs = min(len(input_sources), 4) or None
             input_images_payload = _prepare_input_images(input_sources, max_inputs)
             if not input_images_payload:
                 generation_type = 'text2image'
@@ -578,6 +598,7 @@ def generate_image_task(self, request_id: int):
                 prompt=prompt,
                 generation_type=generation_type,
                 model_name=model.display_name,
+                model_display_name=model.display_name,
                 quantity=quantity,
                 aspect_ratio=req.aspect_ratio or "1:1",
                 charged_amount=charged_amount,
@@ -686,22 +707,50 @@ def generate_video_task(self, request_id: int):
             prompt=prompt,
             generation_type=generation_type,
             model_name=model.display_name,
+            model_display_name=model.display_name,
             duration=req.duration or result.duration,
             resolution=req.video_resolution or result.resolution,
             aspect_ratio=req.aspect_ratio or result.aspect_ratio,
-            model_hashtag=model.hashtag,
             charged_amount=charged_amount,
             balance_after=balance_after,
         )
 
         allow_extension = model.provider == "veo"
 
-        send_telegram_video(
-            chat_id=req.chat_id,
-            video_bytes=result.content,
-            caption=message,
-            reply_markup=get_video_result_markup(req.id, include_extension=allow_extension),
-        )
+        try:
+            send_telegram_video(
+                chat_id=req.chat_id,
+                video_bytes=result.content,
+                caption=message,
+                reply_markup=get_video_result_markup(req.id, include_extension=allow_extension),
+            )
+        except httpx.HTTPStatusError as e:
+            status = e.response.status_code if e.response else "unknown"
+            body = e.response.text if e.response else str(e)
+            logger.warning("Telegram sendDocument failed: status=%s body=%s", status, body[:500], exc_info=e)
+            fallback_text = (
+                "Видео готово, но Telegram вернул ошибку при отправке файла. "
+                f"Ссылка для скачивания: {public_url}"
+            )
+            send_telegram_message(
+                req.chat_id,
+                fallback_text,
+                reply_markup=get_video_result_markup(req.id, include_extension=allow_extension),
+                parse_mode=None,
+            )
+        except Exception as e:
+            logger.exception("Unexpected error while sending video to Telegram")
+            fallback_text = (
+                "Видео готово, но не удалось отправить его файлом. "
+                f"Ссылка для скачивания: {public_url}"
+            )
+            send_telegram_message(
+                req.chat_id,
+                fallback_text,
+                reply_markup=get_video_result_markup(req.id, include_extension=allow_extension),
+                parse_mode=None,
+            )
+            raise e
 
     except VideoGenerationError as e:
         GenerationService.fail_generation(req, str(e), refund=True)
@@ -838,10 +887,10 @@ def extend_video_task(self, request_id: int):
             prompt=prompt,
             generation_type=generation_type,
             model_name=model.display_name,
+            model_display_name=model.display_name,
             duration=req.duration or int(round(combined_duration)),
             resolution=req.video_resolution or final_resolution,
             aspect_ratio=req.aspect_ratio or final_aspect_ratio,
-            model_hashtag=model.hashtag,
             charged_amount=charged_amount,
             balance_after=balance_after,
         )
@@ -926,6 +975,6 @@ def process_payment_webhook(self, payment_data: Dict):
     except TgUser.DoesNotExist:
         # Пользователь не найден
         pass
-    except Exception as e:
+    except Exception:
         # Логируем ошибку
         raise

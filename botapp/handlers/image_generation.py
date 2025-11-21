@@ -2,6 +2,7 @@
 Обработчики генерации изображений
 """
 from aiogram import Router, F
+from aiogram.filters import StateFilter
 from aiogram.types import Message, CallbackQuery
 from aiogram.fsm.context import FSMContext
 from typing import List, Dict, Any
@@ -9,11 +10,9 @@ from typing import List, Dict, Any
 from botapp.states import BotStates
 from botapp.keyboards import (
     get_image_models_keyboard,
-    get_back_to_menu_keyboard,
     get_model_info_message,
     get_cancel_keyboard,
     get_main_menu_inline_keyboard,
-    get_generation_complete_message,
     get_image_mode_keyboard,
 )
 from botapp.models import TgUser, AIModel, BotErrorEvent
@@ -22,10 +21,114 @@ from botapp.business.balance import BalanceService, InsufficientBalanceError
 from botapp.business.pricing import get_base_price_tokens
 from botapp.tasks import generate_image_task
 from asgiref.sync import sync_to_async
-import uuid
 from botapp.error_tracker import ErrorTracker
 
 router = Router()
+
+
+async def _start_image_generation(
+    message: Message,
+    state: FSMContext,
+    prompt: str,
+    data: Dict[str, Any],
+) -> bool:
+    """Стартует генерацию на основе промта и данных состояния."""
+    mode = data.get("image_mode") or "text"
+    remix_images = data.get("remix_images") or []
+    edit_base_id = data.get("edit_base_id")
+
+    model = await sync_to_async(AIModel.objects.get)(id=data["model_id"])
+    if len(prompt) > model.max_prompt_length:
+        await message.answer(
+            f"❌ Промт слишком длинный!\n"
+            f"Максимальная длина: {model.max_prompt_length} символов\n"
+            f"Ваш промт: {len(prompt)} символов",
+            reply_markup=get_cancel_keyboard(),
+        )
+        return False
+
+    user = await sync_to_async(TgUser.objects.get)(chat_id=message.from_user.id)
+
+    generation_type = "text2image"
+    input_entries: List[Dict[str, Any]] = []
+    if mode == "edit":
+        if not edit_base_id:
+            await message.answer(
+                "Отправьте изображение для редактирования, затем текстовый промт.",
+                reply_markup=get_cancel_keyboard(),
+            )
+            return False
+        generation_type = "image2image"
+        input_entries = [{"telegram_file_id": edit_base_id}]
+    elif mode == "remix":
+        min_required = 2
+        max_allowed = max(min_required, min(data.get("max_images", 4), 4))
+        if len(remix_images) < min_required:
+            await message.answer(
+                f"Для режима «Ремикс» нужно минимум {min_required} изображений. Загрузите ещё и повторите попытку.",
+                reply_markup=get_cancel_keyboard(),
+            )
+            return False
+        generation_type = "image2image"
+        input_entries = [
+            {"telegram_file_id": file_id, "type": "subject"}
+            for file_id in remix_images[:max_allowed]
+        ]
+
+    try:
+        gen_request = await sync_to_async(GenerationService.create_generation_request)(
+            user=user,
+            ai_model=model,
+            prompt=prompt,
+            quantity=1,  # По умолчанию 1 изображение
+            generation_type=generation_type,
+            input_images=input_entries,
+            generation_params={"image_mode": mode},
+        )
+
+        await message.answer(
+            f"🎨 **Генерация началась!**\n\n"
+            f"Модель: {data['model_name']}\n"
+            f"Промт: {prompt[:100]}{'...' if len(prompt) > 100 else ''}\n\n"
+            f"⏳ Обычно это занимает 10-30 секунд...\n"
+            f"Я отправлю вам результат, как только он будет готов!",
+            parse_mode="Markdown",
+            reply_markup=get_main_menu_inline_keyboard(),
+        )
+
+        generate_image_task.delay(gen_request.id)
+        await state.clear()
+        return True
+
+    except InsufficientBalanceError as e:
+        await message.answer(
+            f"❌ {str(e)}",
+            reply_markup=get_main_menu_inline_keyboard()
+        )
+        await state.clear()
+        return False
+
+    except Exception as e:
+        await message.answer(
+            f"❌ Произошла ошибка: {str(e)}",
+            reply_markup=get_main_menu_inline_keyboard()
+        )
+        await ErrorTracker.alog(
+            origin=BotErrorEvent.Origin.TELEGRAM,
+            severity=BotErrorEvent.Severity.WARNING,
+            handler="image_generation.receive_image_prompt",
+            chat_id=message.chat.id,
+            payload={
+                "mode": mode,
+                "model_id": data.get("model_id"),
+                "prompt_length": len(prompt) if prompt else 0,
+                "has_remix_images": bool(remix_images),
+                "has_edit_base": bool(edit_base_id),
+            },
+            exc=e,
+        )
+        await state.clear()
+        return False
 
 
 @router.message(F.text == "🎨 Создать изображение")
@@ -111,13 +214,7 @@ async def select_image_model(callback: CallbackQuery, state: FSMContext):
         edit_base_id=None,
     )
 
-    info_message = (
-        get_model_info_message(model, base_price=model_cost)
-        + "\n\nРежимы:\n"
-        "• Создать из текста — промт без изображений\n"
-        "• Отредактировать — одно изображение + промт\n"
-        "• Ремикс — 2-4 изображения + промт"
-    )
+    info_message = get_model_info_message(model, base_price=model_cost)
 
     await state.set_state(BotStates.image_select_mode)
     await callback.message.answer(
@@ -132,111 +229,7 @@ async def receive_image_prompt(message: Message, state: FSMContext):
     Получаем текстовый промт для генерации
     """
     data = await state.get_data()
-    prompt = message.text
-    mode = data.get("image_mode") or "text"
-    remix_images = data.get("remix_images") or []
-    edit_base_id = data.get("edit_base_id")
-
-    # Проверяем длину промта
-    model = await sync_to_async(AIModel.objects.get)(id=data['model_id'])
-    if len(prompt) > model.max_prompt_length:
-        await message.answer(
-            f"❌ Промт слишком длинный!\n"
-            f"Максимальная длина: {model.max_prompt_length} символов\n"
-            f"Ваш промт: {len(prompt)} символов",
-            reply_markup=get_cancel_keyboard()
-        )
-        return
-
-    # Получаем пользователя
-    user = await sync_to_async(TgUser.objects.get)(chat_id=message.from_user.id)
-
-    # Создаем запрос на генерацию через сервис
-    generation_type = 'text2image'
-    input_entries: List[Dict[str, Any]] = []
-    if mode == "edit":
-        if not edit_base_id:
-            await message.answer(
-                "Отправьте изображение для редактирования, затем текстовый промт.",
-                reply_markup=get_cancel_keyboard(),
-            )
-            return
-        generation_type = 'image2image'
-        input_entries = [
-            {"telegram_file_id": edit_base_id},
-        ]
-    elif mode == "remix":
-        min_required = 2
-        max_allowed = max(min_required, min(data.get("max_images", 4), 4))
-        if len(remix_images) < min_required:
-            await message.answer(
-                f"Для режима «Ремикс» нужно минимум {min_required} изображений. Загрузите ещё и повторите попытку.",
-                reply_markup=get_cancel_keyboard(),
-            )
-            return
-        generation_type = 'image2image'
-        input_entries = [
-            {"telegram_file_id": file_id, "type": "subject"}
-            for file_id in remix_images[:max_allowed]
-        ]
-    else:
-        input_entries = []
-
-    try:
-        gen_request = await sync_to_async(GenerationService.create_generation_request)(
-            user=user,
-            ai_model=model,
-            prompt=prompt,
-            quantity=1,  # По умолчанию 1 изображение
-            generation_type=generation_type,
-            input_images=input_entries,
-            generation_params={"image_mode": mode},
-        )
-
-        # Отправляем информационное сообщение с деталями
-        await message.answer(
-            f"🎨 **Генерация началась!**\n\n"
-            f"Модель: {data['model_name']}\n"
-            f"Промт: {prompt[:100]}{'...' if len(prompt) > 100 else ''}\n\n"
-            f"⏳ Обычно это занимает 10-30 секунд...\n"
-            f"Я отправлю вам результат, как только он будет готов!",
-            parse_mode="Markdown",
-            reply_markup=get_main_menu_inline_keyboard()
-        )
-
-        # Запускаем задачу генерации
-        generate_image_task.delay(gen_request.id)
-
-        # Очищаем состояние
-        await state.clear()
-
-    except InsufficientBalanceError as e:
-        await message.answer(
-            f"❌ {str(e)}",
-            reply_markup=get_main_menu_inline_keyboard()
-        )
-        await state.clear()
-
-    except Exception as e:
-        await message.answer(
-            f"❌ Произошла ошибка: {str(e)}",
-            reply_markup=get_main_menu_inline_keyboard()
-        )
-        await ErrorTracker.alog(
-            origin=BotErrorEvent.Origin.TELEGRAM,
-            severity=BotErrorEvent.Severity.WARNING,
-            handler="image_generation.receive_image_prompt",
-            chat_id=message.chat.id,
-            payload={
-                "mode": mode,
-                "model_id": data.get("model_id"),
-                "prompt_length": len(prompt) if prompt else 0,
-                "has_remix_images": bool(remix_images),
-                "has_edit_base": bool(edit_base_id),
-            },
-            exc=e,
-        )
-        await state.clear()
+    await _start_image_generation(message, state, message.text, data)
 
 
 @router.message(BotStates.image_wait_prompt, F.photo)
@@ -246,6 +239,7 @@ async def receive_image_for_prompt(message: Message, state: FSMContext):
     """
     data = await state.get_data()
     mode = data.get("image_mode") or "text"
+    caption = (message.caption or "").strip()
 
     if not data.get('supports_images'):
         await message.answer(
@@ -263,10 +257,15 @@ async def receive_image_for_prompt(message: Message, state: FSMContext):
         return
 
     photo = message.photo[-1]
-    max_images = max(1, data.get('max_images', 4))
+    max_images_raw = data.get("max_images")
+    max_images = max(1, max_images_raw) if isinstance(max_images_raw, int) and max_images_raw > 0 else 4
 
     if mode == "edit":
         await state.update_data(edit_base_id=photo.file_id)
+        if caption:
+            updated_data = await state.get_data()
+            await _start_image_generation(message, state, caption, updated_data)
+            return
         await message.answer(
             "🖼️ Изображение получено. Теперь отправьте текстовый промт.",
             reply_markup=get_cancel_keyboard(),
@@ -274,7 +273,13 @@ async def receive_image_for_prompt(message: Message, state: FSMContext):
         return
 
     # режим remix
-    remix_images = data.get('remix_images', [])
+    media_group_id = message.media_group_id
+    last_group_id = data.get("media_group_id")
+    same_album = bool(media_group_id and media_group_id == last_group_id)
+
+    remix_images = list(data.get("remix_images") or [])
+    pending_caption = (data.get("pending_caption") or "").strip() if same_album else ""
+    notified_count = data.get("remix_notified_count", 0) if same_album else 0
     if len(remix_images) >= max_images:
         await message.answer(
             f"❌ Уже загружено максимальное количество изображений ({max_images}). Теперь отправьте текстовый промт.",
@@ -283,13 +288,35 @@ async def receive_image_for_prompt(message: Message, state: FSMContext):
         return
 
     remix_images.append(photo.file_id)
-    await state.update_data(remix_images=remix_images)
+    if caption:
+        pending_caption = caption
+
+    await state.update_data(
+        remix_images=remix_images,
+        pending_caption=pending_caption,
+        media_group_id=media_group_id or last_group_id,
+        remix_notified_count=notified_count,
+    )
 
     min_needed = max(2, min(max_images, 4))
+    updated_data = await state.get_data()
+
+    if pending_caption and len(remix_images) >= min_needed:
+        await _start_image_generation(message, state, pending_caption, updated_data)
+        return
+
+    if media_group_id:
+        if len(remix_images) >= min_needed and len(remix_images) != notified_count:
+            await message.answer(
+                f"✅ {len(remix_images)} изображений загружено. Теперь напишите текстовый промт.",
+                reply_markup=get_cancel_keyboard(),
+            )
+            await state.update_data(remix_notified_count=len(remix_images))
+        return
+
     if len(remix_images) < min_needed:
         await message.answer(
-            f"✅ Изображение {len(remix_images)} загружено. Нужно минимум {min_needed} изображений."
-            f" Загрузите ещё или отмените операцию.",
+            f"✅ {len(remix_images)} изображений загружено. Загрузите ещё или отправьте текстовый промт.",
             reply_markup=get_cancel_keyboard(),
         )
     elif len(remix_images) < max_images:
@@ -323,10 +350,15 @@ async def handle_main_menu_callback(callback: CallbackQuery, state: FSMContext):
     PAYMENT_URL = getattr(settings, 'PAYMENT_MINI_APP_URL', 'https://example.com/payment')
 
     await callback.message.answer(
-        "Главное меню:",
+        "Выберите нужное  действие нажав на кнопку в меню 👇",
         reply_markup=get_main_menu_keyboard(PAYMENT_URL)
     )
-@router.callback_query(BotStates.image_select_mode, F.data.startswith("image_mode:"))
+
+
+@router.callback_query(
+    StateFilter(BotStates.image_select_mode, BotStates.image_wait_prompt),
+    F.data.startswith("image_mode:"),
+)
 async def select_image_mode(callback: CallbackQuery, state: FSMContext):
     """Обработка выбора режима генерации изображений."""
     await callback.answer()
@@ -335,8 +367,6 @@ async def select_image_mode(callback: CallbackQuery, state: FSMContext):
     data = await state.get_data()
     supports_images = data.get("supports_images", False)
     max_images = data.get("max_images", 0)
-    provider = data.get("model_provider")
-    supports_edit = provider in {"openai_image", "gemini"}
 
     if mode in {"edit", "remix"} and (not supports_images or max_images <= 0):
         await callback.message.answer(
@@ -356,6 +386,8 @@ async def select_image_mode(callback: CallbackQuery, state: FSMContext):
         image_mode=mode,
         remix_images=[],
         edit_base_id=None,
+        pending_caption="",
+        media_group_id=None,
     )
 
     if mode == "text":
@@ -376,7 +408,8 @@ async def select_image_mode(callback: CallbackQuery, state: FSMContext):
 
     if mode == "remix":
         await callback.message.answer(
-            f"🎭 Режим ремикса.\nЗагрузите от 2 до {max_images} изображений (одним за другим), затем отправьте текстовый промт.",
+            f"🎭 Режим ремикс позволяет загрузить сразу несколько изображений в качестве промта.\n"
+            f"Загрузите от 2 до {max_images} изображений и напишите текстовый промт.",
             reply_markup=get_cancel_keyboard(),
         )
         await state.set_state(BotStates.image_wait_prompt)

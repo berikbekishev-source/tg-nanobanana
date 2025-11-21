@@ -1,9 +1,10 @@
 """
 Обработчики генерации видео
 """
-from typing import Any, Dict, List, Optional, Tuple
+from typing import List, Optional, Tuple
 
 from aiogram import Router, F
+from aiogram.filters import StateFilter
 from aiogram.types import Message, CallbackQuery
 from aiogram.fsm.context import FSMContext
 
@@ -83,7 +84,7 @@ def _format_image_hint_text(dimensions: Optional[Tuple[int, int]]) -> Optional[s
         return None
     width, height = dimensions
     return (
-        f"Для режима img2video используйте изображение {width}x{height}. "
+        f"Размер изображения должно быть: {width}x{height}. "
         "Если размер будет другим, мы автоматически обрежем центр под нужный формат."
     )
 
@@ -98,23 +99,26 @@ async def _prompt_user_for_description(
     is_sora: bool = False,
 ) -> None:
     """Отправить пользователю инструкции по вводу промта."""
-    intro = [f"Формат выбран: {aspect_ratio}"]
-    if duration:
-        intro.append(f"Длительность: {duration} сек.")
-    if resolution:
-        intro.append(f"Качество: {resolution.upper()}")
-    intro.append("Отправьте текстовое описание для генерации видео.")
     image_hint = _calculate_image_size_hint(
         supports_images=supports_images,
         is_sora=is_sora,
         resolution=resolution,
         aspect_ratio=aspect_ratio,
     )
-    if supports_images:
-        intro.append("Либо загрузите изображение и добавьте описание, чтобы использовать режим img2video.")
-        hint_text = _format_image_hint_text(image_hint)
-        if hint_text:
-            intro.append(hint_text)
+    size_hint = _format_image_hint_text(image_hint) if supports_images else ""
+
+    segments = [
+        "✍️  Напиши в чат промт для генерации видео из текста.",
+        "🖼 Если хотите сгенерировать видео из изображения, отправьте в чат одно изображение + текстовый промт."
+        f" {size_hint}".strip(),
+        f"Формат выбран: {aspect_ratio}",
+    ]
+    if duration:
+        segments.append(f"Длительность: {duration} сек.")
+    if resolution:
+        segments.append(f"Качество: {resolution.lower()}")
+
+    intro = ["\n\n".join(segments)]
 
     await message.answer(
         "\n".join(intro),
@@ -303,7 +307,15 @@ async def wait_resolution_selection(message: Message, state: FSMContext):
     )
 
 
-@router.callback_query(BotStates.video_select_format, F.data.startswith("video_format:"))
+@router.callback_query(
+    StateFilter(
+        BotStates.video_select_format,
+        BotStates.video_select_duration,
+        BotStates.video_select_resolution,
+        BotStates.video_wait_prompt,
+    ),
+    F.data.startswith("video_format:"),
+)
 async def set_video_format(callback: CallbackQuery, state: FSMContext):
     """Сохраняем выбранное соотношение сторон и переходим к сбору промта."""
     await callback.answer()
@@ -350,7 +362,14 @@ async def set_video_format(callback: CallbackQuery, state: FSMContext):
     await state.set_state(BotStates.video_wait_prompt)
 
 
-@router.callback_query(BotStates.video_select_duration, F.data.startswith("video_duration:"))
+@router.callback_query(
+    StateFilter(
+        BotStates.video_select_duration,
+        BotStates.video_wait_prompt,
+        BotStates.video_select_resolution,
+    ),
+    F.data.startswith("video_duration:"),
+)
 async def set_video_duration(callback: CallbackQuery, state: FSMContext):
     """Сохраняем выбранную длительность и переходим к сбору промта."""
     await callback.answer()
@@ -396,7 +415,10 @@ async def set_video_duration(callback: CallbackQuery, state: FSMContext):
     await state.set_state(BotStates.video_wait_prompt)
 
 
-@router.callback_query(BotStates.video_select_resolution, F.data.startswith("video_resolution:"))
+@router.callback_query(
+    StateFilter(BotStates.video_select_resolution, BotStates.video_wait_prompt),
+    F.data.startswith("video_resolution:"),
+)
 async def set_video_resolution(callback: CallbackQuery, state: FSMContext):
     """Сохраняем выбранное качество и переходим к сбору промта."""
     await callback.answer()
@@ -644,7 +666,10 @@ async def handle_video_prompt(message: Message, state: FSMContext):
         return
 
     await message.answer(
-        get_generation_start_message(),
+        get_generation_start_message().format(
+            model=model.display_name,
+            prompt=prompt,
+        ),
         reply_markup=get_main_menu_inline_keyboard()
     )
 
@@ -853,7 +878,10 @@ async def handle_video_extension_prompt(message: Message, state: FSMContext):
         return
 
     await message.answer(
-        get_generation_start_message(),
+        get_generation_start_message().format(
+            model=model.display_name if model else "—",
+            prompt=text,
+        ),
         reply_markup=get_main_menu_inline_keyboard()
     )
 
@@ -888,6 +916,6 @@ async def handle_main_menu_callback(callback: CallbackQuery, state: FSMContext):
     PAYMENT_URL = getattr(settings, 'PAYMENT_MINI_APP_URL', 'https://example.com/payment')
 
     await callback.message.answer(
-        "Главное меню:",
+        "Выберите нужное  действие нажав на кнопку в меню 👇",
         reply_markup=get_main_menu_keyboard(PAYMENT_URL)
     )

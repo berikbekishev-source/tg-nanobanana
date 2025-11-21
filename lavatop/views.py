@@ -1,10 +1,11 @@
-from django.shortcuts import render
 from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.clickjacking import xframe_options_exempt
 from django.http import HttpResponse
 import os
 
 
 @csrf_exempt
+@xframe_options_exempt
 def miniapp_payment(request):
     """
     Главная страница Telegram Mini App для оплаты

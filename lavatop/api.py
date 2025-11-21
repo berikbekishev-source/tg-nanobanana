@@ -147,12 +147,26 @@ def create_payment(request, data: CreatePaymentRequest):
             is_active=True,
             price_usd=amount_decimal,
         ).order_by('sort_order').first()
+        if not package:
+            # Фолбек: ищем по количеству токенов, если сумма не совпала из-за округления/старой цены
+            package = TokenPackage.objects.filter(
+                is_active=True,
+                credits=Decimal(str(data.credits)),
+            ).order_by('sort_order').first()
 
         if not package:
-            logger.warning(f"No token package matches amount {amount_decimal}")
+            available = list(
+                TokenPackage.objects.filter(is_active=True)
+                .order_by('sort_order')
+                .values_list('credits', 'price_usd')
+            )
+            logger.warning(
+                "No token package matches amount=%s credits=%s available=%s",
+                amount_decimal, data.credits, available
+            )
             return PaymentResponse(
                 success=False,
-                error="Пакет с такой суммой не найден. Обновите приложение и попробуйте снова."
+                error="Пакет с такой суммой не найден. Попробуйте выбрать 100 токенов или обновить приложение."
             )
 
         expected_credits = int(package.credits)

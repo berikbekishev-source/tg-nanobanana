@@ -11,15 +11,23 @@ from asgiref.sync import sync_to_async
 
 from botapp.states import BotStates
 from botapp.keyboards import (
-    get_back_to_menu_keyboard,
     get_cancel_keyboard,
     get_main_menu_inline_keyboard,
+    get_main_menu_keyboard,
     format_balance
 )
 from botapp.models import TgUser, Transaction, Promocode
 from botapp.business.balance import BalanceService
 
 router = Router()
+_configured_payment_url = getattr(settings, 'PAYMENT_MINI_APP_URL', None)
+_public_base_url = getattr(settings, 'PUBLIC_BASE_URL', '')
+if _configured_payment_url:
+    PAYMENT_URL = _configured_payment_url
+elif _public_base_url:
+    PAYMENT_URL = f"{_public_base_url.rstrip('/')}/miniapp/"
+else:
+    PAYMENT_URL = 'https://example.com/miniapp/'
 
 
 def _format_tokens(amount: Decimal) -> str:
@@ -124,7 +132,7 @@ async def deposit_from_menu(message: Message, state: FSMContext):
     # Формируем URL с параметрами пользователя
     user_id = message.from_user.id
     username = message.from_user.username or ""
-    payment_url = getattr(settings, 'PAYMENT_MINI_APP_URL', 'https://example.com/payment')
+    payment_url = PAYMENT_URL
     payment_url_with_params = f"{payment_url}?user_id={user_id}&username={username}"
 
     # Создаем inline кнопку для открытия Mini App
@@ -135,6 +143,10 @@ async def deposit_from_menu(message: Message, state: FSMContext):
     builder.button(
         text="💳 Открыть страницу оплаты",
         web_app=WebAppInfo(url=payment_url_with_params)
+    )
+    builder.button(
+        text="🌐 Открыть в браузере",
+        url=payment_url_with_params
     )
 
     await message.answer(
@@ -151,7 +163,7 @@ async def deposit_from_menu(message: Message, state: FSMContext):
     # Отправляем кнопку главного меню
     await message.answer(
         "Или вернитесь в меню:",
-        reply_markup=get_back_to_menu_keyboard()
+        reply_markup=get_main_menu_keyboard(PAYMENT_URL)
     )
 
 
@@ -304,12 +316,30 @@ async def handle_pre_checkout(pre_checkout_query: PreCheckoutQuery):
 
 
 @router.message(F.text.startswith("PROMO"))
+@router.message(F.text == "🎁 Ввести промокод")
 async def handle_promocode(message: Message, state: FSMContext):
     """
     Обработчик промокодов (формат: PROMOXXXX).
     Промокод может начислить фиксированное количество токенов.
     """
-    user = await sync_to_async(TgUser.objects.get)(chat_id=message.from_user.id)
+    await state.set_state(BotStates.payment_enter_promocode)
+    # Если сразу пришёл код (формат PROMOxxxx), обрабатываем; иначе просим ввести
+    if message.text.startswith("PROMO"):
+        user = await sync_to_async(TgUser.objects.get)(chat_id=message.from_user.id)
+        await _process_promocode_activation(
+            message,
+            user=user,
+            promo_code_raw=message.text,
+            success_markup=get_main_menu_inline_keyboard(),
+            failure_markup=get_main_menu_inline_keyboard(),
+        )
+        await state.clear()
+        return
+
+    await message.answer(
+        "Введите промокод в чат👇",
+        reply_markup=get_cancel_keyboard(),
+    )
 
     await _process_promocode_activation(
         message,
@@ -317,18 +347,6 @@ async def handle_promocode(message: Message, state: FSMContext):
         promo_code_raw=message.text,
         success_markup=get_main_menu_inline_keyboard(),
         failure_markup=get_main_menu_inline_keyboard(),
-    )
-
-
-@router.callback_query(F.data == "enter_promocode")
-async def prompt_promocode_input(callback: CallbackQuery, state: FSMContext):
-    """Запрос ввода промокода из раздела баланса."""
-    await callback.answer()
-    await state.set_state(BotStates.payment_enter_promocode)
-
-    await callback.message.answer(
-        "Введите промокод в чат.",
-        reply_markup=get_cancel_keyboard(),
     )
 
 
@@ -360,13 +378,7 @@ async def handle_main_menu_callback(callback: CallbackQuery, state: FSMContext):
     await state.clear()
     await state.set_state(BotStates.main_menu)
 
-    # Импортируем функцию главного меню
-    from django.conf import settings
-    from botapp.keyboards import get_main_menu_keyboard
-
-    PAYMENT_URL = getattr(settings, 'PAYMENT_MINI_APP_URL', 'https://example.com/payment')
-
     await callback.message.answer(
-        "Главное меню:",
+        "Выберите нужное  действие нажав на кнопку в меню 👇",
         reply_markup=get_main_menu_keyboard(PAYMENT_URL)
     )

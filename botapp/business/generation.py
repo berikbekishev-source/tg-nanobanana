@@ -7,7 +7,7 @@ from typing import Optional, List, Dict, Any
 from django.db import transaction as db_transaction
 from django.utils import timezone
 
-from botapp.models import TgUser, GenRequest, AIModel, Transaction, BotErrorEvent
+from botapp.models import TgUser, GenRequest, AIModel, BotErrorEvent
 from botapp.business.balance import BalanceService, InsufficientBalanceError
 from botapp.business.pricing import calculate_request_cost
 from botapp.error_tracker import ErrorTracker
