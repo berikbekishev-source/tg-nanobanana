@@ -46,6 +46,9 @@ class BotStates(StatesGroup):
     referral_info = State()             # Информация о реферальной программе
     referral_stats = State()            # Статистика рефералов
 
+    # Midjourney WebApp
+    midjourney_wait_settings = State()  # Ожидание настроек Midjourney из WebApp
+
     # Помощь и поддержка
     help_menu = State()                 # Меню помощи
     support_ticket = State()            # Создание тикета поддержки

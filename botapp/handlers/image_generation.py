@@ -2,6 +2,7 @@
 Обработчики генерации изображений
 """
 import asyncio
+import json
 import logging
 from typing import List, Dict, Any, Optional
 
@@ -35,6 +36,82 @@ logger = logging.getLogger(__name__)
 
 # Обработчик выбора модели "img_model:" также перенесен в global_commands.py
 # чтобы работать из любого состояния
+
+
+@router.message(StateFilter("*"), F.web_app_data)
+async def handle_midjourney_webapp_data(message: Message, state: FSMContext):
+    """
+    Принимаем данные из WebApp настроек Midjourney и запускаем/готовим генерацию.
+    """
+    data = await state.get_data()
+    if not data or data.get("model_provider") != "midjourney":
+        await message.answer(
+            "⚠️ Настройки не приняты: сначала выберите модель Midjourney.",
+            reply_markup=get_main_menu_inline_keyboard(),
+        )
+        return
+
+    try:
+        payload = json.loads(message.web_app_data.data)
+    except Exception:
+        await message.answer(
+            "❌ Не удалось прочитать данные из окна настроек. Попробуйте открыть снова.",
+            reply_markup=get_cancel_keyboard(),
+        )
+        return
+
+    if payload.get("kind") != "midjourney_settings":
+        await message.answer(
+            "❌ Пришли неизвестные данные. Откройте окно настроек Midjourney ещё раз.",
+            reply_markup=get_cancel_keyboard(),
+        )
+        return
+
+    prompt = (payload.get("prompt") or "").strip()
+    if not prompt:
+        await message.answer("Введите промт в окне настроек и отправьте ещё раз.", reply_markup=get_cancel_keyboard())
+        return
+
+    task_type = payload.get("taskType") or "mj_txt2img"
+    image_mode = "text" if task_type == "mj_txt2img" else "edit"
+
+    def normalize_int(value, default, min_v, max_v, step=None):
+        try:
+            num = int(float(value))
+        except (TypeError, ValueError):
+            num = default
+        num = max(min_v, min(max_v, num))
+        if step and step > 0:
+            num = int(round(num / step) * step)
+        return num
+
+    midjourney_params = {
+        "speed": payload.get("speed") or "fast",
+        "aspectRatio": payload.get("aspectRatio") or "1:1",
+        "version": str(payload.get("version") or "7"),
+        "stylization": normalize_int(payload.get("stylization"), 200, 0, 1000, 10),
+        "weirdness": normalize_int(payload.get("weirdness"), 0, 0, 3000, 50),
+        "variety": normalize_int(payload.get("variety"), 10, 0, 100, 5),
+    }
+
+    await state.update_data(
+        image_mode=image_mode,
+        remix_images=[],
+        edit_base_id=None,
+        pending_caption=prompt,
+        midjourney_params=midjourney_params,
+    )
+
+    if image_mode == "text":
+        await _start_generation(message, state, prompt)
+        return
+
+    # image_mode == edit (image->image)
+    await message.answer(
+        "🖼 Отправьте изображение, я применю настройки и промт из окна Midjourney.",
+        reply_markup=get_cancel_keyboard(),
+    )
+    await state.set_state(BotStates.image_wait_prompt)
 
 
 async def _start_generation(message: Message, state: FSMContext, prompt: str):
@@ -115,6 +192,10 @@ async def _start_generation(message: Message, state: FSMContext, prompt: str):
         input_entries = []
 
     try:
+        extra_params = data.get("midjourney_params") or {}
+        generation_params = {"image_mode": mode}
+        generation_params.update(extra_params)
+
         gen_request = await sync_to_async(GenerationService.create_generation_request)(
             user=user,
             ai_model=model,
@@ -122,7 +203,7 @@ async def _start_generation(message: Message, state: FSMContext, prompt: str):
             quantity=1,  # По умолчанию 1 изображение
             generation_type=generation_type,
             input_images=input_entries,
-            generation_params={"image_mode": mode},
+            generation_params=generation_params,
         )
 
         # Отправляем информационное сообщение с деталями
