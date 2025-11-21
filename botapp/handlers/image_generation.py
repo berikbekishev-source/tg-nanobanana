@@ -2,6 +2,7 @@
 Обработчики генерации изображений
 """
 from aiogram import Router, F
+from aiogram.filters import StateFilter
 from aiogram.types import Message, CallbackQuery
 from aiogram.fsm.context import FSMContext
 from typing import List, Dict, Any
@@ -256,7 +257,8 @@ async def receive_image_for_prompt(message: Message, state: FSMContext):
         return
 
     photo = message.photo[-1]
-    max_images = max(1, data.get('max_images', 4))
+    max_images_raw = data.get("max_images")
+    max_images = max(1, max_images_raw) if isinstance(max_images_raw, int) and max_images_raw > 0 else 4
 
     if mode == "edit":
         await state.update_data(edit_base_id=photo.file_id)
@@ -271,13 +273,13 @@ async def receive_image_for_prompt(message: Message, state: FSMContext):
         return
 
     # режим remix
-    remix_images = data.get('remix_images', [])
     media_group_id = message.media_group_id
     last_group_id = data.get("media_group_id")
-    notified_count = data.get("remix_notified_count", 0)
+    same_album = bool(media_group_id and media_group_id == last_group_id)
 
-    if media_group_id and media_group_id != last_group_id:
-        notified_count = 0
+    remix_images = list(data.get("remix_images") or [])
+    pending_caption = (data.get("pending_caption") or "").strip() if same_album else ""
+    notified_count = data.get("remix_notified_count", 0) if same_album else 0
     if len(remix_images) >= max_images:
         await message.answer(
             f"❌ Уже загружено максимальное количество изображений ({max_images}). Теперь отправьте текстовый промт.",
@@ -286,19 +288,19 @@ async def receive_image_for_prompt(message: Message, state: FSMContext):
         return
 
     remix_images.append(photo.file_id)
-    pending_caption = (data.get("pending_caption") or "").strip()
     if caption:
         pending_caption = caption
 
     await state.update_data(
         remix_images=remix_images,
         pending_caption=pending_caption,
-        media_group_id=media_group_id,
+        media_group_id=media_group_id or last_group_id,
         remix_notified_count=notified_count,
     )
-    updated_data = await state.get_data()
 
     min_needed = max(2, min(max_images, 4))
+    updated_data = await state.get_data()
+
     if pending_caption and len(remix_images) >= min_needed:
         await _start_image_generation(message, state, pending_caption, updated_data)
         return
@@ -353,7 +355,10 @@ async def handle_main_menu_callback(callback: CallbackQuery, state: FSMContext):
     )
 
 
-@router.callback_query(BotStates.image_select_mode, F.data.startswith("image_mode:"))
+@router.callback_query(
+    StateFilter(BotStates.image_select_mode, BotStates.image_wait_prompt),
+    F.data.startswith("image_mode:"),
+)
 async def select_image_mode(callback: CallbackQuery, state: FSMContext):
     """Обработка выбора режима генерации изображений."""
     await callback.answer()
@@ -381,6 +386,8 @@ async def select_image_mode(callback: CallbackQuery, state: FSMContext):
         image_mode=mode,
         remix_images=[],
         edit_base_id=None,
+        pending_caption="",
+        media_group_id=None,
     )
 
     if mode == "text":
