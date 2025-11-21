@@ -149,7 +149,7 @@ async def _maybe_prompt_resolution(message: Message, state: FSMContext) -> bool:
     return True
 
 
-@router.message(F.text == "🎬 Создать видео")
+@router.message(StateFilter("*"), F.text == "🎬 Создать видео")
 async def create_video_start(message: Message, state: FSMContext):
     """
     Шаг 1: Выбор модели генерации видео

@@ -2,6 +2,7 @@
 Обработчики платежей и пополнения баланса
 """
 from aiogram import Router, F
+from aiogram.filters import StateFilter
 from aiogram.types import Message, CallbackQuery, PreCheckoutQuery
 from aiogram.fsm.context import FSMContext
 from decimal import Decimal
@@ -123,7 +124,7 @@ async def _process_promocode_activation(
     return True
 
 
-@router.message(F.text == "💳 Пополнить баланс")
+@router.message(StateFilter("*"), F.text == "💳 Пополнить баланс")
 async def deposit_from_menu(message: Message, state: FSMContext):
     """
     Обработчик кнопки "Пополнить баланс" из главного меню
@@ -132,7 +133,12 @@ async def deposit_from_menu(message: Message, state: FSMContext):
     # Формируем URL с параметрами пользователя
     user_id = message.from_user.id
     username = message.from_user.username or ""
-    payment_url = PAYMENT_URL
+    configured_payment_url = getattr(settings, "PAYMENT_MINI_APP_URL", None)
+    if configured_payment_url:
+        payment_url = configured_payment_url
+    else:
+        public_base = getattr(settings, "PUBLIC_BASE_URL", "")
+        payment_url = f"{public_base.rstrip('/')}/miniapp/" if public_base else "https://example.com/miniapp/"
     payment_url_with_params = f"{payment_url}?user_id={user_id}&username={username}"
 
     # Создаем inline кнопку для открытия Mini App
@@ -144,6 +150,7 @@ async def deposit_from_menu(message: Message, state: FSMContext):
         text="💳 Открыть страницу оплаты",
         web_app=WebAppInfo(url=payment_url_with_params)
     )
+    # Фолбек: обычная ссылка, если WebApp заблокирован Телеграмом
     builder.button(
         text="🌐 Открыть в браузере",
         url=payment_url_with_params

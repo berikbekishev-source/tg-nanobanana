@@ -3,7 +3,7 @@
 """
 from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery
-from aiogram.filters import CommandStart, Command
+from aiogram.filters import CommandStart, Command, StateFilter
 from aiogram.fsm.context import FSMContext
 from django.conf import settings
 
@@ -82,7 +82,7 @@ async def cmd_start(message: Message, state: FSMContext):
     await state.set_state(BotStates.main_menu)
 
 
-@router.message(F.text.in_({"🏠Главное меню", "🏠 Главное меню"}))
+@router.message(StateFilter("*"), F.text.in_({"🏠Главное меню", "🏠 Главное меню"}))
 async def back_to_main_menu(message: Message, state: FSMContext):
     """Возврат в главное меню"""
     await state.clear()
@@ -94,7 +94,7 @@ async def back_to_main_menu(message: Message, state: FSMContext):
     )
 
 
-@router.message(F.text == "💰 Мой баланс (цены)")
+@router.message(StateFilter("*"), F.text == "💰 Мой баланс (цены)")
 async def show_balance(message: Message, state: FSMContext):
     """
     Обработчик кнопки 'Мой баланс (цены)'
@@ -120,7 +120,7 @@ async def show_balance(message: Message, state: FSMContext):
     await state.set_state(BotStates.balance_view)
 
 
-@router.message(F.text == "🧡 Поддержка")
+@router.message(StateFilter("*"), F.text == "🧡 Поддержка")
 async def support_contact(message: Message):
     """Контакт с админом"""
     await message.answer(
@@ -129,7 +129,7 @@ async def support_contact(message: Message):
     )
 
 
-@router.callback_query(F.data == "deposit")
+@router.callback_query(StateFilter("*"), F.data == "deposit")
 async def deposit_callback(callback: CallbackQuery, state: FSMContext):
     """
     Обработчик inline кнопки "Пополнить баланс" из раздела баланса
@@ -140,7 +140,12 @@ async def deposit_callback(callback: CallbackQuery, state: FSMContext):
     # Формируем URL с параметрами пользователя
     user_id = callback.from_user.id
     username = callback.from_user.username or ""
-    payment_url = PAYMENT_URL
+    configured_payment_url = PAYMENT_URL
+    if configured_payment_url:
+        payment_url = configured_payment_url
+    else:
+        public_base = getattr(settings, "PUBLIC_BASE_URL", "")
+        payment_url = f"{public_base.rstrip('/')}/miniapp/" if public_base else "https://example.com/miniapp/"
     payment_url_with_params = f"{payment_url}?user_id={user_id}&username={username}"
 
     # Создаем inline кнопку для открытия Mini App
@@ -152,6 +157,7 @@ async def deposit_callback(callback: CallbackQuery, state: FSMContext):
         text="💳 Открыть страницу оплаты",
         web_app=WebAppInfo(url=payment_url_with_params)
     )
+    # Фолбек: обычная ссылка, если WebApp заблокирован Телеграмом
     builder.button(
         text="🌐 Открыть в браузере",
         url=payment_url_with_params
@@ -169,7 +175,7 @@ async def deposit_callback(callback: CallbackQuery, state: FSMContext):
     )
 
 
-@router.callback_query(F.data == "cancel")
+@router.callback_query(StateFilter("*"), F.data == "cancel")
 async def cancel_action(callback: CallbackQuery, state: FSMContext):
     """Обработчик кнопки отмены"""
     await callback.answer("Действие отменено")
