@@ -416,17 +416,6 @@ async def receive_image_for_prompt(message: Message, state: FSMContext):
             "✅ Достаточно изображений! Отправьте текстовый промт для запуска ремикса.",
             reply_markup=get_cancel_keyboard(),
         )
-    elif len(remix_images) < max_images:
-        await message.answer(
-            f"✅ Изображение {len(remix_images)} загружено. Можно добавить ещё {max_images - len(remix_images)} "
-            "или отправить текстовый промт.",
-            reply_markup=get_cancel_keyboard(),
-        )
-    else:
-        await message.answer(
-            "✅ Достаточно изображений! Отправьте текстовый промт для запуска ремикса.",
-            reply_markup=get_cancel_keyboard(),
-        )
 
 
 @router.callback_query(F.data == "main_menu")
