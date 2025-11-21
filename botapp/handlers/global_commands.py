@@ -4,7 +4,7 @@
 """
 from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery
-from aiogram.filters import StateFilter
+from aiogram.filters import StateFilter, Command
 from aiogram.fsm.context import FSMContext
 from django.conf import settings
 
@@ -70,6 +70,15 @@ async def global_show_balance(message: Message, state: FSMContext):
 
     # Устанавливаем состояние просмотра баланса
     await state.set_state(BotStates.balance_view)
+
+
+@router.message(StateFilter("*"), Command("balance"))
+async def global_cmd_balance(message: Message, state: FSMContext):
+    """
+    Команда /balance для быстрой проверки баланса из любого состояния.
+    """
+    # Используем ту же логику что и для кнопки
+    await global_show_balance(message, state)
 
 
 @router.message(StateFilter("*"), F.text == "🎨 Создать изображение")

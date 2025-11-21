@@ -186,11 +186,8 @@ async def cmd_help(message: Message):
     await message.answer(help_text, parse_mode="Markdown")
 
 
-@router.message(Command("balance"))
-async def cmd_balance(message: Message, state: FSMContext):
-    """Быстрая команда для проверки баланса"""
-    # Вызываем тот же обработчик, что и для кнопки
-    await show_balance(message, state)
+# Команда /balance перенесена в global_commands.py
+# чтобы работать из любого состояния
 
 
 @router.message(BotStates.main_menu, ~F.text.in_(MAIN_MENU_ACTIONS))
