@@ -28,6 +28,17 @@ from .services import generate_images_for_model, supabase_upload_png, supabase_u
 
 logger = logging.getLogger(__name__)
 
+MAX_TELEGRAM_CAPTION = 1024  # ограничение Telegram на caption для медиа
+
+
+def _shorten_caption(text: str, limit: int = MAX_TELEGRAM_CAPTION) -> str:
+    """Обрезает caption до лимита Telegram."""
+    if not text:
+        return text
+    if len(text) <= limit:
+        return text
+    return text[: limit - 1] + "…"
+
 
 def send_telegram_photo(chat_id: int, photo_bytes: bytes, caption: str, reply_markup: Optional[Dict] = None):
     """Отправка изображения файлом (document) в Telegram напрямую."""
@@ -35,7 +46,7 @@ def send_telegram_photo(chat_id: int, photo_bytes: bytes, caption: str, reply_ma
     files = {"document": ("image.png", photo_bytes, "image/png")}
     data = {
         "chat_id": chat_id,
-        "caption": caption,
+        "caption": _shorten_caption(caption),
         "parse_mode": "Markdown",
     }
     if reply_markup:
@@ -55,7 +66,7 @@ def send_telegram_video(chat_id: int, video_bytes: bytes, caption: str, reply_ma
     files = {"document": ("video.mp4", video_bytes, "video/mp4")}
     data = {
         "chat_id": chat_id,
-        "caption": caption,
+        "caption": _shorten_caption(caption),
         "parse_mode": "Markdown",
     }
     if reply_markup:
@@ -706,12 +717,40 @@ def generate_video_task(self, request_id: int):
 
         allow_extension = model.provider == "veo"
 
-        send_telegram_video(
-            chat_id=req.chat_id,
-            video_bytes=result.content,
-            caption=message,
-            reply_markup=get_video_result_markup(req.id, include_extension=allow_extension),
-        )
+        try:
+            send_telegram_video(
+                chat_id=req.chat_id,
+                video_bytes=result.content,
+                caption=message,
+                reply_markup=get_video_result_markup(req.id, include_extension=allow_extension),
+            )
+        except httpx.HTTPStatusError as e:
+            status = e.response.status_code if e.response else "unknown"
+            body = e.response.text if e.response else str(e)
+            logger.warning("Telegram sendDocument failed: status=%s body=%s", status, body[:500], exc_info=e)
+            fallback_text = (
+                "Видео готово, но Telegram вернул ошибку при отправке файла. "
+                f"Ссылка для скачивания: {public_url}"
+            )
+            send_telegram_message(
+                req.chat_id,
+                fallback_text,
+                reply_markup=get_video_result_markup(req.id, include_extension=allow_extension),
+                parse_mode=None,
+            )
+        except Exception as e:
+            logger.exception("Unexpected error while sending video to Telegram")
+            fallback_text = (
+                "Видео готово, но не удалось отправить его файлом. "
+                f"Ссылка для скачивания: {public_url}"
+            )
+            send_telegram_message(
+                req.chat_id,
+                fallback_text,
+                reply_markup=get_video_result_markup(req.id, include_extension=allow_extension),
+                parse_mode=None,
+            )
+            raise e
 
     except VideoGenerationError as e:
         GenerationService.fail_generation(req, str(e), refund=True)
