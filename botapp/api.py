@@ -47,12 +47,12 @@ try:
             received_token = request.headers.get("x-telegram-bot-api-secret-token")
             expected_token = settings.TG_WEBHOOK_SECRET
 
-            # Временно отключаем проверку секрета для диагностики WebApp
-            # if received_token != expected_token:
-            #     logger.warning(
-            #         f"[WEBHOOK] Неверный токен. Получен: {received_token[:10] if received_token else 'None'}..., Ожидался: {expected_token[:10] if expected_token else 'None'}..."
-            #     )
-            #     return HttpResponse(status=403)
+            # Проверка секрета
+            if received_token != expected_token:
+                logger.warning(
+                    f"[WEBHOOK] Неверный токен. Получен: {received_token[:10] if received_token else 'None'}..., Ожидался: {expected_token[:10] if expected_token else 'None'}..."
+                )
+                return HttpResponse(status=403)
 
             payload_body = request.body.decode("utf-8", errors="ignore") or ""
             print(f"[WEBHOOK] raw body: {payload_body[:500]}", flush=True)
