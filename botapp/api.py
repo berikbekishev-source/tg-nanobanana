@@ -44,14 +44,33 @@ try:
         payload_body: Optional[str] = None
         parsed_data: Optional[Dict[str, Any]] = None
         try:
-            if request.headers.get("x-telegram-bot-api-secret-token") != settings.TG_WEBHOOK_SECRET:
+            # Логируем все webhook запросы для отладки
+            logger.info(f"[WEBHOOK] Получен запрос webhook")
+            received_token = request.headers.get("x-telegram-bot-api-secret-token")
+            expected_token = settings.TG_WEBHOOK_SECRET
+
+            if received_token != expected_token:
+                logger.warning(f"[WEBHOOK] Неверный токен. Получен: {received_token[:10] if received_token else 'None'}..., Ожидался: {expected_token[:10] if expected_token else 'None'}...")
                 return HttpResponse(status=403)
 
             payload_body = request.body.decode("utf-8", errors="ignore")
             parsed_data = json.loads(payload_body)
             update_obj = Update.model_validate(parsed_data)
 
+            # Логируем тип полученного обновления
+            update_type = "unknown"
+            if update_obj.message:
+                update_type = "message"
+                if update_obj.message.web_app_data:
+                    update_type = "web_app_data"
+                    logger.info(f"[WEBHOOK] Получены данные WebApp: {update_obj.message.web_app_data.data[:100]}")
+            elif update_obj.callback_query:
+                update_type = "callback_query"
+
+            logger.info(f"[WEBHOOK] Тип обновления: {update_type}, User ID: {update_obj.message.from_user.id if update_obj.message else 'N/A'}")
+
             await dp.feed_update(bot, update_obj)
+            logger.info(f"[WEBHOOK] Обновление успешно обработано")
             return JsonResponse({"ok": True})
         except Exception as exc:
             logger.exception("Telegram webhook error")
