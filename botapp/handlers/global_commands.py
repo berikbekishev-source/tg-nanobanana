@@ -245,21 +245,35 @@ async def global_select_image_model(callback: CallbackQuery, state: FSMContext):
 
     if model.provider == "midjourney":
         price_label = f"⚡{model_cost:.2f} токенов"
-        base = PUBLIC_BASE_URL or "https://example.com"
-        webapp_url = f"{base}/midjourney/?price={quote_plus(price_label)}"
+        if not PUBLIC_BASE_URL:
+            await callback.message.answer(
+                "⚙️ Веб-версия настроек временно недоступна. Повторите попытку позже.",
+                reply_markup=get_cancel_keyboard(),
+            )
+            await callback.answer()
+            return
+
+        webapp_url = (
+            f"{PUBLIC_BASE_URL}/midjourney/?"
+            f"model={quote_plus(model.slug)}&price={quote_plus(price_label)}"
+        )
         try:
             await callback.answer(url=webapp_url)
         except Exception:
-            keyboard = InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(
-                    text="⚙️ Открыть настройки Midjourney",
-                    web_app=WebAppInfo(url=webapp_url)
-                )]
-            ])
-            await callback.message.answer(
-                "Если окно не открылось автоматически, нажмите кнопку ниже.",
-                reply_markup=keyboard,
-            )
+            # Если Telegram не открыл WebApp через callback, покажем кнопку ниже.
+            pass
+
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(
+                text="⚙️ Открыть настройки Midjourney",
+                web_app=WebAppInfo(url=webapp_url)
+            )]
+        ])
+        await callback.message.answer(
+            "Если окно не открылось автоматически, нажмите кнопку ниже.",
+            reply_markup=keyboard,
+        )
+        await callback.answer()
         await state.set_state(BotStates.midjourney_wait_settings)
         return
 
