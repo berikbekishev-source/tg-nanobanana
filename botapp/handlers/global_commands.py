@@ -258,7 +258,7 @@ async def global_select_image_model(callback: CallbackQuery, state: FSMContext):
                 )]
             ])
             await callback.message.answer(
-                "Откройте настройки Midjourney",
+                "Если окно не открылось автоматически, нажмите кнопку ниже.",
                 reply_markup=keyboard,
             )
         await state.set_state(BotStates.midjourney_wait_settings)
