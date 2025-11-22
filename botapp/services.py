@@ -7,7 +7,7 @@ import re
 import os
 import time
 from json import JSONDecoder
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 from django.conf import settings
 from google.oauth2 import service_account
 from google.auth.transport.requests import AuthorizedSession
@@ -20,6 +20,7 @@ GEMINI_URL_TMPL = "https://generativelanguage.googleapis.com/v1beta/models/{mode
 OPENAI_IMAGE_URL = "https://api.openai.com/v1/images/generations"
 OPENAI_IMAGE_EDIT_URL = "https://api.openai.com/v1/images/edits"
 KIE_DEFAULT_BASE_URL = "https://api.kie.ai"
+DEFAULT_VERTEX_IMAGE_MODEL = "gemini-2.5-flash-image"
 
 def vertex_generate_images(prompt: str, quantity: int, params: Optional[Dict[str, Any]] = None) -> List[bytes]:
     """Генерация изображений через Vertex AI Imagen."""
@@ -781,6 +782,8 @@ def _format_kie_error(response: Optional[httpx.Response]) -> str:
     except Exception:
         pass
     return response.text if response else ""
+
+
 def _load_service_account_info() -> Dict[str, Any]:
     raw = getattr(settings, "GOOGLE_APPLICATION_CREDENTIALS_JSON", "") or ""
     if raw:
@@ -833,20 +836,45 @@ def _authorized_vertex_session() -> AuthorizedSession:
     return AuthorizedSession(credentials)
 
 
+def _normalize_image_model_name(model_name: str) -> str:
+    """Нормализует название модели (устраняет устаревшие ID без версии)."""
+    replacements = {
+        "gemini-3-pro-image-preview": "gemini-3.0-pro-image-preview",
+        "gemini-3-pro-image": "gemini-3.0-pro-image",
+    }
+    return replacements.get(model_name, model_name)
+
+
 def _vertex_model_path(model_name: Optional[str]) -> str:
-    if not model_name:
-        return "publishers/google/models/gemini-2.5-flash-image-preview"
-    return model_name.lstrip('/')
+    base = (model_name or DEFAULT_VERTEX_IMAGE_MODEL).strip().lstrip("/")
+    tail = base.rsplit("/", 1)[-1]
+    tail = _normalize_image_model_name(tail)
+    return f"publishers/google/models/{tail}"
 
 
 def _gemini_model_name(model_path: Optional[str]) -> str:
     """Возвращает короткое имя модели для Generative Language API."""
-    if not model_path:
-        return "gemini-2.5-flash-image-preview"
-    trimmed = model_path.strip("/")
-    if "/" in trimmed:
-        return trimmed.rsplit("/", 1)[-1]
-    return trimmed
+    tail = (model_path or DEFAULT_VERTEX_IMAGE_MODEL).strip().strip("/")
+    tail = tail.rsplit("/", 1)[-1]
+    return _normalize_image_model_name(tail)
+
+
+def _vertex_project_and_location(creds_info: Optional[Dict[str, Any]] = None) -> Tuple[str, str]:
+    """Определяет проект/локацию Vertex с приоритетом на переменные окружения."""
+    project = (
+        getattr(settings, "VERTEX_PROJECT_ID", None)
+        or getattr(settings, "GCP_PROJECT_ID", None)
+        or (creds_info or {}).get("project_id")
+    )
+    location = (
+        getattr(settings, "VERTEX_LOCATION", None)
+        or getattr(settings, "GCP_LOCATION", None)
+        or "us-central1"
+    )
+    if not project:
+        # Фоллбек как раньше, чтобы не падать при отсутствии настроек (диагностика через логи)
+        project = "gen-lang-client-0838548551"
+    return project, location
 
 
 def _build_gemini_payload(parts: List[Dict[str, Any]], quantity: int, params: Optional[Dict[str, Any]]) -> Dict[str, Any]:
@@ -1054,6 +1082,7 @@ def gemini_vertex_edit(
 
     data = None
     vertex_error = None
+    creds_info: Optional[Dict[str, Any]] = None
     # Пробуем Vertex по умолчанию
     try:
         print(f"[IMAGE_EDIT] Attempting Vertex AI edit for model {model_path}...", flush=True)
@@ -1061,14 +1090,11 @@ def gemini_vertex_edit(
         # Если есть Vertex API key, используем его для Vertex AI
         if vertex_api_key:
             print(f"[IMAGE_EDIT] Using Vertex AI API Key", flush=True)
-            project_id = getattr(settings, "GCP_PROJECT_ID", "gen-lang-client-0838548551")
-            location = getattr(settings, "GCP_LOCATION", "us-central1")
         else:
             print(f"[IMAGE_EDIT] Using Service Account for Vertex AI", flush=True)
             creds_info = _load_service_account_info()
-            project_id = getattr(settings, "GCP_PROJECT_ID", creds_info.get("project_id"))
-            location = getattr(settings, "GCP_LOCATION", "us-central1")
         
+        project_id, location = _vertex_project_and_location(creds_info)
         print(f"[IMAGE_EDIT] Using Project: {project_id}, Location: {location}", flush=True)
         
         data = _gemini_vertex_request(
@@ -1164,6 +1190,7 @@ def gemini_vertex_generate(
     
     data = None
     vertex_error = None
+    creds_info: Optional[Dict[str, Any]] = None
 
     # 1. Попытка через Vertex AI
     try:
@@ -1174,15 +1201,11 @@ def gemini_vertex_generate(
         # Иначе используем Service Account
         if vertex_api_key:
             print(f"[IMAGE_GEN] Using Vertex AI API Key", flush=True)
-            # Для API key аутентификации нужен project_id из настроек
-            project_id = getattr(settings, "GCP_PROJECT_ID", "gen-lang-client-0838548551")
-            location = getattr(settings, "GCP_LOCATION", "us-central1")
         else:
             print(f"[IMAGE_GEN] Using Service Account for Vertex AI", flush=True)
             creds_info = _load_service_account_info()
-            project_id = getattr(settings, "GCP_PROJECT_ID", creds_info.get("project_id"))
-            location = getattr(settings, "GCP_LOCATION", "us-central1")
         
+        project_id, location = _vertex_project_and_location(creds_info)
         print(f"[IMAGE_GEN] Using Project: {project_id}, Location: {location}", flush=True)
         
         data = _gemini_vertex_request(
