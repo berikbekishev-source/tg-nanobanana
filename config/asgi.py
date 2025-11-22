@@ -14,7 +14,8 @@ os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'config.settings')
 
 application = get_asgi_application()
 
-# Инициализация aiogram; вебхук ставится в start_web.sh при старте контейнера
-from botapp.telegram import setup_telegram
+# Инициализация aiogram и установка вебхука (без участия event loop uvicorn)
+from botapp.telegram import setup_telegram, ensure_webhook_sync
 
 setup_telegram()
+ensure_webhook_sync()
