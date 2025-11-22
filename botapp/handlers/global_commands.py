@@ -347,6 +347,26 @@ async def global_select_video_model(callback: CallbackQuery, state: FSMContext):
         generation_type='text2video',
     )
 
+    if model.provider == "kling":
+        price_label = f"⚡{model_cost:.2f} токенов"
+        base = PUBLIC_BASE_URL or "https://example.com"
+        webapp_url = f"{base}/kling/?price={quote_plus(price_label)}"
+        try:
+            await callback.answer(url=webapp_url)
+        except Exception:
+            keyboard = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(
+                    text="⚙️ Открыть настройки Kling",
+                    web_app=WebAppInfo(url=webapp_url)
+                )]
+            ])
+            await callback.message.answer(
+                "Если окно не открылось автоматически, нажмите кнопку ниже.",
+                reply_markup=keyboard,
+            )
+        await state.set_state(BotStates.kling_wait_settings)
+        return
+
     info_message = get_model_info_message(model, base_price=model_cost)
 
     await callback.message.answer(
