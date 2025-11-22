@@ -52,7 +52,26 @@ async def handle_midjourney_webapp_data(message: Message, state: FSMContext):
     print(f"[MIDJOURNEY_WEBAPP] web_app_data received from user={user_id}", flush=True)
 
     try:
-        payload = json.loads(message.web_app_data.data or '{}')
+        raw_data = message.web_app_data.data or '{}'
+        
+        # Попытка исправить "dirty" JSON (если пришли экранированные кавычки)
+        if raw_data.startswith('{\\"') or raw_data.startswith("{\\'"):
+             try:
+                 # Пытаемся раскодировать, если это строка с экранированием
+                 raw_data = raw_data.encode().decode('unicode_escape')
+             except Exception:
+                 pass
+        
+        # Парсим JSON
+        payload = json.loads(raw_data)
+        
+        # Если результат парсинга - строка (double encoding), парсим еще раз
+        if isinstance(payload, str):
+            try:
+                payload = json.loads(payload)
+            except Exception:
+                pass # Оставляем как есть, если не парсится второй раз
+
         logging.info(f"[MIDJOURNEY_WEBAPP] Получен payload: {json.dumps(payload, ensure_ascii=False)[:500]}")
         print(f"[MIDJOURNEY_WEBAPP] payload raw: {message.web_app_data.data[:200]}", flush=True)
     except Exception as e:
