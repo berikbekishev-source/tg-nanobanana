@@ -328,7 +328,7 @@
             </div>
 
             <p class="label" style="margin-top: 14px;">Текстовый запрос</p>
-            <textarea id="prompt" placeholder="Опишите, что нужно сгенерировать..." maxlength="2000"></textarea>
+            <textarea id="prompt" placeholder="Опишите, что нужно сгенерировать..." maxlength="2000" enterkeyhint="done" inputmode="text"></textarea>
             <div class="count" id="promptCount">0/2000</div>
 
             <div class="upload" id="imgBlock">
@@ -419,7 +419,7 @@
                 </div>
                 <div class="price-value" id="priceValue">—</div>
             </div>
-            <button class="main-btn" id="submitBtn">Сгенерировать</button>
+            <button class="main-btn" id="submitBtn" type="button">Сгенерировать</button>
         </div>
     </div>
 
@@ -476,13 +476,11 @@
         function setPriceLabel(label) {
             state.priceLabel = label || "—";
             els.priceValue.textContent = state.priceLabel;
-            if (tg) {
-                const btnText = state.priceLabel === "—" ? "Сгенерировать" : `Сгенерировать · ${state.priceLabel}`;
-                tg.MainButton.setText(btnText);
-            }
         }
 
         function sendData() {
+            // Скрываем клавиатуру перед отправкой
+            els.prompt.blur();
             if (!state.prompt) {
                 setError("Введите промт, чтобы продолжить.");
                 return;
@@ -509,8 +507,9 @@
             try {
                 if (tg) {
                     tg.sendData(JSON.stringify(payload));
+                    tg.close();
                 } else {
-                    alert(JSON.stringify(payload, null, 2));
+                    setError("Откройте страницу через Telegram, чтобы отправить настройки.");
                 }
             } catch (e) {
                 setError("Не удалось отправить данные. Попробуйте ещё раз.");
@@ -629,6 +628,17 @@
 
         updateCounts();
         document.getElementById("imgBlock").style.display = "none";
+
+        if (tg) {
+            try {
+                tg.ready();
+                tg.expand();
+            } catch (e) {
+                /* ignore */
+            }
+        } else {
+            setError("Откройте страницу через Telegram, чтобы отправить настройки.");
+        }
     </script>
 </body>
 </html>
