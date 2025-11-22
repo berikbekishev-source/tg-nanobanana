@@ -405,8 +405,15 @@ def midjourney_generate_images(
     generation_type: str = "text2image",
     input_images: Optional[List[Dict[str, Any]]] = None,
 ) -> List[bytes]:
+    import logging
+    logger = logging.getLogger(__name__)
+
+    logger.info(f"[MIDJOURNEY_KIE] Начало генерации: prompt={prompt[:100]}..., quantity={quantity}, generation_type={generation_type}")
+    logger.info(f"[MIDJOURNEY_KIE] Параметры: {params}")
+
     api_key = getattr(settings, "MIDJOURNEY_KIE_API_KEY", None)
     if not api_key:
+        logger.error("[MIDJOURNEY_KIE] MIDJOURNEY_KIE_API_KEY не задан")
         raise ValueError("MIDJOURNEY_KIE_API_KEY не задан.")
 
     base_url = getattr(settings, "MIDJOURNEY_KIE_BASE_URL", KIE_DEFAULT_BASE_URL) or KIE_DEFAULT_BASE_URL
@@ -441,6 +448,9 @@ def midjourney_generate_images(
         payload["speed"] = payload.get("speed") or params.get("speed") or "relaxed"
         payload["model"] = model_name
 
+        logger.info(f"[MIDJOURNEY_KIE] Отправка запроса на {base_url}/api/v1/mj/generate")
+        logger.debug(f"[MIDJOURNEY_KIE] Payload: {json.dumps(payload, ensure_ascii=False)[:500]}")
+
         create_resp = _kie_api_request(
             base_url=base_url,
             api_key=api_key,
@@ -449,12 +459,19 @@ def midjourney_generate_images(
             json_payload=payload,
             timeout=request_timeout,
         )
+
+        logger.info(f"[MIDJOURNEY_KIE] Ответ от API: code={create_resp.get('code')}, msg={create_resp.get('msg')}")
+
         if create_resp.get("code") != 200:
+            logger.error(f"[MIDJOURNEY_KIE] Ошибка создания задачи: {create_resp}")
             raise ValueError(f"Midjourney (KIE) createTask error: {create_resp}")
         data = create_resp.get("data") or {}
         task_id = data.get("taskId")
         if not task_id:
+            logger.error("[MIDJOURNEY_KIE] API не вернул идентификатор задачи")
             raise ValueError("Midjourney (KIE) не вернул идентификатор задачи.")
+
+        logger.info(f"[MIDJOURNEY_KIE] Задача создана: task_id={task_id}")
 
         job_data = _kie_poll_task(
             base_url=base_url,

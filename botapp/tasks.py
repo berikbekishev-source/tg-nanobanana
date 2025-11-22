@@ -544,9 +544,12 @@ def generate_image_task(self, request_id: int):
     """
     Задача генерации изображений
     """
+    logger.info(f"[CELERY_IMAGE_TASK] Начало выполнения задачи генерации изображения: request_id={request_id}")
+
     req: Optional[GenRequest] = None
     try:
         req = GenRequest.objects.select_related('user', 'ai_model', 'transaction').get(id=request_id)
+        logger.info(f"[CELERY_IMAGE_TASK] Запрос загружен: user={req.user.chat_id}, model={req.ai_model.name}, provider={req.ai_model.provider}")
 
         # Получаем модель и параметры
         model = req.ai_model

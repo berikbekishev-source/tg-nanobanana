@@ -43,10 +43,18 @@ logger = logging.getLogger(__name__)
 async def handle_midjourney_webapp_data(message: Message, state: FSMContext):
     """
     Принимаем данные из WebApp настроек Midjourney и запускаем/готовим генерацию.
+    Поддерживает работу как с предварительно выбранной моделью, так и без неё.
     """
+    user_id = message.from_user.id
+
+    # Детальное логирование начала обработки
+    logging.info(f"[MIDJOURNEY_WEBAPP] Начало обработки данных от пользователя {user_id}")
+
     try:
         payload = json.loads(message.web_app_data.data)
-    except Exception:
+        logging.info(f"[MIDJOURNEY_WEBAPP] Получен payload: {json.dumps(payload, ensure_ascii=False)[:500]}")
+    except Exception as e:
+        logging.error(f"[MIDJOURNEY_WEBAPP] Ошибка парсинга данных от {user_id}: {e}")
         await message.answer(
             "❌ Не удалось прочитать данные из окна настроек. Попробуйте открыть снова.",
             reply_markup=get_cancel_keyboard(),
@@ -54,23 +62,95 @@ async def handle_midjourney_webapp_data(message: Message, state: FSMContext):
         return
 
     if payload.get("kind") != "midjourney_settings":
+        logging.warning(f"[MIDJOURNEY_WEBAPP] Неверный тип данных: {payload.get('kind')}")
         return
 
+    # Получаем slug модели из payload
+    model_slug = payload.get("modelSlug")
+    logging.info(f"[MIDJOURNEY_WEBAPP] Model slug из payload: {model_slug}")
+
     data = await state.get_data()
-    if not data or data.get("model_provider") != "midjourney":
+
+    # Если modelSlug есть в payload, используем его для загрузки модели
+    if model_slug:
+        logging.info(f"[MIDJOURNEY_WEBAPP] Загружаем модель по slug: {model_slug}")
+        try:
+            model = await sync_to_async(AIModel.objects.get)(slug=model_slug, provider="midjourney", is_active=True)
+            logging.info(f"[MIDJOURNEY_WEBAPP] Модель загружена: {model.name} (ID: {model.id})")
+
+            # Обновляем FSM данными модели
+            from botapp.business.pricing import get_base_price_tokens
+            cost = await sync_to_async(get_base_price_tokens)(model)
+            await state.update_data(
+                model_id=model.id,
+                selected_model=model.name,
+                model_provider=model.provider,
+                model_price=cost,
+                max_images=model.max_images or 4,
+            )
+            logging.info(f"[MIDJOURNEY_WEBAPP] FSM обновлен для модели {model.name}, цена: {cost}")
+
+        except AIModel.DoesNotExist:
+            logging.error(f"[MIDJOURNEY_WEBAPP] Модель не найдена: {model_slug}")
+            await message.answer(
+                f"⚠️ Модель {model_slug} не найдена или неактивна. Выберите другую модель.",
+                reply_markup=get_main_menu_inline_keyboard(),
+            )
+            await state.clear()
+            return
+    else:
+        # Fallback на модель из состояния
+        logging.info("[MIDJOURNEY_WEBAPP] modelSlug отсутствует, используем модель из состояния")
+        if not data or data.get("model_provider") != "midjourney":
+            logging.warning(f"[MIDJOURNEY_WEBAPP] Модель не выбрана, состояние: {data}")
+            await message.answer(
+                "⚠️ Настройки не приняты: сначала выберите модель Midjourney.",
+                reply_markup=get_main_menu_inline_keyboard(),
+            )
+            await state.clear()
+            return
+    prompt = (payload.get("prompt") or "").strip()
+    if not prompt:
+        logging.warning(f"[MIDJOURNEY_WEBAPP] Промт отсутствует от {user_id}")
+        await message.answer("Введите промт в окне настроек и отправьте ещё раз.", reply_markup=get_cancel_keyboard())
+        return
+
+    logging.info(f"[MIDJOURNEY_WEBAPP] Промт: {prompt[:100]}...")
+
+    # Проверяем баланс пользователя
+    try:
+        user = await sync_to_async(TgUser.objects.get)(chat_id=user_id)
+        data = await state.get_data()
+        cost = data.get("model_price", 0)
+
+        balance_service = BalanceService()
+        await sync_to_async(balance_service.check_balance)(user, cost)
+        logging.info(f"[MIDJOURNEY_WEBAPP] Баланс проверен: пользователь {user_id}, стоимость {cost}")
+
+    except InsufficientBalanceError as e:
+        logging.warning(f"[MIDJOURNEY_WEBAPP] Недостаточно средств: {user_id}, нужно {cost}")
         await message.answer(
-            "⚠️ Настройки не приняты: сначала выберите модель Midjourney.",
-            reply_markup=get_main_menu_inline_keyboard(),
+            f"❌ Недостаточно токенов.\n"
+            f"Необходимо: ⚡{cost:.2f}\n"
+            f"Ваш баланс: ⚡{e.current_balance:.2f}\n\n"
+            f"Пополните баланс и попробуйте снова.",
+            reply_markup=get_main_menu_inline_keyboard()
         )
         await state.clear()
         return
-    prompt = (payload.get("prompt") or "").strip()
-    if not prompt:
-        await message.answer("Введите промт в окне настроек и отправьте ещё раз.", reply_markup=get_cancel_keyboard())
+    except Exception as e:
+        logging.error(f"[MIDJOURNEY_WEBAPP] Ошибка проверки баланса: {e}")
+        await message.answer(
+            "❌ Произошла ошибка при проверке баланса. Попробуйте позже.",
+            reply_markup=get_main_menu_inline_keyboard()
+        )
+        await state.clear()
         return
 
     task_type = payload.get("taskType") or "mj_txt2img"
     image_mode = "text" if task_type == "mj_txt2img" else "edit"
+
+    logging.info(f"[MIDJOURNEY_WEBAPP] Task type: {task_type}, Image mode: {image_mode}")
 
     def normalize_int(value, default, min_v, max_v, step=None):
         try:
@@ -91,6 +171,8 @@ async def handle_midjourney_webapp_data(message: Message, state: FSMContext):
         "variety": normalize_int(payload.get("variety"), 10, 0, 100, 5),
     }
 
+    logging.info(f"[MIDJOURNEY_WEBAPP] Параметры MJ: {midjourney_params}")
+
     inline_images: List[Dict[str, Any]] = []
     image_data = payload.get("imageData")
     image_mime = payload.get("imageMime") or "image/png"
@@ -100,10 +182,13 @@ async def handle_midjourney_webapp_data(message: Message, state: FSMContext):
             try:
                 raw = base64.b64decode(image_data)
                 inline_images.append({"content": raw, "mime": image_mime, "name": image_name})
-            except Exception:
+                logging.info(f"[MIDJOURNEY_WEBAPP] Изображение декодировано: {len(raw)} байт")
+            except Exception as e:
+                logging.error(f"[MIDJOURNEY_WEBAPP] Ошибка декодирования изображения: {e}")
                 await message.answer("Не удалось прочитать изображение из WebApp. Загрузите файл ещё раз.", reply_markup=get_cancel_keyboard())
                 return
         else:
+            logging.warning(f"[MIDJOURNEY_WEBAPP] Изображение отсутствует для img2img")
             await message.answer("Для режима «Изображение → Изображение» нужно загрузить картинку в WebApp.", reply_markup=get_cancel_keyboard())
             return
 
@@ -116,11 +201,24 @@ async def handle_midjourney_webapp_data(message: Message, state: FSMContext):
         midjourney_inline_images=inline_images,
     )
 
+    logging.info(f"[MIDJOURNEY_WEBAPP] FSM обновлен, готов к запуску генерации")
+
     if image_mode == "text":
-        await _start_generation(message, state, prompt)
+        logging.info(f"[MIDJOURNEY_WEBAPP] Запуск text2image генерации для {user_id}")
+        try:
+            await _start_generation(message, state, prompt)
+            logging.info(f"[MIDJOURNEY_WEBAPP] Генерация успешно запущена для {user_id}")
+        except Exception as e:
+            logging.error(f"[MIDJOURNEY_WEBAPP] Ошибка запуска генерации: {e}", exc_info=True)
+            await message.answer(
+                "❌ Произошла ошибка при запуске генерации. Попробуйте позже.",
+                reply_markup=get_main_menu_inline_keyboard()
+            )
+            await state.clear()
         return
 
     # image_mode == edit (image->image)
+    logging.info(f"[MIDJOURNEY_WEBAPP] Режим img2img, ожидаем загрузку изображения")
     await message.answer(
         "🖼 Отправьте изображение, я применю настройки и промт из окна Midjourney.",
         reply_markup=get_cancel_keyboard(),
@@ -133,11 +231,16 @@ async def _start_generation(message: Message, state: FSMContext, prompt: str):
     Internal helper to start generation process.
     Used by both text prompt handler and auto-start from caption.
     """
+    user_id = message.from_user.id
+    logging.info(f"[_START_GENERATION] Начало генерации для пользователя {user_id}, промт: {prompt[:100]}...")
+
     data = await state.get_data()
     mode = data.get("image_mode") or "text"
     remix_images = data.get("remix_images") or []
     edit_base_id = data.get("edit_base_id")
     inline_images = data.get("midjourney_inline_images") or []
+
+    logging.info(f"[_START_GENERATION] Режим: {mode}, remix_images: {len(remix_images)}, edit_base_id: {edit_base_id}, inline_images: {len(inline_images)}")
 
     # Проверяем длину промта
     try:
@@ -215,6 +318,8 @@ async def _start_generation(message: Message, state: FSMContext, prompt: str):
         generation_params = {"image_mode": mode}
         generation_params.update(extra_params)
 
+        logging.info(f"[_START_GENERATION] Создание запроса: generation_type={generation_type}, input_entries={len(input_entries)}, params={generation_params}")
+
         gen_request = await sync_to_async(GenerationService.create_generation_request)(
             user=user,
             ai_model=model,
@@ -224,6 +329,8 @@ async def _start_generation(message: Message, state: FSMContext, prompt: str):
             input_images=input_entries,
             generation_params=generation_params,
         )
+
+        logging.info(f"[_START_GENERATION] Запрос создан: request_id={gen_request.id}")
 
         # Отправляем информационное сообщение с деталями
         await message.answer(
@@ -237,10 +344,13 @@ async def _start_generation(message: Message, state: FSMContext, prompt: str):
         )
 
         # Запускаем задачу генерации
-        generate_image_task.delay(gen_request.id)
+        logging.info(f"[_START_GENERATION] Запуск Celery задачи для request_id={gen_request.id}")
+        task_result = generate_image_task.delay(gen_request.id)
+        logging.info(f"[_START_GENERATION] Celery задача запущена: task_id={task_result.id}")
 
         # Очищаем состояние
         await state.clear()
+        logging.info(f"[_START_GENERATION] Состояние очищено для пользователя {user_id}")
 
     except InsufficientBalanceError as e:
         await message.answer(
