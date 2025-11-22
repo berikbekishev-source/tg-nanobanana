@@ -1080,7 +1080,6 @@ def gemini_vertex_edit(
     print(f"[IMAGE_EDIT] Input images: {len(input_images)}", flush=True)
 
     data = None
-    vertex_error = None
     creds_info: Optional[Dict[str, Any]] = None
     # Пробуем Vertex по умолчанию
     try:
@@ -1149,10 +1148,7 @@ def gemini_vertex_generate(
     model_name: Optional[str] = None,
 ) -> List[bytes]:
     """
-    Генерация изображений через Vertex AI (Imagen 3 / Gemini 3) с автоматическим фоллбэком на Gemini API.
-    Логика:
-    1. Всегда пробуем Vertex AI первым.
-    2. Если Vertex упал (любая ошибка) -> пробуем Gemini API (если есть ключ).
+    Генерация изображений через Vertex AI (Gemini image) без фоллбэков.
     """
     # Используем переданный model_name или дефолтный из настроек
     model_path = _vertex_model_path(model_name or getattr(settings, "NANO_BANANA_GEMINI_MODEL", None))
