@@ -1,3 +1,25 @@
+## [2025-11-22] Staging Deployment: Fix WebApp Generation (Webhook Issue)
+
+**Агент:** Gemini 3 Pro
+**Ветка:** feature/fix-webapp-gen
+**Worktree:** /Users/berik/Desktop/fix-webapp-gen
+
+### Проблема:
+При нажатии кнопки "Сгенерировать" в WebApp Midjourney ничего не происходило.
+Причина: Бот не получал updates от Telegram (включая `web_app_data`), так как вебхук не устанавливался при старте контейнера.
+Прошлый агент использовал Dockerfile, который игнорировал `railway.json` (где была команда `set_webhook`), а сам Dockerfile команду не содержал. Также `start_web.sh` использовал пути к `.venv`, которых нет в Docker-образе (system python).
+
+### Исправление:
+1.  **start_web.sh**: Убраны префиксы `./.venv/bin/`, скрипт переведен на использование системного python.
+2.  **Dockerfile.web**: 
+    - Добавлен `chmod +x start_web.sh`.
+    - `CMD` изменен на `["./start_web.sh"]`.
+    
+Теперь при каждом старте контейнера выполняется `python manage.py set_webhook`.
+
+### Результат:
+✅ Код закоммичен. Ожидается деплой в Staging для проверки работы WebApp.
+
 ## 1. Deployments (Latest First)
 
 | Status | Commit | Description | Date |
@@ -48,16 +70,42 @@
 ## [2025-11-21] Staging Deployment: Логирование ошибок Vertex AI
 
 **Агент:** Gemini 3 Pro
-**Ветка:** feature/add-vertex-logging
-**PR:** Auto-created
-**Коммит:** 1ffe0d2
+**Ветка:** feature/fix-webapp-gen
+**Worktree:** /Users/berik/Desktop/fix-webapp-gen
 
-### Выполненные действия:
-1. Добавлено логирование ошибок (403/404) при запросах к Vertex AI в `botapp/services.py`.
-2. Код пушнут в `feature/add-vertex-logging`.
+### Проблема:
+При нажатии кнопки "Сгенерировать" в WebApp Midjourney ничего не происходило.
+Причина: Бот не получал updates от Telegram (включая `web_app_data`), так как вебхук не устанавливался при старте контейнера.
+Прошлый агент использовал Dockerfile, который игнорировал `railway.json` (где была команда `set_webhook`), а сам Dockerfile команду не содержал. Также `start_web.sh` использовал пути к `.venv`, которых нет в Docker-образе (system python).
+
+### Исправление:
+1.  **start_web.sh**: Убраны префиксы `./.venv/bin/`, скрипт переведен на использование системного python.
+2.  **Dockerfile.web**: 
+    - Добавлен `chmod +x start_web.sh`.
+    - `CMD` изменен на `["./start_web.sh"]`.
+    
+Теперь при каждом старте контейнера выполняется `python manage.py set_webhook`.
 
 ### Результат:
-✅ Изменения отправлены в репозиторий. Ожидается автоматический деплой в Staging для проверки логов.
+✅ Баг исправлен, теперь модель корректно обрабатывает все изображения из альбома
+⏳ Ожидает разрешения на push для деплоя в staging
+
+## [2025-11-22] Staging Deployment: Restore Vertex AI Priority
+
+**Агент:** Gemini 3 Pro Preview
+**Ветка:** feature/restore-vertex-priority
+**PR:** #282
+**Коммит:** 5ad387c
+
+### Выполненные действия:
+1. В `botapp/services.py` восстановлен приоритет Vertex AI для функций `gemini_vertex_generate` и `gemini_vertex_edit`.
+2. Добавлен универсальный Fallback на Gemini API для всех моделей при ошибке Vertex AI (ранее был только для Pro).
+3. Код валидирован на соответствие эндпоинту `generateContent` (GenerativeModel).
+
+### Результат:
+✅ PR #282 смержен в Staging.
+✅ Railway Deploy прошел успешно (Application startup complete в 12:43 UTC).
+✅ Модели NanoBanana теперь пытаются использовать Vertex AI в первую очередь.
 
 ## [2025-11-21] Staging Deployment: Fix Remix Media Group (Robust)
 
@@ -135,20 +183,3 @@ if max_images is None or max_images <= 0:
 ### Результат:
 ✅ Баг исправлен, теперь модель корректно обрабатывает все изображения из альбома
 ⏳ Ожидает разрешения на push для деплоя в staging
-
-## [2025-11-22] Staging Deployment: Restore Vertex AI Priority
-
-**Агент:** Gemini 3 Pro Preview
-**Ветка:** feature/restore-vertex-priority
-**PR:** #282
-**Коммит:** 5ad387c
-
-### Выполненные действия:
-1. В `botapp/services.py` восстановлен приоритет Vertex AI для функций `gemini_vertex_generate` и `gemini_vertex_edit`.
-2. Добавлен универсальный Fallback на Gemini API для всех моделей при ошибке Vertex AI (ранее был только для Pro).
-3. Код валидирован на соответствие эндпоинту `generateContent` (GenerativeModel).
-
-### Результат:
-✅ PR #282 смержен в Staging.
-✅ Railway Deploy прошел успешно (Application startup complete в 12:43 UTC).
-✅ Модели NanoBanana теперь пытаются использовать Vertex AI в первую очередь.

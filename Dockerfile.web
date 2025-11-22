@@ -12,12 +12,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
+# Ensure start script is executable
+RUN chmod +x start_web.sh
+
 # Railway provides PORT automatically, no fallback needed
-CMD python manage.py collectstatic --noinput && \
-    python manage.py migrate && \
-    gunicorn -k uvicorn.workers.UvicornWorker config.asgi:application \
-    --bind 0.0.0.0:$PORT \
-    --workers 2 \
-    --timeout 120 \
-    --access-logfile - \
-    --error-logfile -
+CMD ["./start_web.sh"]
