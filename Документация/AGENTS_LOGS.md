@@ -1,185 +1,23 @@
-## [2025-11-22] Staging Deployment: Fix WebApp Generation (Webhook Issue)
+## [2025-11-22] Staging Deployment: Debug WebApp & Fix AIModel Error
 
-**Агент:** Gemini 3 Pro
-**Ветка:** feature/fix-webapp-gen
-**Worktree:** /Users/berik/Desktop/fix-webapp-gen
-
-### Проблема:
-При нажатии кнопки "Сгенерировать" в WebApp Midjourney ничего не происходило.
-Причина: Бот не получал updates от Telegram (включая `web_app_data`), так как вебхук не устанавливался при старте контейнера.
-Прошлый агент использовал Dockerfile, который игнорировал `railway.json` (где была команда `set_webhook`), а сам Dockerfile команду не содержал. Также `start_web.sh` использовал пути к `.venv`, которых нет в Docker-образе (system python).
-
-### Исправление:
-1.  **start_web.sh**: Убраны префиксы `./.venv/bin/`, скрипт переведен на использование системного python.
-2.  **Dockerfile.web**: 
-    - Добавлен `chmod +x start_web.sh`.
-    - `CMD` изменен на `["./start_web.sh"]`.
-    
-Теперь при каждом старте контейнера выполняется `python manage.py set_webhook`.
-
-### Результат:
-✅ Код закоммичен. Ожидается деплой в Staging для проверки работы WebApp.
-
-## 1. Deployments (Latest First)
-
-| Status | Commit | Description | Date |
-| :--- | :--- | :--- | :--- |
-| ✅ STAGING | `5ad387c` | **Restore Vertex AI Priority**: Восстановлен приоритет Vertex AI для моделей NanoBanana с универсальным фоллбэком на Gemini API. Реализована поддержка REST аналога GenerativeModel.generate_content. | 2025-11-22 |
-| 🔧 LOCAL | `pending` | **Add Nano Banana Pro + Vertex AI Key Auth**: Добавлена модель Nano Banana Pro (gemini-3-pro-image-preview). Реализована поддержка аутентификации Vertex AI через API Key (x-goog-api-key) для Gemini моделей. Миграция 0031 добавляет модель в БД. Функции gemini_vertex_generate/edit теперь принимают model_name параметром. | 2025-11-21 |
-| ✅ STAGING | `2fabb0c` | **Fix Vertex AI Scopes**: Удален scope generative.language из _VERTEX_SCOPES для корректного получения access_token (не id_token). Vertex AI теперь работает через Service Account. | 2025-11-21 |
-| ✅ STAGING | `f08cf8f` | **UX Improvements & Remix Tweak**: 1) Allowed all Menu/Inline buttons to work from any FSM state (auto-clear state). 2) Increased Remix media group buffer to 2.0s for better reliability. | 2025-11-21 || ✅ STAGING | `7c51e41` | **Fix Remix Media Group (Unified Buffer)**: Implemented universal Redis buffer to collect all remix images (single or album) for 1.0s. Uses Lua script for atomic fetching. Fixes race conditions and double responses. | 2025-11-21 |
-| ✅ STAGING | `a0e2b4c` | **Fix Remix Media Group (Robust)**: Added Lua script for atomic Redis operations to handle media groups correctly. Enhanced `pending_caption` logic to capture caption from any photo in the group. Fixed `min_needed` to 2. | 2025-11-21 |
-| ✅ STAGING | `5655735` | **Fix Remix Media Group**: Added support for collecting photos from `media_group_id`. Auto-start generation when `min_needed` (2) photos + caption are received. Fixed issue where bot ignored multiple photos. | 2025-11-21 |
-
-## 2025-11-20 09:54 UTC — разнесение БД staging/prod
-- Ветка: feature/cleanup-unused-files-ai (worktree /Users/berik/Desktop/cleanup-unused-files-ai)
-- Шаг: создал отдельный Supabase проект для staging (`tg-nanobanana-staging`, ref srquwlfweefqzpowdtiw, eu-west-1), прописал новый `DATABASE_URL` в Railway staging для web/worker/beat через GraphQL, прод не трогал
-- Шаг: задокументировал разделение БД (AGENTS.md)
-- Проверки: `supabase projects list --output json` (статус ACTIVE_HEALTHY), GraphQL `variableUpsert` на staging-сервисы
-- Коммит/PR: будет оформлен после обновления доков (текущая ветка)
-- Вопросы/блокеры: нет
-
-## 2025-11-20 10:49 UTC — фикc Supabase для stg
-- Ветка: feature/cleanup-unused-files-ai (worktree /Users/berik/Desktop/cleanup-unused-files-ai)
-- Шаг: удалил неудачный stg-проект Supabase (`srquwlfweefqzpowdtiw`), создал новый `tg-nanobanana-stg` (`usacvdpwwjnkazkahfwv`, eu-west-1), обновил `DATABASE_URL` в Railway staging (web/worker/beat) на пулер `aws-1-eu-west-1.pooler.supabase.com`
-- Шаг: проверил деплой — миграции прошли, web поднялся, `/api/health` -> OK
-- Проверки: `railway logs --service web|worker|beat --environment staging`, `curl -sSf https://web-staging-70d1.up.railway.app/api/health`
-- Коммит/PR: планируется добавить изменения в docs в текущую ветку
-- Вопросы/блокеры: нет
-- Статус: PR #197 по ветке feature/cleanup-unused-files-ai смержен (CI passed, auto-merge), деплой staging SUCCESS (deploy 0bcc7f5e…, /api/health ok)
-
-## 2025-11-20 11:19 UTC — PR #199 (docs db split) ожидает мержа
-- Ветка: feature/cleanup-unused-files-ai (worktree /Users/berik/Desktop/cleanup-unused-files-ai)
-- Шаг: добавил записи о разнесении БД и логи деплоя в docs; PR #199 открыт (mergeable/dirty state из-за fast-track, base = staging)
-- Проверки: CI open-pr green, остальные не запускались; /api/health на stg OK после предыдущего деплоя
-- Коммит/PR: 2125bae7, 9601d7ca, 42ae7015, 1bfafc8b (в ветке)
-- Вопросы/блокеры: требуется автомерж PR #199 в staging
-
-## 2025-11-20 14:21 UTC — починка открытия страницы оплаты
-- Ветка: feature/balance-payment-issue (worktree `../balance-payment-issue`)
-- Шаги: скопировал `token_packages` из продовой Supabase в staging, добавил `xframe_options_exempt` для `/miniapp/`, пушнул, дождался авто-мержа в staging (auto-merge)
-- Проверки: `curl -s https://web-staging-70d1.up.railway.app/api/miniapp/pricing` (200, 4 пакета), `curl -I https://web-staging-70d1.up.railway.app/miniapp/` (200, без `X-Frame-Options`), `/api/health` OK
-- Результат: деплой на staging SUCCESS, миниапп оплаты открывается, готово к тестированию в боте
-
-## 2025-11-20 15:18 UTC — правка MiniApp оплаты
-- Ветка: feature/balance-payment-issue (worktree `../balance-payment-issue`)
-- Шаги: убрал DENY для /miniapp/, добавил ссылку-фолбек и построение URL из env; добавил фолбек поиска пакета по количеству токенов в create-payment
-- Проверки: `/miniapp/` 200, `/api/miniapp/pricing` 200 (4 пакета), тестовый POST /api/miniapp/create-payment с pack_100 → payment_url получен
-- Деплой: PR #213 → staging (auto-merge, CI lint green)
-
-## [2025-11-21] Staging Deployment: Логирование ошибок Vertex AI
-
-**Агент:** Gemini 3 Pro
-**Ветка:** feature/fix-webapp-gen
-**Worktree:** /Users/berik/Desktop/fix-webapp-gen
-
-### Проблема:
-При нажатии кнопки "Сгенерировать" в WebApp Midjourney ничего не происходило.
-Причина: Бот не получал updates от Telegram (включая `web_app_data`), так как вебхук не устанавливался при старте контейнера.
-Прошлый агент использовал Dockerfile, который игнорировал `railway.json` (где была команда `set_webhook`), а сам Dockerfile команду не содержал. Также `start_web.sh` использовал пути к `.venv`, которых нет в Docker-образе (system python).
-
-### Исправление:
-1.  **start_web.sh**: Убраны префиксы `./.venv/bin/`, скрипт переведен на использование системного python.
-2.  **Dockerfile.web**: 
-    - Добавлен `chmod +x start_web.sh`.
-    - `CMD` изменен на `["./start_web.sh"]`.
-    
-Теперь при каждом старте контейнера выполняется `python manage.py set_webhook`.
-
-### Результат:
-✅ Баг исправлен, теперь модель корректно обрабатывает все изображения из альбома
-⏳ Ожидает разрешения на push для деплоя в staging
-
-## [2025-11-22] Staging Deployment: Restore Vertex AI Priority
-
-**Агент:** Gemini 3 Pro Preview
-**Ветка:** feature/restore-vertex-priority
-**PR:** #282
-**Коммит:** 5ad387c
+**Агент:** Agent (Session 9K9rh)
+**Ветка:** chore-debug-telegram-send-9K9rh
+**PR:** (Pending creation/merge by user)
+**Коммит:** (Latest HEAD)
 
 ### Выполненные действия:
-1. В `botapp/services.py` восстановлен приоритет Vertex AI для функций `gemini_vertex_generate` и `gemini_vertex_edit`.
-2. Добавлен универсальный Fallback на Gemini API для всех моделей при ошибке Vertex AI (ранее был только для Pro).
-3. Код валидирован на соответствие эндпоинту `generateContent` (GenerativeModel).
+1. Синхронизация с staging (pull origin staging).
+2. Реализована диагностика WebApp:
+   - Добавлен `tg.showAlert` и логирование в `webapps/midjourney/index.html`.
+   - Реализован fallback REST endpoint для отправки данных, если `tg.sendData` не срабатывает.
+3. Исправлена критическая ошибка парсинга JSON в `botapp/handlers/image_generation.py`:
+   - Добавлена обработка "грязного" JSON (экранированные кавычки).
+   - Добавлена обработка двойного кодирования JSON.
+4. Исправлена ошибка атрибута модели:
+   - Заменено `model.max_images` на корректное `model.max_input_images`.
 
 ### Результат:
-✅ PR #282 смержен в Staging.
-✅ Railway Deploy прошел успешно (Application startup complete в 12:43 UTC).
-✅ Модели NanoBanana теперь пытаются использовать Vertex AI в первую очередь.
-
-## [2025-11-21] Staging Deployment: Fix Remix Media Group (Robust)
-
-**Агент:** Gemini 3 Pro Preview
-**Ветка:** feature/fix-remix-mediagroup
-**PR:** #226
-**Коммит:** 5655735
-
-### Выполненные действия:
-1. Исправлена логика Remix при работе с альбомами и подписями.
-2. Реализован механизм `pending_caption` для сохранения подписи, даже если она пришла с первым фото, а не последним.
-3. Добавлен Lua-скрипт для атомарного чтения Redis, чтобы исключить гонку процессов при параллельной обработке фото.
-4. Конфликт слияния разрешен и задеплоен.
-
-### Результат:
-✅ Staging обновлен.
-- Альбомы (2+ фото) обрабатываются корректно.
-- Если есть подпись к любому фото в серии → авто-старт.
-- Если подписи нет → бот ждет ввода текста после загрузки всех фото.
-
-## [2025-11-21] Изучение документации и настройка окружения
-
-**Агент:** Claude Opus 4.1
-**Ветка:** feature/agent-opus-docs-review
-**Worktree:** /Users/berik/Desktop/agent-opus-docs-review
-
-### Выполненные действия:
-1. Изучен файл `Документация/AGENTS.md` с правилами работы агентов
-2. Создан отдельный worktree `agent-opus-docs-review` для изолированной работы
-3. Проверен доступ к Railway CLI:
-   - Авторизация: Berik (berik.bekishev@gmail.com) ✅
-   - Линковка проекта: Telegram_bot (staging) ✅
-   - Чтение логов: доступно ✅
-
-### Ключевые правила из документации:
-- **НИКОГДА не пушить без разрешения** - всегда запрашивать подтверждение
-- Работать только в изолированном worktree
-- Использовать `GH_TOKEN` для GitHub (не `gh auth login`)
-- Railway CLI только для мониторинга (logs, status)
-- Все коммуникации на русском языке
-- Не использовать `railway deploy/up/redeploy`
-- Staging деплой автоматический через GitHub Actions
-- Production релиз только с разрешения человека
-
-### Результат:
-✅ Окружение настроено, доступы проверены, готов к работе
-
-## [2025-11-21] Исправление бага с потерей 3-го изображения в режиме remix
-
-**Агент:** Claude Opus 4.1
-**Ветка:** feature/agent-opus-docs-review
-**Worktree:** /Users/berik/Desktop/agent-opus-docs-review
-**Коммит:** c68898d8
-
-### Описание проблемы:
-При отправке 3+ изображений альбомом в режиме remix модель NanoBanana обрабатывала только 2 изображения.
-При отправке по одному изображению все работало корректно.
-
-### Анализ:
-1. В логах Railway обнаружено: `input_sources=2, max_inputs=2` при `model.max_input_images=6`
-2. Найдена проблема в `botapp/handlers/image_generation.py:86`:
-   ```python
-   max_images = data.get("max_images") or min_required  # БАГ!
-   ```
-3. При `max_images=0` оператор `or` возвращал `min_required=2`
-
-### Исправление:
-Добавлена корректная проверка max_images:
-```python
-max_images = data.get("max_images", min_required)
-if max_images is None or max_images <= 0:
-    max_images = min_required
-```
-
-### Результат:
-✅ Баг исправлен, теперь модель корректно обрабатывает все изображения из альбома
-⏳ Ожидает разрешения на push для деплоя в staging
+Ожидается деплой на Staging через PR. Требуется ручная проверка:
+1. Нажать "Сгенерировать" в WebApp.
+2. Проверить появление алерта "Отправка данных...".
+3. Проверить начало генерации.
