@@ -855,9 +855,9 @@ def _authorized_vertex_session() -> AuthorizedSession:
 
 def _normalize_image_model_name(model_name: str) -> str:
     """Нормализует название модели (устраняет устаревшие ID без версии)."""
+    # Удалена принудительная замена gemini-3-pro-image-preview на 3.0, т.к. правильное имя именно без .0
     replacements = {
-        "gemini-3-pro-image-preview": "gemini-3.0-pro-image-preview",
-        "gemini-3-pro-image": "gemini-3.0-pro-image",
+        "gemini-3-pro-image": "gemini-3.0-pro-image",  # Оставим на всякий случай для других вариаций
     }
     return replacements.get(model_name, model_name)
 
