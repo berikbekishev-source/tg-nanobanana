@@ -425,7 +425,9 @@
 
     <script>
         const tg = window.Telegram?.WebApp;
+        const params = new URLSearchParams(window.location.search);
         const state = {
+            modelSlug: params.get("model") || "midjourney-v6",
             taskType: "mj_txt2img",
             speed: "fast",
             prompt: "",
@@ -476,6 +478,12 @@
         function setPriceLabel(label) {
             state.priceLabel = label || "—";
             els.priceValue.textContent = state.priceLabel;
+            if (tg?.MainButton) {
+                const btnText = state.priceLabel === "—" ? "Сгенерировать" : `Сгенерировать · ${state.priceLabel}`;
+                tg.MainButton.setText(btnText);
+                tg.MainButton.show();
+                tg.MainButton.enable();
+            }
         }
 
         function sendData() {
@@ -500,6 +508,7 @@
                 stylization: state.stylization,
                 weirdness: state.weirdness,
                 variety: state.variety,
+                modelSlug: state.modelSlug,
                 imageData: state.imageData,
                 imageMime: state.imageMime,
                 imageName: state.imageName,
@@ -609,7 +618,7 @@
         els.submitBtn.addEventListener("click", sendData);
 
         // Установим цену из query (?price=...) или initData.start_param = price=...
-        const priceFromQuery = new URLSearchParams(window.location.search).get("price");
+        const priceFromQuery = params.get("price");
         if (priceFromQuery) {
             setPriceLabel(priceFromQuery);
         }
@@ -633,6 +642,7 @@
             try {
                 tg.ready();
                 tg.expand();
+                tg.onEvent("mainButtonClicked", sendData);
             } catch (e) {
                 /* ignore */
             }
