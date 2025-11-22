@@ -479,6 +479,8 @@
         }
 
         function sendData() {
+            // Скрываем клавиатуру перед отправкой
+            els.prompt.blur();
             if (!state.prompt) {
                 setError("Введите промт, чтобы продолжить.");
                 return;
