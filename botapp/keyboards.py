@@ -60,17 +60,27 @@ def get_main_menu_keyboard(payment_url: str) -> ReplyKeyboardMarkup:
 
 # === ГЕНЕРАЦИЯ ИЗОБРАЖЕНИЙ ===
 
-def get_image_models_keyboard(models: List[AIModel]) -> InlineKeyboardMarkup:
+def get_image_models_keyboard(
+    models: List[AIModel],
+    midjourney_webapps: Optional[dict] = None,
+) -> InlineKeyboardMarkup:
     """Шаг 1: Выбор модели для изображений"""
     builder = InlineKeyboardBuilder()
+    midjourney_webapps = midjourney_webapps or {}
 
     for model in models:
         if model.type == 'image' and model.is_active:
-            # Показываем только название модели
-            builder.button(
-                text=model.display_name,
-                callback_data=f"img_model:{model.slug}"
-            )
+            # Для Midjourney сразу открываем WebApp, остальные — через callback
+            if model.provider == "midjourney" and midjourney_webapps.get(model.slug):
+                builder.button(
+                    text=model.display_name,
+                    web_app=WebAppInfo(url=midjourney_webapps[model.slug]),
+                )
+            else:
+                builder.button(
+                    text=model.display_name,
+                    callback_data=f"img_model:{model.slug}"
+                )
 
     builder.adjust(1)
 
