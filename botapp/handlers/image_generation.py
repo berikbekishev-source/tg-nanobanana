@@ -39,7 +39,7 @@ logger = logging.getLogger(__name__)
 # чтобы работать из любого состояния
 
 
-@router.message(BotStates.midjourney_wait_settings, F.web_app_data)
+@router.message(StateFilter("*"), F.web_app_data)
 async def handle_midjourney_webapp_data(message: Message, state: FSMContext):
     """
     Принимаем данные из WebApp настроек Midjourney и запускаем/готовим генерацию.
@@ -65,50 +65,52 @@ async def handle_midjourney_webapp_data(message: Message, state: FSMContext):
         logging.warning(f"[MIDJOURNEY_WEBAPP] Неверный тип данных: {payload.get('kind')}")
         return
 
-    # Получаем slug модели из payload
-    model_slug = payload.get("modelSlug")
-    logging.info(f"[MIDJOURNEY_WEBAPP] Model slug из payload: {model_slug}")
-
+    # Получаем текущее состояние FSM
     data = await state.get_data()
 
-    # Если modelSlug есть в payload, используем его для загрузки модели
-    if model_slug:
+    # Получаем slug модели из payload с fallback на состояние и дефолт
+    model_slug = payload.get("modelSlug") or data.get("model_slug") or data.get("selected_model") or "midjourney-v6"
+    logging.info(f"[MIDJOURNEY_WEBAPP] Model slug: {model_slug} (source: {'payload' if payload.get('modelSlug') else 'state/default'})")
+
+    # Проверяем, что не пытаемся использовать не-midjourney провайдера
+    if data and data.get("model_provider") not in {None, "midjourney"}:
+        logging.warning(f"[MIDJOURNEY_WEBAPP] Неверный провайдер: {data.get('model_provider')}")
+        await message.answer(
+            "⚠️ WebApp настройки доступны только для моделей Midjourney.",
+            reply_markup=get_main_menu_inline_keyboard(),
+        )
+        await state.clear()
+        return
+
+    # Загружаем модель по slug
+    try:
         logging.info(f"[MIDJOURNEY_WEBAPP] Загружаем модель по slug: {model_slug}")
-        try:
-            model = await sync_to_async(AIModel.objects.get)(slug=model_slug, provider="midjourney", is_active=True)
-            logging.info(f"[MIDJOURNEY_WEBAPP] Модель загружена: {model.name} (ID: {model.id})")
+        model = await sync_to_async(AIModel.objects.get)(slug=model_slug, is_active=True)
+        logging.info(f"[MIDJOURNEY_WEBAPP] Модель загружена: {model.name} (ID: {model.id})")
+    except AIModel.DoesNotExist:
+        logging.error(f"[MIDJOURNEY_WEBAPP] Модель не найдена: {model_slug}")
+        await message.answer(
+            f"⚠️ Модель {model_slug} недоступна. Выберите её заново из списка моделей.",
+            reply_markup=get_main_menu_inline_keyboard(),
+        )
+        await state.clear()
+        return
 
-            # Обновляем FSM данными модели
-            from botapp.business.pricing import get_base_price_tokens
-            cost = await sync_to_async(get_base_price_tokens)(model)
-            await state.update_data(
-                model_id=model.id,
-                selected_model=model.name,
-                model_provider=model.provider,
-                model_price=cost,
-                max_images=model.max_images or 4,
-            )
-            logging.info(f"[MIDJOURNEY_WEBAPP] FSM обновлен для модели {model.name}, цена: {cost}")
+    # Обновляем FSM данными модели
+    from botapp.business.pricing import get_base_price_tokens
+    cost = await sync_to_async(get_base_price_tokens)(model)
+    await state.update_data(
+        model_id=model.id,
+        model_slug=model.slug,
+        selected_model=model.name,
+        model_name=model.name,  # Добавляем для совместимости
+        model_provider=model.provider,
+        model_price=cost,
+        max_images=model.max_images or 4,
+    )
+    logging.info(f"[MIDJOURNEY_WEBAPP] FSM обновлен для модели {model.name}, цена: {cost}")
 
-        except AIModel.DoesNotExist:
-            logging.error(f"[MIDJOURNEY_WEBAPP] Модель не найдена: {model_slug}")
-            await message.answer(
-                f"⚠️ Модель {model_slug} не найдена или неактивна. Выберите другую модель.",
-                reply_markup=get_main_menu_inline_keyboard(),
-            )
-            await state.clear()
-            return
-    else:
-        # Fallback на модель из состояния
-        logging.info("[MIDJOURNEY_WEBAPP] modelSlug отсутствует, используем модель из состояния")
-        if not data or data.get("model_provider") != "midjourney":
-            logging.warning(f"[MIDJOURNEY_WEBAPP] Модель не выбрана, состояние: {data}")
-            await message.answer(
-                "⚠️ Настройки не приняты: сначала выберите модель Midjourney.",
-                reply_markup=get_main_menu_inline_keyboard(),
-            )
-            await state.clear()
-            return
+    # Проверяем промт
     prompt = (payload.get("prompt") or "").strip()
     if not prompt:
         logging.warning(f"[MIDJOURNEY_WEBAPP] Промт отсутствует от {user_id}")
@@ -120,13 +122,9 @@ async def handle_midjourney_webapp_data(message: Message, state: FSMContext):
     # Проверяем баланс пользователя
     try:
         user = await sync_to_async(TgUser.objects.get)(chat_id=user_id)
-        data = await state.get_data()
-        cost = data.get("model_price", 0)
-
         balance_service = BalanceService()
         await sync_to_async(balance_service.check_balance)(user, cost)
         logging.info(f"[MIDJOURNEY_WEBAPP] Баланс проверен: пользователь {user_id}, стоимость {cost}")
-
     except InsufficientBalanceError as e:
         logging.warning(f"[MIDJOURNEY_WEBAPP] Недостаточно средств: {user_id}, нужно {cost}")
         await message.answer(
@@ -177,6 +175,7 @@ async def handle_midjourney_webapp_data(message: Message, state: FSMContext):
     image_data = payload.get("imageData")
     image_mime = payload.get("imageMime") or "image/png"
     image_name = payload.get("imageName") or "image.png"
+
     if task_type == "mj_img2img":
         if image_data:
             try:
@@ -192,6 +191,7 @@ async def handle_midjourney_webapp_data(message: Message, state: FSMContext):
             await message.answer("Для режима «Изображение → Изображение» нужно загрузить картинку в WebApp.", reply_markup=get_cancel_keyboard())
             return
 
+    # Обновляем состояние всеми необходимыми данными
     await state.update_data(
         image_mode=image_mode,
         remix_images=[],
@@ -201,6 +201,29 @@ async def handle_midjourney_webapp_data(message: Message, state: FSMContext):
         midjourney_inline_images=inline_images,
     )
 
+    logging.info(f"[MIDJOURNEY_WEBAPP] FSM обновлен, готов к запуску генерации")
+
+    if image_mode == "text":
+        logging.info(f"[MIDJOURNEY_WEBAPP] Запуск text2image генерации для {user_id}")
+        try:
+            await _start_generation(message, state, prompt)
+            logging.info(f"[MIDJOURNEY_WEBAPP] Генерация успешно запущена для {user_id}")
+        except Exception as e:
+            logging.error(f"[MIDJOURNEY_WEBAPP] Ошибка запуска генерации: {e}", exc_info=True)
+            await message.answer(
+                "❌ Произошла ошибка при запуске генерации. Попробуйте позже.",
+                reply_markup=get_main_menu_inline_keyboard()
+            )
+            await state.clear()
+        return
+
+    # image_mode == edit (image->image)
+    logging.info(f"[MIDJOURNEY_WEBAPP] Режим img2img, ожидаем загрузку изображения")
+    await message.answer(
+        "🖼 Отправьте изображение, я применю настройки и промт из окна Midjourney.",
+        reply_markup=get_cancel_keyboard(),
+    )
+    await state.set_state(BotStates.image_wait_prompt)
     logging.info(f"[MIDJOURNEY_WEBAPP] FSM обновлен, готов к запуску генерации")
 
     if image_mode == "text":

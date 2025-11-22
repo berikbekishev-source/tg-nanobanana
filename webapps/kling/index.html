@@ -7,18 +7,18 @@
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <style>
         :root {
-            --bg: #0b1324;
-            --pane: #0f1d36;
-            --pane-2: #102444;
-            --text: #f4f6fb;
-            --muted: #9fb3ce;
-            --accent: #37d7ff;
-            --accent-2: #7bf5ff;
+            --bg: #0f1c2d;
+            --pane: #14263c;
+            --pane-2: #1a324f;
+            --text: #f2f4f8;
+            --muted: #9fb4cc;
+            --accent: #f19b28;
+            --accent-2: #f6b24f;
             --danger: #ff6b6b;
-            --border: #1f3353;
+            --border: #223956;
             --radius: 18px;
-            --shadow: 0 14px 40px rgba(8, 17, 34, 0.45);
-            --dot: radial-gradient(circle, rgba(255,255,255,0.05) 1px, transparent 0);
+            --shadow: 0 14px 40px rgba(0, 0, 0, 0.4);
+            --dot: radial-gradient(circle, rgba(255,255,255,0.06) 1px, transparent 0);
             --font: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
         }
 
@@ -35,7 +35,7 @@
         }
 
         .card {
-            background: linear-gradient(155deg, var(--pane) 0%, #0b162c 60%, #091123 100%);
+            background: linear-gradient(145deg, var(--pane) 0%, #111c2f 60%, #0f1c2d 100%);
             border: 1px solid var(--border);
             border-radius: var(--radius);
             box-shadow: var(--shadow);
@@ -48,8 +48,8 @@
             content: "";
             position: absolute;
             inset: 0;
-            background: radial-gradient(circle at 18% 20%, rgba(55,215,255,0.16), transparent 42%),
-                        radial-gradient(circle at 82% 10%, rgba(123,245,255,0.08), transparent 32%);
+            background: radial-gradient(circle at 20% 20%, rgba(241,155,40,0.15), transparent 45%),
+                        radial-gradient(circle at 80% 10%, rgba(246,178,79,0.08), transparent 35%);
             pointer-events: none;
         }
 
@@ -65,12 +65,12 @@
             height: 44px;
             border-radius: 14px;
             background: linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 100%);
-            color: #04101f;
+            color: #0f1c2d;
             font-weight: 800;
             font-size: 17px;
             display: grid;
             place-items: center;
-            box-shadow: 0 10px 28px rgba(55,215,255,0.35);
+            box-shadow: 0 10px 28px rgba(241,155,40,0.35);
         }
 
         h1 {
@@ -87,7 +87,7 @@
         }
 
         .section {
-            background: rgba(15, 29, 54, 0.72);
+            background: rgba(20, 38, 60, 0.7);
             border: 1px solid var(--border);
             border-radius: 16px;
             padding: 14px;
@@ -107,7 +107,7 @@
         }
 
         .chip {
-            background: #0b1324;
+            background: #0f1c2d;
             border: 1px solid var(--border);
             color: var(--text);
             border-radius: 14px;
@@ -163,7 +163,7 @@
         }
 
         .pill {
-            background: #0b1324;
+            background: #0f1c2d;
             border: 1px solid var(--border);
             border-radius: 12px;
             padding: 10px;
@@ -177,8 +177,8 @@
 
         .pill.active {
             background: linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 100%);
-            color: #04101f;
-            box-shadow: 0 8px 20px rgba(55,215,255,0.28);
+            color: #0f1c2d;
+            box-shadow: 0 8px 20px rgba(241,155,40,0.28);
         }
 
         .slider-block {
@@ -202,7 +202,7 @@
         .upload {
             border: 1px dashed var(--border);
             border-radius: 12px;
-            background: rgba(11, 19, 36, 0.76);
+            background: rgba(15, 28, 45, 0.7);
             padding: 12px;
             margin-top: 8px;
         }
@@ -222,7 +222,7 @@
             position: sticky;
             bottom: 0;
             margin-top: 12px;
-            background: linear-gradient(180deg, transparent, #0b1324 45%);
+            background: linear-gradient(180deg, transparent, #0f1c2d 45%);
             padding-top: 10px;
         }
 
@@ -231,7 +231,7 @@
             justify-content: space-between;
             align-items: baseline;
             margin-bottom: 10px;
-            background: rgba(15, 29, 54, 0.7);
+            background: rgba(20, 38, 60, 0.7);
             border: 1px solid var(--border);
             border-radius: 12px;
             padding: 12px;
@@ -254,17 +254,17 @@
             border: none;
             border-radius: 14px;
             background: linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 100%);
-            color: #04101f;
+            color: #0f1c2d;
             font-weight: 800;
             font-size: 16px;
             cursor: pointer;
-            box-shadow: 0 12px 30px rgba(55,215,255,0.35);
+            box-shadow: 0 12px 30px rgba(241,155,40,0.35);
             transition: transform 0.12s ease, box-shadow 0.12s ease;
         }
 
         .main-btn:hover {
             transform: translateY(-1px);
-            box-shadow: 0 14px 32px rgba(55,215,255,0.4);
+            box-shadow: 0 14px 32px rgba(241,155,40,0.4);
         }
 
         .main-btn:active { transform: translateY(0); }
@@ -369,14 +369,16 @@
                 </div>
                 <div class="price-value" id="priceValue">—</div>
             </div>
-            <button class="main-btn" id="submitBtn" type="button">Отправить настройки</button>
+            <button class="main-btn" id="submitBtn" type="button">Сгенерировать</button>
         </div>
     </div>
 
     <script>
         const tg = window.Telegram?.WebApp;
+        const params = new URLSearchParams(window.location.search);
         const MAX_IMAGE_SIZE = 10 * 1024 * 1024; // 10 MB
         const state = {
+            modelSlug: params.get("model") || "kling-v1",
             mode: "text2video",
             prompt: "",
             aspectRatio: "16:9",
@@ -463,6 +465,7 @@
 
             const payload = {
                 kind: "kling_settings",
+                modelSlug: state.modelSlug,
                 generationType: state.mode,
                 prompt: state.prompt,
                 duration: state.duration,

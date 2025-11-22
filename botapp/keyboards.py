@@ -89,17 +89,26 @@ def get_image_models_keyboard(
 
 # === ГЕНЕРАЦИЯ ВИДЕО ===
 
-def get_video_models_keyboard(models: List[AIModel]) -> InlineKeyboardMarkup:
+def get_video_models_keyboard(
+    models: List[AIModel],
+    kling_webapps: Optional[dict] = None,
+) -> InlineKeyboardMarkup:
     """Шаг 1: Выбор модели для видео"""
     builder = InlineKeyboardBuilder()
+    kling_webapps = kling_webapps or {}
 
     for model in models:
         if model.type == 'video' and model.is_active:
-            # Показываем только название модели
-            builder.button(
-                text=model.display_name,
-                callback_data=f"vid_model:{model.slug}"
-            )
+            if model.provider == "kling" and kling_webapps.get(model.slug):
+                builder.button(
+                    text=model.display_name,
+                    web_app=WebAppInfo(url=kling_webapps[model.slug]),
+                )
+            else:
+                builder.button(
+                    text=model.display_name,
+                    callback_data=f"vid_model:{model.slug}"
+                )
 
     builder.adjust(1)
 
