@@ -1,22 +1,15 @@
-## [2025-11-22] Staging Deployment: Debug WebApp & Fix AIModel Error & Decimal Fix
+## [2025-11-22] Staging Deployment: Fix Balance Check Method
 
 **Агент:** Agent (Session 9K9rh)
 **Ветка:** chore-debug-telegram-send-9K9rh
-**PR:** #305
-**Коммит:** (Latest HEAD)
+**PR:** #306 (Auto-created)
+**Коммит:** d51b547
 
 ### Выполненные действия:
-1. Синхронизация с staging (pull origin staging).
-2. Реализована диагностика WebApp:
-   - Добавлен `tg.showAlert` и логирование в `webapps/midjourney/index.html`.
-   - Реализован fallback REST endpoint для отправки данных, если `tg.sendData` не срабатывает.
-3. Исправлена критическая ошибка парсинга JSON в `botapp/handlers/image_generation.py`:
-   - Добавлена обработка "грязного" JSON (экранированные кавычки).
-   - Добавлена обработка двойного кодирования JSON.
-4. Исправлена ошибка атрибута модели:
-   - Заменено `model.max_images` на корректное `model.max_input_images`.
-5. Исправлена ошибка `Object of type Decimal is not JSON serializable`.
-   - В `handle_midjourney_webapp_data` добавлено приведение `float(cost)` перед сохранением в `state`.
+1. Исправлена ошибка `AttributeError: 'BalanceService' object has no attribute 'check_balance'`.
+   - Заменен вызов несуществующего метода `check_balance` на корректный статический метод `check_can_generate`.
+   - Добавлена корректная обработка результата (возвращает `Tuple[bool, str]`, а не кидает исключение).
 
 ### Результат:
-Ожидается деплой на Staging. Требуется ручная проверка генерации.
+Ожидается автоматический деплой на Staging.
+Требуется повторная проверка генерации.
