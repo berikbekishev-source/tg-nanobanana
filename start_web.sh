@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-echo "Starting web service..."
+echo "Starting web service (with webhook setup)..."
 
 # Run migrations
 echo "Running migrations..."
