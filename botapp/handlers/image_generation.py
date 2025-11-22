@@ -5,6 +5,7 @@ import asyncio
 import json
 import logging
 from typing import List, Dict, Any, Optional
+import base64
 
 from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery
@@ -94,12 +95,29 @@ async def handle_midjourney_webapp_data(message: Message, state: FSMContext):
         "variety": normalize_int(payload.get("variety"), 10, 0, 100, 5),
     }
 
+    inline_images: List[Dict[str, Any]] = []
+    image_data = payload.get("imageData")
+    image_mime = payload.get("imageMime") or "image/png"
+    image_name = payload.get("imageName") or "image.png"
+    if task_type == "mj_img2img":
+        if image_data:
+            try:
+                raw = base64.b64decode(image_data)
+                inline_images.append({"content": raw, "mime": image_mime, "name": image_name})
+            except Exception:
+                await message.answer("Не удалось прочитать изображение из WebApp. Загрузите файл ещё раз.", reply_markup=get_cancel_keyboard())
+                return
+        else:
+            await message.answer("Для режима «Изображение → Изображение» нужно загрузить картинку в WebApp.", reply_markup=get_cancel_keyboard())
+            return
+
     await state.update_data(
         image_mode=image_mode,
         remix_images=[],
         edit_base_id=None,
         pending_caption=prompt,
         midjourney_params=midjourney_params,
+        midjourney_inline_images=inline_images,
     )
 
     if image_mode == "text":
@@ -123,6 +141,7 @@ async def _start_generation(message: Message, state: FSMContext, prompt: str):
     mode = data.get("image_mode") or "text"
     remix_images = data.get("remix_images") or []
     edit_base_id = data.get("edit_base_id")
+    inline_images = data.get("midjourney_inline_images") or []
 
     # Проверяем длину промта
     try:
@@ -148,16 +167,20 @@ async def _start_generation(message: Message, state: FSMContext, prompt: str):
     generation_type = 'text2image'
     input_entries: List[Dict[str, Any]] = []
     if mode == "edit":
-        if not edit_base_id:
+        if inline_images:
+            generation_type = 'image2image'
+            input_entries = inline_images
+        elif not edit_base_id:
             await message.answer(
                 "Отправьте изображение для редактирования, затем текстовый промт.",
                 reply_markup=get_cancel_keyboard(),
             )
             return
-        generation_type = 'image2image'
-        input_entries = [
-            {"telegram_file_id": edit_base_id},
-        ]
+        else:
+            generation_type = 'image2image'
+            input_entries = [
+                {"telegram_file_id": edit_base_id},
+            ]
     elif mode == "remix":
         min_required = 2
         # Исправлено: корректная обработка max_images (0 не должен превращаться в min_required)

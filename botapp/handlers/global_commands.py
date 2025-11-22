@@ -34,6 +34,7 @@ router = Router()
 
 # URL для Mini App
 PAYMENT_URL = getattr(settings, 'PAYMENT_MINI_APP_URL', 'https://example.com/payment')
+PUBLIC_BASE_URL = (getattr(settings, "PUBLIC_BASE_URL", None) or "").rstrip("/")
 
 
 @router.message(StateFilter("*"), F.text.in_({"🏠 Главное меню", "🏠Главное меню"}))
@@ -244,20 +245,22 @@ async def global_select_image_model(callback: CallbackQuery, state: FSMContext):
 
     if model.provider == "midjourney":
         price_label = f"⚡{model_cost:.2f} токенов"
-        base_url = getattr(settings, "PUBLIC_BASE_URL", "").rstrip("/")
-        webapp_url = f"{base_url}/midjourney/?price={quote_plus(price_label)}" if base_url else "https://example.com/midjourney/"
-        keyboard = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(
-                text="⚙️ Открыть настройки Midjourney",
-                web_app=WebAppInfo(url=webapp_url)
-            )],
-            [InlineKeyboardButton(text="❌ Отмена", callback_data="cancel")]
-        ])
-        await callback.message.answer(
-            "Откройте настройки Midjourney, задайте параметры и нажмите «Сгенерировать».\n\n"
-            "Если выберете режим «Изображение → Изображение», после закрытия отправьте картинку в чат — я использую её вместе с промтом.",
-            reply_markup=keyboard,
-        )
+        base = PUBLIC_BASE_URL or "https://example.com"
+        webapp_url = f"{base}/midjourney/?price={quote_plus(price_label)}"
+        try:
+            await callback.answer(url=webapp_url)
+        except Exception:
+            # Если Telegram не открыл WebApp через callback, покажем кнопку.
+            keyboard = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(
+                    text="⚙️ Открыть настройки Midjourney",
+                    web_app=WebAppInfo(url=webapp_url)
+                )]
+            ])
+            await callback.message.answer(
+                "Откройте настройки Midjourney",
+                reply_markup=keyboard,
+            )
         await state.set_state(BotStates.midjourney_wait_settings)
         return
 
