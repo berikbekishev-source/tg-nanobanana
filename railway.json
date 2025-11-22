@@ -1,7 +1,7 @@
 {
   "services": {
     "web": {
-      "startCommand": "./.venv/bin/python manage.py collectstatic --noinput && ./.venv/bin/python manage.py migrate && ./.venv/bin/python manage.py set_webhook || true && ./.venv/bin/gunicorn -k uvicorn.workers.UvicornWorker config.asgi:application --bind 0.0.0.0:$PORT --workers 2 --timeout 120"
+      "startCommand": "./start_web.sh"
     },
     "worker": {
       "startCommand": "./.venv/bin/celery -A config.celery:app worker -Q default -l INFO --concurrency=2",
