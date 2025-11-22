@@ -52,7 +52,7 @@ async def handle_midjourney_webapp_data(message: Message, state: FSMContext):
     print(f"[MIDJOURNEY_WEBAPP] web_app_data received from user={user_id}", flush=True)
 
     try:
-        payload = json.loads(message.web_app_data.data)
+        payload = json.loads(message.web_app_data.data or '{}')
         logging.info(f"[MIDJOURNEY_WEBAPP] Получен payload: {json.dumps(payload, ensure_ascii=False)[:500]}")
         print(f"[MIDJOURNEY_WEBAPP] payload raw: {message.web_app_data.data[:200]}", flush=True)
     except Exception as e:
