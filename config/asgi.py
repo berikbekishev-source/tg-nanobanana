@@ -15,6 +15,7 @@ os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'config.settings')
 application = get_asgi_application()
 
 # 👇 если у тебя есть функция для инициализации aiogram
-from botapp.telegram import setup_telegram
+from botapp.telegram import setup_telegram, setup_webhook_on_start
 
 setup_telegram()
+setup_webhook_on_start()
