@@ -55,6 +55,8 @@ try:
             #     return HttpResponse(status=403)
 
             payload_body = request.body.decode("utf-8", errors="ignore") or ""
+            print(f"[WEBHOOK] raw body: {payload_body[:500]}", flush=True)
+            print(f"[WEBHOOK] headers: {dict(request.headers)}", flush=True)
             if not payload_body.strip():
                 logger.warning("[WEBHOOK] Пустое тело запроса")
                 print(f"[WEBHOOK] empty body, headers={dict(request.headers)}", flush=True)
