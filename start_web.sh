@@ -8,9 +8,9 @@ echo "Running migrations..."
 ./.venv/bin/python manage.py collectstatic --noinput
 ./.venv/bin/python manage.py migrate
 
-# Set webhook
+# Set webhook (don't fail if it errors due to flood control)
 echo "Setting Telegram webhook..."
-./.venv/bin/python manage.py set_webhook || echo "Warning: Failed to set webhook, continuing..."
+timeout 5 ./.venv/bin/python manage.py set_webhook 2>&1 | head -20 || echo "Warning: Webhook setup skipped or failed (may already be set)"
 
 # Start Gunicorn
 echo "Starting Gunicorn..."
