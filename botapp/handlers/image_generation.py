@@ -39,7 +39,7 @@ logger = logging.getLogger(__name__)
 # чтобы работать из любого состояния
 
 
-@router.message(BotStates.midjourney_wait_settings, F.web_app_data)
+@router.message(StateFilter("*"), F.web_app_data)
 async def handle_midjourney_webapp_data(message: Message, state: FSMContext):
     """
     Принимаем данные из WebApp настроек Midjourney и запускаем/готовим генерацию.
@@ -57,13 +57,24 @@ async def handle_midjourney_webapp_data(message: Message, state: FSMContext):
         return
 
     data = await state.get_data()
-    if not data or data.get("model_provider") != "midjourney":
+    model_slug = payload.get("modelSlug") or data.get("model_slug") or data.get("selected_model") or "midjourney-v6"
+    if data and data.get("model_provider") not in {None, "midjourney"}:
         await message.answer(
             "⚠️ Настройки не приняты: сначала выберите модель Midjourney.",
             reply_markup=get_main_menu_inline_keyboard(),
         )
         await state.clear()
         return
+    try:
+        model = await sync_to_async(AIModel.objects.get)(slug=model_slug, is_active=True)
+    except AIModel.DoesNotExist:
+        await message.answer(
+            "Модель Midjourney недоступна. Выберите её заново из списка моделей.",
+            reply_markup=get_main_menu_inline_keyboard(),
+        )
+        await state.clear()
+        return
+
     prompt = (payload.get("prompt") or "").strip()
     if not prompt:
         await message.answer("Введите промт в окне настроек и отправьте ещё раз.", reply_markup=get_cancel_keyboard())
@@ -108,6 +119,9 @@ async def handle_midjourney_webapp_data(message: Message, state: FSMContext):
             return
 
     await state.update_data(
+        model_id=model.id,
+        model_slug=model.slug,
+        model_provider="midjourney",
         image_mode=image_mode,
         remix_images=[],
         edit_base_id=None,

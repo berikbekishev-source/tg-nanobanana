@@ -119,7 +119,7 @@ def _extract_public_url(upload_obj) -> Optional[str]:
     return upload_obj
 
 
-@router.message(BotStates.kling_wait_settings, F.web_app_data)
+@router.message(StateFilter("*"), F.web_app_data)
 async def handle_kling_webapp_data(message: Message, state: FSMContext):
     """Принимаем данные Kling WebApp и запускаем генерацию."""
     try:
@@ -136,13 +136,24 @@ async def handle_kling_webapp_data(message: Message, state: FSMContext):
         return
 
     data = await state.get_data()
-    if not data or data.get("model_provider") != "kling":
+    model_slug = payload.get("modelSlug") or data.get("model_slug") or data.get("selected_model") or "kling-v1"
+    try:
+        model = await sync_to_async(AIModel.objects.get)(slug=model_slug, is_active=True)
+    except AIModel.DoesNotExist:
         await message.answer(
-            "⚠️ Настройки не приняты: сначала выберите модель Kling.",
+            "Модель Kling недоступна. Выберите её заново из списка моделей.",
             reply_markup=get_main_menu_inline_keyboard(),
         )
         await state.clear()
         return
+    if model.provider != "kling":
+        await message.answer(
+            "Эта WebApp работает только с моделью Kling. Выберите её из списка моделей.",
+            reply_markup=get_main_menu_inline_keyboard(),
+        )
+        await state.clear()
+        return
+    await state.update_data(model_id=model.id, model_slug=model.slug, model_provider=model.provider)
 
     prompt = (payload.get("prompt") or "").strip()
     if not prompt:
