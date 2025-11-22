@@ -9,7 +9,6 @@ from botapp.error_tracker import ErrorTracker
 from botapp.models import BotErrorEvent
 from config.ninja_api import build_ninja_api
 
-
 api = build_ninja_api()
 logger = logging.getLogger(__name__)
 
@@ -44,20 +43,25 @@ try:
         payload_body: Optional[str] = None
         parsed_data: Optional[Dict[str, Any]] = None
         try:
-            # Логируем все webhook запросы для отладки
             logger.info(f"[WEBHOOK] Получен запрос webhook")
             received_token = request.headers.get("x-telegram-bot-api-secret-token")
             expected_token = settings.TG_WEBHOOK_SECRET
 
             if received_token != expected_token:
-                logger.warning(f"[WEBHOOK] Неверный токен. Получен: {received_token[:10] if received_token else 'None'}..., Ожидался: {expected_token[:10] if expected_token else 'None'}...")
+                logger.warning(
+                    f"[WEBHOOK] Неверный токен. Получен: {received_token[:10] if received_token else 'None'}..., Ожидался: {expected_token[:10] if expected_token else 'None'}..."
+                )
                 return HttpResponse(status=403)
 
-            payload_body = request.body.decode("utf-8", errors="ignore")
+            payload_body = request.body.decode("utf-8", errors="ignore") or ""
+            if not payload_body.strip():
+                logger.warning("[WEBHOOK] Пустое тело запроса")
+                print(f"[WEBHOOK] empty body, headers={dict(request.headers)}", flush=True)
+                return JsonResponse({"ok": False, "error": "empty body"}, status=200)
+
             parsed_data = json.loads(payload_body)
             update_obj = Update.model_validate(parsed_data)
 
-            # Логируем тип полученного обновления
             update_type = "unknown"
             if update_obj.message:
                 update_type = "message"
@@ -67,7 +71,17 @@ try:
             elif update_obj.callback_query:
                 update_type = "callback_query"
 
-            logger.info(f"[WEBHOOK] Тип обновления: {update_type}, User ID: {update_obj.message.from_user.id if update_obj.message else 'N/A'}")
+            # Дублируем лог в stdout, чтобы гарантированно увидеть в Railway
+            print(
+                f"[WEBHOOK] update_type={update_type}, user_id={update_obj.message.from_user.id if update_obj.message else 'N/A'}",
+                flush=True,
+            )
+            if update_obj.message and update_obj.message.web_app_data:
+                print(f"[WEBHOOK] web_app_data raw={update_obj.message.web_app_data.data[:200]}", flush=True)
+
+            logger.info(
+                f"[WEBHOOK] Тип обновления: {update_type}, User ID: {update_obj.message.from_user.id if update_obj.message else 'N/A'}"
+            )
 
             await dp.feed_update(bot, update_obj)
             logger.info(f"[WEBHOOK] Обновление успешно обработано")
@@ -93,6 +107,7 @@ try:
                 },
                 exc=exc,
             )
+            print(f"[WEBHOOK] ERROR exc={exc}, body={payload_body[:500]}, headers={headers_payload}", flush=True)
             return JsonResponse({"ok": False, "error": str(exc)}, status=200)
 
 except ImportError:
