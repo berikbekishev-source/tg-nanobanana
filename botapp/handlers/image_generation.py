@@ -126,7 +126,7 @@ async def handle_midjourney_webapp_data(message: Message, state: FSMContext):
         selected_model=model.name,
         model_name=model.name,  # Добавляем для совместимости
         model_provider=model.provider,
-        model_price=cost,
+        model_price=float(cost),
         max_images=model.max_input_images,
     )
     logging.info(f"[MIDJOURNEY_WEBAPP] FSM обновлен для модели {model.name}, цена: {cost}")
