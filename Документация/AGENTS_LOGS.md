@@ -2,6 +2,7 @@
 
 | Status | Commit | Description | Date |
 | :--- | :--- | :--- | :--- |
+| ✅ STAGING | `5ad387c` | **Restore Vertex AI Priority**: Восстановлен приоритет Vertex AI для моделей NanoBanana с универсальным фоллбэком на Gemini API. Реализована поддержка REST аналога GenerativeModel.generate_content. | 2025-11-22 |
 | 🔧 LOCAL | `pending` | **Add Nano Banana Pro + Vertex AI Key Auth**: Добавлена модель Nano Banana Pro (gemini-3-pro-image-preview). Реализована поддержка аутентификации Vertex AI через API Key (x-goog-api-key) для Gemini моделей. Миграция 0031 добавляет модель в БД. Функции gemini_vertex_generate/edit теперь принимают model_name параметром. | 2025-11-21 |
 | ✅ STAGING | `2fabb0c` | **Fix Vertex AI Scopes**: Удален scope generative.language из _VERTEX_SCOPES для корректного получения access_token (не id_token). Vertex AI теперь работает через Service Account. | 2025-11-21 |
 | ✅ STAGING | `f08cf8f` | **UX Improvements & Remix Tweak**: 1) Allowed all Menu/Inline buttons to work from any FSM state (auto-clear state). 2) Increased Remix media group buffer to 2.0s for better reliability. | 2025-11-21 || ✅ STAGING | `7c51e41` | **Fix Remix Media Group (Unified Buffer)**: Implemented universal Redis buffer to collect all remix images (single or album) for 1.0s. Uses Lua script for atomic fetching. Fixes race conditions and double responses. | 2025-11-21 |
@@ -134,3 +135,20 @@ if max_images is None or max_images <= 0:
 ### Результат:
 ✅ Баг исправлен, теперь модель корректно обрабатывает все изображения из альбома
 ⏳ Ожидает разрешения на push для деплоя в staging
+
+## [2025-11-22] Staging Deployment: Restore Vertex AI Priority
+
+**Агент:** Gemini 3 Pro Preview
+**Ветка:** feature/restore-vertex-priority
+**PR:** #282
+**Коммит:** 5ad387c
+
+### Выполненные действия:
+1. В `botapp/services.py` восстановлен приоритет Vertex AI для функций `gemini_vertex_generate` и `gemini_vertex_edit`.
+2. Добавлен универсальный Fallback на Gemini API для всех моделей при ошибке Vertex AI (ранее был только для Pro).
+3. Код валидирован на соответствие эндпоинту `generateContent` (GenerativeModel).
+
+### Результат:
+✅ PR #282 смержен в Staging.
+✅ Railway Deploy прошел успешно (Application startup complete в 12:43 UTC).
+✅ Модели NanoBanana теперь пытаются использовать Vertex AI в первую очередь.
