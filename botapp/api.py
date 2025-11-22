@@ -55,11 +55,12 @@ try:
                 return HttpResponse(status=403)
 
             payload_body = request.body.decode("utf-8", errors="ignore") or ""
-            print(f"[WEBHOOK] raw body: {payload_body[:500]}", flush=True)
-            print(f"[WEBHOOK] headers: {dict(request.headers)}", flush=True)
+            # Debug prints removed for production
+            # print(f"[WEBHOOK] raw body: {payload_body[:500]}", flush=True)
+            # print(f"[WEBHOOK] headers: {dict(request.headers)}", flush=True)
+            
             if not payload_body.strip():
                 logger.warning("[WEBHOOK] Пустое тело запроса")
-                print(f"[WEBHOOK] empty body, headers={dict(request.headers)}", flush=True)
                 return JsonResponse({"ok": False, "error": "empty body"}, status=200)
 
             parsed_data = json.loads(payload_body)
@@ -74,13 +75,13 @@ try:
             elif update_obj.callback_query:
                 update_type = "callback_query"
 
-            # Дублируем лог в stdout, чтобы гарантированно увидеть в Railway
-            print(
-                f"[WEBHOOK] update_type={update_type}, user_id={update_obj.message.from_user.id if update_obj.message else 'N/A'}",
-                flush=True,
-            )
-            if update_obj.message and update_obj.message.web_app_data:
-                print(f"[WEBHOOK] web_app_data raw={update_obj.message.web_app_data.data[:200]}", flush=True)
+            # Debug prints removed for production
+            # print(
+            #     f"[WEBHOOK] update_type={update_type}, user_id={update_obj.message.from_user.id if update_obj.message else 'N/A'}",
+            #     flush=True,
+            # )
+            # if update_obj.message and update_obj.message.web_app_data:
+            #     print(f"[WEBHOOK] web_app_data raw={update_obj.message.web_app_data.data[:200]}", flush=True)
 
             logger.info(
                 f"[WEBHOOK] Тип обновления: {update_type}, User ID: {update_obj.message.from_user.id if update_obj.message else 'N/A'}"
@@ -110,7 +111,8 @@ try:
                 },
                 exc=exc,
             )
-            print(f"[WEBHOOK] ERROR exc={exc}, body={payload_body[:500]}, headers={headers_payload}", flush=True)
+            # Debug prints removed for production
+            # print(f"[WEBHOOK] ERROR exc={exc}, body={payload_body[:500]}, headers={headers_payload}", flush=True)
             return JsonResponse({"ok": False, "error": str(exc)}, status=200)
 
     @api.post("/midjourney/webapp/submit")
@@ -124,7 +126,8 @@ try:
             data = payload.get("data")
 
             logger.info(f"[WEBAPP_REST] Received submission for user {user_id}")
-            print(f"[WEBAPP_REST] Submission: user={user_id}, data={json.dumps(data)[:100]}", flush=True)
+            # Debug prints removed for production
+            # print(f"[WEBAPP_REST] Submission: user={user_id}, data={json.dumps(data)[:100]}", flush=True)
 
             if not user_id or not data:
                 return JsonResponse({"ok": False, "error": "Missing user_id or data"}, status=400)
