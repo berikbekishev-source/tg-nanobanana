@@ -877,6 +877,33 @@ def _vertex_project_and_location(creds_info: Optional[Dict[str, Any]] = None) ->
     return project, location
 
 
+def _vertex_model_variants(model_path: str) -> List[str]:
+    """Возвращает список вариантов имени модели для Vertex (обходим расхождения в названиях)."""
+    variants = []
+    normalized = _vertex_model_path(model_path)
+    variants.append(normalized)
+
+    tail = normalized.rsplit("/", 1)[-1]
+    # Для Pro-preview пробуем несколько вариантов, т.к. в Vertex встречаются разные суффиксы.
+    if tail in {"gemini-3.0-pro-image-preview", "gemini-3-pro-image-preview"}:
+        for alt_tail in [
+            "gemini-3-pro-image-preview",
+            "gemini-3.0-pro-image-preview",
+            "gemini-3-pro-image",
+            "gemini-3.0-pro-image",
+        ]:
+            variants.append(f"publishers/google/models/{alt_tail}")
+
+    # Убираем дубликаты, сохраняя порядок
+    seen = set()
+    unique_variants: List[str] = []
+    for v in variants:
+        if v not in seen:
+            seen.add(v)
+            unique_variants.append(v)
+    return unique_variants
+
+
 def _build_gemini_payload(parts: List[Dict[str, Any]], quantity: int, params: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     # Собираем contents в формате, рекомендованном Gemini: отдельные сообщения пользователя,
     # чтобы корректно передавать несколько референсов (в т.ч. больше двух).
@@ -1082,32 +1109,41 @@ def gemini_vertex_edit(
     data = None
     creds_info: Optional[Dict[str, Any]] = None
     # Пробуем Vertex по умолчанию
-    try:
-        print(f"[IMAGE_EDIT] Attempting Vertex AI edit for model {model_path}...", flush=True)
-        
-        # Если есть Vertex API key, используем его для Vertex AI
-        if vertex_api_key:
-            print(f"[IMAGE_EDIT] Using Vertex AI API Key", flush=True)
-        else:
-            print(f"[IMAGE_EDIT] Using Service Account for Vertex AI", flush=True)
-            creds_info = _load_service_account_info()
-        
-        project_id, location = _vertex_project_and_location(creds_info)
-        print(f"[IMAGE_EDIT] Using Project: {project_id}, Location: {location}", flush=True)
-        
-        data = _gemini_vertex_request(
-            project_id=project_id,
-            location=location,
-            model_path=model_path,
-            parts=parts,
-            quantity=quantity,
-            params=params,
-            api_key=vertex_api_key,
-        )
-        print("[IMAGE_EDIT] ✓ Vertex AI edit successful.", flush=True)
-    except Exception as e:
-        print(f"[IMAGE_EDIT] ✗ Vertex AI edit failed: {e}", flush=True)
-        raise
+    variants = _vertex_model_variants(model_path)
+    last_error: Optional[Exception] = None
+
+    for variant in variants:
+        try:
+            print(f"[IMAGE_EDIT] Attempting Vertex AI edit for model {variant}...", flush=True)
+            
+            # Если есть Vertex API key, используем его для Vertex AI
+            if vertex_api_key:
+                print(f"[IMAGE_EDIT] Using Vertex AI API Key", flush=True)
+            else:
+                print(f"[IMAGE_EDIT] Using Service Account for Vertex AI", flush=True)
+                creds_info = _load_service_account_info()
+            
+            project_id, location = _vertex_project_and_location(creds_info)
+            print(f"[IMAGE_EDIT] Using Project: {project_id}, Location: {location}", flush=True)
+            
+            data = _gemini_vertex_request(
+                project_id=project_id,
+                location=location,
+                model_path=variant,
+                parts=parts,
+                quantity=quantity,
+                params=params,
+                api_key=vertex_api_key,
+            )
+            print(f"[IMAGE_EDIT] ✓ Vertex AI edit successful (model: {variant}).", flush=True)
+            break
+        except Exception as e:
+            last_error = e
+            print(f"[IMAGE_EDIT] ✗ Vertex AI edit failed for {variant}: {e}", flush=True)
+            continue
+
+    if data is None:
+        raise last_error or RuntimeError("Vertex AI edit failed without explicit error.")
 
     outputs = data.get("candidates") or []
     results: List[bytes] = []
@@ -1163,34 +1199,43 @@ def gemini_vertex_generate(
     creds_info: Optional[Dict[str, Any]] = None
 
     # 1. Попытка через Vertex AI
-    try:
-        print(f"[IMAGE_GEN] Attempting Vertex AI generation for model {model_path}...", flush=True)
-        print(f"[IMAGE_GEN] Prompt: {prompt[:100]}...", flush=True)
-        
-        # Если есть Vertex API key, используем его для Vertex AI (через x-goog-api-key)
-        # Иначе используем Service Account
-        if vertex_api_key:
-            print(f"[IMAGE_GEN] Using Vertex AI API Key", flush=True)
-        else:
-            print(f"[IMAGE_GEN] Using Service Account for Vertex AI", flush=True)
-            creds_info = _load_service_account_info()
-        
-        project_id, location = _vertex_project_and_location(creds_info)
-        print(f"[IMAGE_GEN] Using Project: {project_id}, Location: {location}", flush=True)
-        
-        data = _gemini_vertex_request(
-            project_id=project_id,
-            location=location,
-            model_path=model_path,
-            parts=parts,
-            quantity=quantity,
-            params=params,
-            api_key=vertex_api_key,
-        )
-        print("[IMAGE_GEN] ✓ Vertex AI generation successful.", flush=True)
-    except Exception as e:
-        print(f"[IMAGE_GEN] ✗ Vertex AI failed: {e}", flush=True)
-        raise
+    variants = _vertex_model_variants(model_path)
+    last_error: Optional[Exception] = None
+
+    for variant in variants:
+        try:
+            print(f"[IMAGE_GEN] Attempting Vertex AI generation for model {variant}...", flush=True)
+            print(f"[IMAGE_GEN] Prompt: {prompt[:100]}...", flush=True)
+            
+            # Если есть Vertex API key, используем его для Vertex AI (через x-goog-api-key)
+            # Иначе используем Service Account
+            if vertex_api_key:
+                print(f"[IMAGE_GEN] Using Vertex AI API Key", flush=True)
+            else:
+                print(f"[IMAGE_GEN] Using Service Account for Vertex AI", flush=True)
+                creds_info = _load_service_account_info()
+            
+            project_id, location = _vertex_project_and_location(creds_info)
+            print(f"[IMAGE_GEN] Using Project: {project_id}, Location: {location}", flush=True)
+            
+            data = _gemini_vertex_request(
+                project_id=project_id,
+                location=location,
+                model_path=variant,
+                parts=parts,
+                quantity=quantity,
+                params=params,
+                api_key=vertex_api_key,
+            )
+            print(f"[IMAGE_GEN] ✓ Vertex AI generation successful (model: {variant}).", flush=True)
+            break
+        except Exception as e:
+            last_error = e
+            print(f"[IMAGE_GEN] ✗ Vertex AI failed for {variant}: {e}", flush=True)
+            continue
+
+    if data is None:
+        raise last_error or RuntimeError("Vertex AI generation failed without explicit error.")
 
     # Обработка ответа (одинаковая для обоих)
     outputs = data.get("candidates") or []
