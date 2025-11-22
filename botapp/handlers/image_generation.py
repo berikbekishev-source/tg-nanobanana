@@ -49,10 +49,12 @@ async def handle_midjourney_webapp_data(message: Message, state: FSMContext):
 
     # Детальное логирование начала обработки
     logging.info(f"[MIDJOURNEY_WEBAPP] Начало обработки данных от пользователя {user_id}")
+    print(f"[MIDJOURNEY_WEBAPP] web_app_data received from user={user_id}", flush=True)
 
     try:
         payload = json.loads(message.web_app_data.data)
         logging.info(f"[MIDJOURNEY_WEBAPP] Получен payload: {json.dumps(payload, ensure_ascii=False)[:500]}")
+        print(f"[MIDJOURNEY_WEBAPP] payload raw: {message.web_app_data.data[:200]}", flush=True)
     except Exception as e:
         logging.error(f"[MIDJOURNEY_WEBAPP] Ошибка парсинга данных от {user_id}: {e}")
         await message.answer(
