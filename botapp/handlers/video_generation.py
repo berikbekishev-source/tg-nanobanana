@@ -1,6 +1,9 @@
 """
 Обработчики генерации видео
 """
+import base64
+import json
+from io import BytesIO
 from typing import List, Optional, Tuple
 
 from aiogram import Router, F
@@ -25,6 +28,7 @@ from botapp.business.pricing import get_base_price_tokens
 from botapp.tasks import generate_video_task, extend_video_task
 from botapp.providers.video.openai_sora import resolve_sora_dimensions
 from asgiref.sync import sync_to_async
+from botapp.services import supabase_upload_png
 from botapp.error_tracker import ErrorTracker
 
 router = Router()
@@ -87,6 +91,236 @@ def _format_image_hint_text(dimensions: Optional[Tuple[int, int]]) -> Optional[s
         f"Размер изображения должно быть: {width}x{height}. "
         "Если размер будет другим, мы автоматически обрежем центр под нужный формат."
     )
+
+
+MAX_KLING_IMAGE_BYTES = 10 * 1024 * 1024
+
+
+def _convert_to_png_bytes(raw: bytes, mime: Optional[str]) -> bytes:
+    mime_value = (mime or "").lower()
+    if mime_value == "image/png":
+        return raw
+    try:
+        from PIL import Image
+    except ImportError:
+        return raw
+    try:
+        with Image.open(BytesIO(raw)) as img:
+            buffer = BytesIO()
+            img.save(buffer, format="PNG")
+            return buffer.getvalue()
+    except Exception:
+        return raw
+
+
+def _extract_public_url(upload_obj) -> Optional[str]:
+    if isinstance(upload_obj, dict):
+        return upload_obj.get("public_url") or upload_obj.get("publicUrl") or upload_obj.get("publicURL")
+    return upload_obj
+
+
+@router.message(BotStates.kling_wait_settings, F.web_app_data)
+async def handle_kling_webapp_data(message: Message, state: FSMContext):
+    """Принимаем данные Kling WebApp и запускаем генерацию."""
+    try:
+        payload = json.loads(message.web_app_data.data)
+    except Exception:
+        await message.answer(
+            "❌ Не удалось прочитать данные из окна настроек. Откройте его и попробуйте ещё раз.",
+            reply_markup=get_cancel_keyboard(),
+        )
+        await state.clear()
+        return
+
+    if payload.get("kind") != "kling_settings":
+        return
+
+    data = await state.get_data()
+    if not data or data.get("model_provider") != "kling":
+        await message.answer(
+            "⚠️ Настройки не приняты: сначала выберите модель Kling.",
+            reply_markup=get_main_menu_inline_keyboard(),
+        )
+        await state.clear()
+        return
+
+    prompt = (payload.get("prompt") or "").strip()
+    if not prompt:
+        await message.answer("Введите промт в окне Kling и отправьте ещё раз.", reply_markup=get_cancel_keyboard())
+        return
+
+    try:
+        model = await sync_to_async(AIModel.objects.get)(id=data["model_id"])
+    except Exception:
+        await message.answer(
+            "Модель Kling недоступна. Выберите её заново из списка моделей.",
+            reply_markup=get_main_menu_inline_keyboard(),
+        )
+        await state.clear()
+        return
+
+    if len(prompt) > model.max_prompt_length:
+        await message.answer(
+            f"❌ Промт слишком длинный! Максимум {model.max_prompt_length} символов.",
+            reply_markup=get_cancel_keyboard(),
+        )
+        return
+
+    generation_type = (payload.get("generationType") or "text2video").lower()
+    if generation_type not in {"text2video", "image2video"}:
+        generation_type = "text2video"
+
+    try:
+        duration_raw = payload.get("duration")
+        duration_value = int(float(duration_raw))
+    except (TypeError, ValueError):
+        duration_value = 5
+    if duration_value not in {5, 10}:
+        duration_value = 5
+
+    cfg_scale_value = payload.get("cfgScale")
+    try:
+        cfg_scale_value = max(0.0, min(1.0, round(float(cfg_scale_value), 1)))
+    except (TypeError, ValueError):
+        cfg_scale_value = 0.5
+
+    params = {
+        "duration": duration_value,
+        "cfg_scale": cfg_scale_value,
+    }
+
+    aspect_ratio = None
+    source_media = None
+
+    if generation_type == "text2video":
+        aspect_ratio = payload.get("aspectRatio") or payload.get("aspect_ratio") or "16:9"
+        if aspect_ratio not in {"16:9", "9:16", "1:1"}:
+            aspect_ratio = "16:9"
+        params["aspect_ratio"] = aspect_ratio
+    else:
+        image_b64 = payload.get("imageData")
+        if not image_b64:
+            await message.answer(
+                "Загрузите изображение в WebApp для режима Image → Video.",
+                reply_markup=get_cancel_keyboard(),
+            )
+            return
+        try:
+            raw = base64.b64decode(image_b64)
+        except Exception:
+            await message.answer(
+                "Не удалось прочитать изображение. Загрузите файл ещё раз.",
+                reply_markup=get_cancel_keyboard(),
+            )
+            return
+
+        if len(raw) > MAX_KLING_IMAGE_BYTES:
+            await message.answer(
+                "Изображение слишком большое. Максимум 10 МБ.",
+                reply_markup=get_cancel_keyboard(),
+            )
+            return
+
+        mime = payload.get("imageMime") or "image/png"
+        file_name = payload.get("imageName") or "image.png"
+
+        png_bytes = _convert_to_png_bytes(raw, mime)
+        try:
+            upload_obj = await sync_to_async(supabase_upload_png)(png_bytes)
+        except Exception as exc:  # pragma: no cover - сеть/хранилище
+            await ErrorTracker.alog(
+                origin=BotErrorEvent.Origin.TELEGRAM,
+                severity=BotErrorEvent.Severity.WARNING,
+                handler="video_generation.handle_kling_webapp_data",
+                chat_id=message.chat.id,
+                payload={"reason": "supabase_upload_failed"},
+                exc=exc,
+            )
+            await message.answer(
+                "Не удалось загрузить изображение в хранилище. Попробуйте другой файл.",
+                reply_markup=get_cancel_keyboard(),
+            )
+            await state.clear()
+            return
+
+        image_url = _extract_public_url(upload_obj)
+        if not image_url:
+            await message.answer(
+                "Не удалось получить ссылку на изображение. Попробуйте снова.",
+                reply_markup=get_cancel_keyboard(),
+            )
+            await state.clear()
+            return
+
+        params["image_url"] = image_url
+        source_media = {
+            "file_name": file_name,
+            "mime_type": mime,
+            "storage_url": image_url,
+            "size_bytes": len(raw),
+            "source": "kling_webapp",
+        }
+
+    try:
+        user = await sync_to_async(TgUser.objects.get)(chat_id=message.from_user.id)
+    except TgUser.DoesNotExist:
+        await message.answer(
+            "Не удалось найти пользователя. Начните заново.",
+            reply_markup=get_main_menu_inline_keyboard(),
+        )
+        await state.clear()
+        return
+
+    try:
+        gen_request = await sync_to_async(GenerationService.create_generation_request)(
+            user=user,
+            ai_model=model,
+            prompt=prompt,
+            quantity=1,
+            generation_type=generation_type,
+            generation_params=params,
+            duration=duration_value,
+            aspect_ratio=aspect_ratio,
+            source_media=source_media,
+        )
+    except InsufficientBalanceError as exc:
+        await message.answer(str(exc), reply_markup=get_main_menu_inline_keyboard())
+        await state.clear()
+        return
+    except ValueError as exc:
+        await message.answer(str(exc), reply_markup=get_main_menu_inline_keyboard())
+        await state.clear()
+        return
+    except Exception as exc:
+        await message.answer(
+            "❌ Произошла ошибка при подготовке генерации. Попробуйте ещё раз.",
+            reply_markup=get_main_menu_inline_keyboard(),
+        )
+        await ErrorTracker.alog(
+            origin=BotErrorEvent.Origin.TELEGRAM,
+            severity=BotErrorEvent.Severity.ERROR,
+            handler="video_generation.handle_kling_webapp_data",
+            chat_id=message.chat.id,
+            payload={
+                "generation_type": generation_type,
+                "duration": duration_value,
+                "aspect_ratio": aspect_ratio,
+            },
+            exc=exc,
+        )
+        await state.clear()
+        return
+
+    await message.answer(
+        get_generation_start_message().format(
+            model=model.display_name,
+            prompt=prompt,
+        ),
+        reply_markup=get_main_menu_inline_keyboard()
+    )
+
+    generate_video_task.delay(gen_request.id)
+    await state.clear()
 
 
 async def _prompt_user_for_description(

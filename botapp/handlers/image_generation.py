@@ -39,7 +39,7 @@ logger = logging.getLogger(__name__)
 # чтобы работать из любого состояния
 
 
-@router.message(StateFilter("*"), F.web_app_data)
+@router.message(BotStates.midjourney_wait_settings, F.web_app_data)
 async def handle_midjourney_webapp_data(message: Message, state: FSMContext):
     """
     Принимаем данные из WebApp настроек Midjourney и запускаем/готовим генерацию.
@@ -54,70 +54,19 @@ async def handle_midjourney_webapp_data(message: Message, state: FSMContext):
         return
 
     if payload.get("kind") != "midjourney_settings":
-        await message.answer(
-            "❌ Пришли неизвестные данные. Откройте окно настроек Midjourney ещё раз.",
-            reply_markup=get_cancel_keyboard(),
-        )
         return
 
-    data = await state.get_data() or {}
-    preferred_slug = payload.get("modelSlug") or data.get("model_slug") or "midjourney-v6"
-    try:
-        model = await sync_to_async(AIModel.objects.get)(slug=preferred_slug, is_active=True)
-        if model.provider != "midjourney":
-            raise AIModel.DoesNotExist
-    except AIModel.DoesNotExist:
-        model = await sync_to_async(
-            AIModel.objects.filter(provider="midjourney", is_active=True).first
-        )()
-        if not model:
-            await message.answer(
-                "⚠️ Модель Midjourney сейчас недоступна. Попробуйте позже.",
-                reply_markup=get_main_menu_inline_keyboard(),
-            )
-            await state.clear()
-            return
-        preferred_slug = model.slug
-
-    need_init = (
-        data.get("model_provider") != "midjourney"
-        or not data.get("model_id")
-        or data.get("model_id") != model.id
-    )
-    if need_init:
-        user = await sync_to_async(TgUser.objects.get)(chat_id=message.from_user.id)
-        balance = await sync_to_async(BalanceService.get_balance)(user)
-        model_cost = await sync_to_async(get_base_price_tokens)(model)
-        if balance < model_cost:
-            await message.answer(
-                f"❌ **Недостаточно токенов**\n\n"
-                f"Ваш баланс: ⚡ {balance:.2f} токенов\n"
-                f"Стоимость генерации: ⚡ {model_cost:.2f} токенов\n\n"
-                f"Необходимо пополнить баланс на ⚡ {model_cost - balance:.2f} токенов",
-                parse_mode="Markdown",
-                reply_markup=get_main_menu_inline_keyboard(),
-            )
-            await state.clear()
-            return
-
-        await state.clear()
-        await state.update_data(
-            selected_model=preferred_slug,
-            model_slug=preferred_slug,
-            model_id=model.id,
-            model_name=model.display_name,
-            model_provider=model.provider,
-            model_price=float(model_cost),
-            max_images=model.max_input_images,
-            supports_images=model.supports_image_input,
+    data = await state.get_data()
+    if not data or data.get("model_provider") != "midjourney":
+        await message.answer(
+            "⚠️ Настройки не приняты: сначала выберите модель Midjourney.",
+            reply_markup=get_main_menu_inline_keyboard(),
         )
-
+        await state.clear()
+        return
     prompt = (payload.get("prompt") or "").strip()
     if not prompt:
-        await message.answer(
-            "Введите промт в окне настроек и отправьте ещё раз.",
-            reply_markup=get_cancel_keyboard(),
-        )
+        await message.answer("Введите промт в окне настроек и отправьте ещё раз.", reply_markup=get_cancel_keyboard())
         return
 
     task_type = payload.get("taskType") or "mj_txt2img"
@@ -152,16 +101,10 @@ async def handle_midjourney_webapp_data(message: Message, state: FSMContext):
                 raw = base64.b64decode(image_data)
                 inline_images.append({"content": raw, "mime": image_mime, "name": image_name})
             except Exception:
-                await message.answer(
-                    "Не удалось прочитать изображение из WebApp. Загрузите файл ещё раз.",
-                    reply_markup=get_cancel_keyboard(),
-                )
+                await message.answer("Не удалось прочитать изображение из WebApp. Загрузите файл ещё раз.", reply_markup=get_cancel_keyboard())
                 return
         else:
-            await message.answer(
-                "Для режима «Изображение → Изображение» нужно загрузить картинку в WebApp.",
-                reply_markup=get_cancel_keyboard(),
-            )
+            await message.answer("Для режима «Изображение → Изображение» нужно загрузить картинку в WebApp.", reply_markup=get_cancel_keyboard())
             return
 
     await state.update_data(
@@ -183,6 +126,7 @@ async def handle_midjourney_webapp_data(message: Message, state: FSMContext):
         reply_markup=get_cancel_keyboard(),
     )
     await state.set_state(BotStates.image_wait_prompt)
+
 
 async def _start_generation(message: Message, state: FSMContext, prompt: str):
     """

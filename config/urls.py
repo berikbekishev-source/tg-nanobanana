@@ -22,7 +22,7 @@ from django.conf.urls.static import static
 from botapp.api import api  # Ninja API
 from lavatop.api import miniapp_api  # Payment API
 from lavatop.views import miniapp_payment
-from webapps.views import midjourney_webapp
+from webapps.views import midjourney_webapp, kling_webapp
 
 urlpatterns = [
     path("admin/", admin.site.urls),
@@ -30,8 +30,7 @@ urlpatterns = [
     path("api/miniapp/", miniapp_api.urls),  # Payment API endpoints
     path("miniapp/", miniapp_payment, name='miniapp_payment'),  # Payment page
     path("midjourney/", midjourney_webapp, name='midjourney_webapp'),  # Midjourney WebApp
-    path("webapps/midjourney/", midjourney_webapp),  # Совместимость по старому пути
-    path("webapps/midjourney/index.html", midjourney_webapp),  # Совместимость по старому пути
+    path("kling/", kling_webapp, name='kling_webapp'),  # Kling WebApp
     path("dashboard/", include("dashboard.urls")),
 ]
 
