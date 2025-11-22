@@ -1086,6 +1086,7 @@ def gemini_vertex_edit(
     
     # Разделяем ключи:
     vertex_api_key = getattr(settings, "NANO_BANANA_API_KEY", None)
+    gemini_api_key = getattr(settings, "GEMINI_API_KEY", None)
 
     parts: List[Dict[str, Any]] = [{"text": prompt}]
     for image in input_images:
@@ -1108,24 +1109,23 @@ def gemini_vertex_edit(
 
     data = None
     creds_info: Optional[Dict[str, Any]] = None
-    # Пробуем Vertex по умолчанию
+    # Пробуем Vertex по всем допустимым вариантам модели
     variants = _vertex_model_variants(model_path)
     last_error: Optional[Exception] = None
 
     for variant in variants:
         try:
             print(f"[IMAGE_EDIT] Attempting Vertex AI edit for model {variant}...", flush=True)
-            
-            # Если есть Vertex API key, используем его для Vertex AI
+
             if vertex_api_key:
                 print(f"[IMAGE_EDIT] Using Vertex AI API Key", flush=True)
             else:
                 print(f"[IMAGE_EDIT] Using Service Account for Vertex AI", flush=True)
                 creds_info = _load_service_account_info()
-            
+
             project_id, location = _vertex_project_and_location(creds_info)
             print(f"[IMAGE_EDIT] Using Project: {project_id}, Location: {location}", flush=True)
-            
+
             data = _gemini_vertex_request(
                 project_id=project_id,
                 location=location,
@@ -1192,6 +1192,7 @@ def gemini_vertex_generate(
     # Разделяем ключи:
     # - NANO_BANANA_API_KEY (Vertex AI key, формат AQ.xxx) - только для Vertex AI
     vertex_api_key = getattr(settings, "NANO_BANANA_API_KEY", None)
+    gemini_api_key = getattr(settings, "GEMINI_API_KEY", None)
     
     parts = [{"text": prompt}]
     
@@ -1235,7 +1236,25 @@ def gemini_vertex_generate(
             continue
 
     if data is None:
-        raise last_error or RuntimeError("Vertex AI generation failed without explicit error.")
+        model_short = _gemini_model_name(model_path)
+        # Fallback только для Pro-модели
+        if model_short.startswith("gemini-3"):
+            if not gemini_api_key:
+                raise last_error or RuntimeError("Vertex AI generation failed and no Gemini API key provided.")
+            print(f"[IMAGE_GEN] Vertex failed, attempting Gemini API fallback for model {model_short}...", flush=True)
+            try:
+                data = _gemini_google_api_request(
+                    model_name=model_short,
+                    parts=parts,
+                    quantity=quantity,
+                    params=params,
+                    api_key=gemini_api_key,
+                )
+                print("[IMAGE_GEN] ✓ Gemini API generation successful (fallback).", flush=True)
+            except Exception as e:
+                raise ValueError(f"Generation failed. Vertex error: {last_error}. Gemini error: {e}")
+        else:
+            raise last_error or RuntimeError("Vertex AI generation failed without explicit error.")
 
     # Обработка ответа (одинаковая для обоих)
     outputs = data.get("candidates") or []
