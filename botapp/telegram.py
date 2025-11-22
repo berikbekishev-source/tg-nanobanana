@@ -1,11 +1,13 @@
 import logging
 import asyncio
 import os
+from typing import Optional
 
 from django.conf import settings
 from aiogram import Bot, Dispatcher
 from aiogram.fsm.storage.redis import RedisStorage
 from aiogram.types import Message
+from aiogram.exceptions import TelegramRetryAfter
 import redis.asyncio as aioredis
 
 from botapp.chat_logger import ChatLogger
@@ -108,7 +110,15 @@ def setup_webhook_on_start() -> None:
     ]
 
     async def _run():
-        await bot.set_webhook(url=url, secret_token=secret, allowed_updates=allowed_updates)
+        try:
+            await bot.set_webhook(url=url, secret_token=secret, allowed_updates=allowed_updates)
+            return True
+        except TelegramRetryAfter as exc:
+            delay: Optional[int] = getattr(exc, "retry_after", None) or 1
+            logger.warning("Telegram вернул Flood control (%s s). Повторим установку вебхука.", delay)
+            await asyncio.sleep(delay)
+            await bot.set_webhook(url=url, secret_token=secret, allowed_updates=allowed_updates)
+            return True
 
     try:
         asyncio.run(_run())
