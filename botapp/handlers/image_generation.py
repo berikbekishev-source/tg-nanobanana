@@ -144,19 +144,35 @@ async def handle_midjourney_webapp_data(message: Message, state: FSMContext):
     try:
         user = await sync_to_async(TgUser.objects.get)(chat_id=user_id)
         balance_service = BalanceService()
-        await sync_to_async(balance_service.check_balance)(user, cost)
-        logging.info(f"[MIDJOURNEY_WEBAPP] Баланс проверен: пользователь {user_id}, стоимость {cost}")
-    except InsufficientBalanceError as e:
-        logging.warning(f"[MIDJOURNEY_WEBAPP] Недостаточно средств: {user_id}, нужно {cost}")
-        await message.answer(
-            f"❌ Недостаточно токенов.\n"
-            f"Необходимо: ⚡{cost:.2f}\n"
-            f"Ваш баланс: ⚡{e.current_balance:.2f}\n\n"
-            f"Пополните баланс и попробуйте снова.",
-            reply_markup=get_main_menu_inline_keyboard()
+        
+        # Используем правильный метод проверки баланса
+        # check_can_generate возвращает (bool, str)
+        can_generate, error_msg = await sync_to_async(balance_service.check_can_generate)(
+            user, 
+            model, 
+            total_cost_tokens=cost
         )
-        await state.clear()
-        return
+        
+        if not can_generate:
+            logging.warning(f"[MIDJOURNEY_WEBAPP] Недостаточно средств или лимит: {user_id}, ошибка: {error_msg}")
+            # Пытаемся получить текущий баланс для сообщения
+            try:
+                current_balance = await sync_to_async(balance_service.get_balance)(user)
+            except:
+                current_balance = 0.0
+                
+            await message.answer(
+                f"❌ {error_msg}\n\n"
+                f"Необходимо: ⚡{cost:.2f}\n"
+                f"Ваш баланс: ⚡{current_balance:.2f}\n\n"
+                f"Пополните баланс и попробуйте снова.",
+                reply_markup=get_main_menu_inline_keyboard()
+            )
+            await state.clear()
+            return
+
+        logging.info(f"[MIDJOURNEY_WEBAPP] Баланс проверен: пользователь {user_id}, стоимость {cost}")
+        
     except Exception as e:
         logging.error(f"[MIDJOURNEY_WEBAPP] Ошибка проверки баланса: {e}")
         await message.answer(
