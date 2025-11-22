@@ -113,6 +113,59 @@ try:
             print(f"[WEBHOOK] ERROR exc={exc}, body={payload_body[:500]}, headers={headers_payload}", flush=True)
             return JsonResponse({"ok": False, "error": str(exc)}, status=200)
 
+    @api.post("/midjourney/webapp/submit")
+    async def midjourney_webapp_submit(request):
+        """
+        Fallback endpoint for WebApp data submission via HTTP if tg.sendData fails.
+        """
+        try:
+            payload = json.loads(request.body.decode("utf-8"))
+            user_id = payload.get("user_id")
+            data = payload.get("data")
+
+            logger.info(f"[WEBAPP_REST] Received submission for user {user_id}")
+            print(f"[WEBAPP_REST] Submission: user={user_id}, data={json.dumps(data)[:100]}", flush=True)
+
+            if not user_id or not data:
+                return JsonResponse({"ok": False, "error": "Missing user_id or data"}, status=400)
+
+            # Construct a fake Update object
+            from aiogram.types import Update, Message, WebAppData, User, Chat
+            import time
+
+            # Mock objects
+            # Note: date is datetime in latest aiogram (3.x), but let's check usage. 
+            # Actually aiogram 3.x expects datetime for date.
+            from datetime import datetime
+            
+            user_obj = User(id=int(user_id), is_bot=False, first_name="User")
+            chat_obj = Chat(id=int(user_id), type="private")
+            web_app_data_obj = WebAppData(data=json.dumps(data), button_text="Generate")
+
+            # We use minimal required fields. 
+            # Note: check your aiogram version for exact field requirements.
+            # Assuming aiogram 3.x
+            message = Message(
+                message_id=0,
+                date=datetime.now(),
+                chat=chat_obj,
+                from_user=user_obj,
+                web_app_data=web_app_data_obj,
+                text=None # text is Optional
+            )
+
+            update = Update(update_id=0, message=message)
+
+            # Feed to dispatcher
+            await dp.feed_update(bot, update)
+            logger.info(f"[WEBAPP_REST] Update fed to dispatcher for user {user_id}")
+
+            return JsonResponse({"ok": True})
+        except Exception as e:
+            logger.error(f"[WEBAPP_REST] Error: {e}", exc_info=True)
+            return JsonResponse({"ok": False, "error": str(e)}, status=500)
+
+
 except ImportError:
     # aiogram not installed yet - create placeholder endpoint
     @api.post("/telegram/webhook")

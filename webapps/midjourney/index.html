@@ -515,13 +515,41 @@
             };
             try {
                 if (tg) {
-                    tg.sendData(JSON.stringify(payload));
-                    tg.close();
+                    console.log("[Midjourney WebApp] User:", tg.initDataUnsafe?.user);
+                    console.log("[Midjourney WebApp] Sending payload via sendData:", JSON.stringify(payload));
+                    
+                    // Explicit alert to confirm execution on client side
+                    tg.showAlert("Отправка данных...");
+                    
+                    // Backup HTTP request (REST fallback)
+                    const userId = tg.initDataUnsafe?.user?.id;
+                    if (userId) {
+                        console.log("[Midjourney WebApp] Sending backup REST request...");
+                        fetch('/api/midjourney/webapp/submit', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ user_id: userId, data: payload })
+                        })
+                        .then(r => console.log("[Midjourney WebApp] REST response:", r.status))
+                        .catch(e => {
+                            console.error("[Midjourney WebApp] REST error:", e);
+                            tg.showAlert("REST Error: " + e.message);
+                        });
+                    }
+
+                    // Small delay to ensure network request is dispatched before closing
+                    setTimeout(() => {
+                        tg.sendData(JSON.stringify(payload));
+                        console.log("[Midjourney WebApp] sendData executed");
+                        tg.close();
+                    }, 800);
                 } else {
                     setError("Откройте страницу через Telegram, чтобы отправить настройки.");
                 }
             } catch (e) {
-                setError("Не удалось отправить данные. Попробуйте ещё раз.");
+                console.error("[Midjourney WebApp] Exception:", e);
+                setError("Не удалось отправить данные: " + e.message);
+                if (tg) tg.showAlert("Ошибка: " + e.message);
             }
         }
 
