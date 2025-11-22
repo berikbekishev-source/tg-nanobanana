@@ -34,7 +34,7 @@ router = Router()
 
 # URL для Mini App
 PAYMENT_URL = getattr(settings, 'PAYMENT_MINI_APP_URL', 'https://example.com/payment')
-PUBLIC_BASE_URL = getattr(settings, "PUBLIC_BASE_URL", "").rstrip("/")
+PUBLIC_BASE_URL = (getattr(settings, "PUBLIC_BASE_URL", None) or "").rstrip("/")
 
 
 @router.message(StateFilter("*"), F.text.in_({"🏠 Главное меню", "🏠Главное меню"}))
