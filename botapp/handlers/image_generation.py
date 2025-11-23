@@ -41,7 +41,7 @@ logger = logging.getLogger(__name__)
 
 @router.message(
     StateFilter("*"),
-    F.web_app_data.data.contains("midjourney_settings")
+    F.web_app_data.data.contains("midjourney_settings"),
 )
 async def handle_midjourney_webapp_data(message: Message, state: FSMContext):
     """
