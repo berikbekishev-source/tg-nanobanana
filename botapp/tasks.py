@@ -762,16 +762,20 @@ def generate_video_task(self, request_id: int):
                     or "image/png"
                 )
 
-        result = provider.generate(
-            prompt=prompt,
-            model_name=model.api_model_name,
-            generation_type=generation_type,
-            params=params,
-            input_media=input_media,
-            input_mime_type=input_mime_type,
-            last_frame_media=last_frame_media,
-            last_frame_mime_type=last_frame_mime,
-        )
+        generate_kwargs: Dict[str, Any] = {
+            "prompt": prompt,
+            "model_name": model.api_model_name,
+            "generation_type": generation_type,
+            "params": params,
+            "input_media": input_media,
+            "input_mime_type": input_mime_type,
+        }
+        # Не все провайдеры поддерживают last_frame_* (например, Kling).
+        if last_frame_media is not None and getattr(provider, "slug", "") != "kling":
+            generate_kwargs["last_frame_media"] = last_frame_media
+            generate_kwargs["last_frame_mime_type"] = last_frame_mime
+
+        result = provider.generate(**generate_kwargs)
 
         upload_result = supabase_upload_video(result.content, mime_type=result.mime_type)
         public_url = upload_result.get("public_url") if isinstance(upload_result, dict) else upload_result
