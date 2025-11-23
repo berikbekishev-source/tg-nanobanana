@@ -401,11 +401,7 @@
             state.prompt = els.prompt.value.trim();
             els.promptCount.textContent = `${state.prompt.length}/${MAX_PROMPT}`;
             if (tg?.MainButton) {
-                if (state.prompt.length > 0) {
-                    tg.MainButton.show();
-                } else {
-                    tg.MainButton.hide();
-                }
+                state.prompt.length > 0 ? tg.MainButton.show() : tg.MainButton.hide();
             }
         }
 
