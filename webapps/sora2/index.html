@@ -356,11 +356,11 @@
             }
         }
 
-        function updatePriceLabel(label) {
+        function setPriceLabel(label) {
             state.priceLabel = label || "—";
             if (tg?.MainButton) {
-                const suffix = state.priceLabel === "—" ? "" : ` · ${state.priceLabel}`;
-                tg.MainButton.setText(`Сгенерировать${suffix}`);
+                const btnText = state.priceLabel === "—" ? "Сгенерировать" : `Сгенерировать · ${state.priceLabel}`;
+                tg.MainButton.setText(btnText);
             }
             const priceEl = document.getElementById("priceLabelText");
             if (priceEl) {
@@ -373,21 +373,19 @@
             state.resolution = q === "hd" ? "1080p" : "720p";
         }
 
-        function getCookie(name) {
-            const matches = document.cookie.match(new RegExp("(?:^|; )" + name.replace(/([.$?*|{}()\\[\\]\\\\\\/\\+^])/g, '\\$1') + "=([^;]*)"));
-            return matches ? decodeURIComponent(matches[1]) : "";
-        }
 
         function sendData() {
             els.prompt.blur();
             setError("");
 
             if (!state.prompt) {
-                tg?.showAlert("Введите промт");
+                tg?.showAlert("Введите промт, чтобы продолжить.");
+                if (!tg) alert("Введите промт и откройте страницу через Telegram.");
                 return;
             }
             if (state.generationType === "image2video" && !state.imageData) {
                 tg?.showAlert("Загрузите изображение для режима Изображение → Видео.");
+                if (!tg) alert("Загрузите изображение для режима Изображение → Видео.");
                 return;
             }
 
@@ -414,42 +412,35 @@
                 return;
             }
 
-            const userId = tg.initDataUnsafe?.user?.id;
-            if (!userId) {
-                tg.showAlert("Ошибка: Не удалось определить пользователя Telegram.");
-                return;
-            }
-
             try {
-                tg.MainButton.showProgress();
-            } catch (e) { /* ignore */ }
+                const userId = tg.initDataUnsafe?.user?.id;
+                if (userId) {
+                    fetch("/api/sora2/webapp/submit", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                            user_id: userId,
+                            data: payload,
+                        }),
+                    })
+                    .then((response) => {
+                        console.log("[Sora2 WebApp] REST response:", response.status);
+                    })
+                    .catch((error) => {
+                        console.error("[Sora2 WebApp] REST error:", error);
+                        tg.showAlert("REST Error: " + error.message);
+                    });
+                }
 
-                fetch("/api/sora2/webapp/submit", {
-                    method: "POST",
-                    headers: {
-                        "Content-Type": "application/json",
-                        "X-CSRFToken": getCookie("csrftoken"),
-                    },
-                    body: JSON.stringify({
-                        user_id: userId,
-                        data: payload,
-                        initData: tg.initData,
-                    }),
-                })
-                .then((response) => {
-                    if (response.ok) {
-                        tg.close();
-                    } else {
-                        tg.MainButton.hideProgress();
-                        tg.showAlert("Ошибка сервера. Попробуйте позже.");
-                        console.error("Server Error:", response);
-                    }
-                })
-                .catch((error) => {
-                    tg.MainButton.hideProgress();
-                    tg.showAlert("Ошибка сети: " + error.message);
-                    console.error("Network Error:", error);
-                });
+                tg.showAlert("Отправка данных...");
+                setTimeout(() => {
+                    tg.sendData(JSON.stringify(payload));
+                    tg.close();
+                }, 600);
+            } catch (error) {
+                console.error("[Sora2 WebApp] Exception:", error);
+                if (tg) tg.showAlert("Ошибка: " + error.message);
+            }
         }
 
         els.prompt.addEventListener("input", updateCounts);
@@ -485,7 +476,7 @@
             e.preventDefault();
             setActive(els.qualityToggle, btn);
             applyQuality(btn.dataset.quality);
-            updatePriceLabel(state.priceLabel);
+            setPriceLabel(state.priceLabel);
         });
 
         const MAX_IMAGE_SIZE = 10 * 1024 * 1024; // 10 MB
@@ -535,28 +526,33 @@
 
         const priceFromQuery = params.get("price");
         if (priceFromQuery) {
-            updatePriceLabel(priceFromQuery);
+            setPriceLabel(priceFromQuery);
         }
         try {
             const init = tg?.initDataUnsafe?.start_param;
             if (init && init.startsWith("price=")) {
-                updatePriceLabel(init.replace("price=", ""));
+                setPriceLabel(init.replace("price=", ""));
             }
         } catch (e) { /* ignore */ }
+        if (state.priceLabel === "—" && !priceFromQuery) {
+            setPriceLabel("—");
+        }
 
         updateCounts();
+        els.imgBlock.style.display = "none";
 
         if (tg) {
             try {
                 tg.ready();
                 tg.expand();
-                tg.MainButton.setText("Сгенерировать");
-                tg.MainButton.hide();
+                setPriceLabel(state.priceLabel);
+                if (!state.prompt) tg.MainButton.hide();
                 tg.onEvent("mainButtonClicked", sendData);
             } catch (e) { /* ignore */ }
         } else {
             alert("Откройте страницу через Telegram, чтобы отправить настройки.");
         }
+
     </script>
 </body>
 </html>
