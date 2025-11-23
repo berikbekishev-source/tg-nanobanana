@@ -4,7 +4,7 @@
 import base64
 import json
 from io import BytesIO
-from typing import List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 from aiogram import Router, F
 from aiogram.filters import StateFilter
@@ -24,7 +24,7 @@ from botapp.keyboards import (
 from botapp.models import TgUser, AIModel, GenRequest, BotErrorEvent
 from botapp.business.generation import GenerationService
 from botapp.business.balance import BalanceService, InsufficientBalanceError
-from botapp.business.pricing import get_base_price_tokens
+from botapp.business.pricing import calculate_request_cost, get_base_price_tokens
 from botapp.tasks import generate_video_task, extend_video_task
 from botapp.providers.video.openai_sora import resolve_sora_dimensions
 from asgiref.sync import sync_to_async
@@ -118,13 +118,49 @@ def _extract_public_url(upload_obj) -> Optional[str]:
         return upload_obj.get("public_url") or upload_obj.get("publicUrl") or upload_obj.get("publicURL")
     return upload_obj
 
+def _extract_allowed_aspect_ratios(model: AIModel) -> List[str]:
+    """Возвращает список разрешенных аспектов для модели."""
+    allowed: List[str] = []
+    params = model.allowed_params or {}
+    raw = params.get("aspect_ratio")
+    if isinstance(raw, list):
+        allowed = [str(v) for v in raw if v]
+    elif isinstance(raw, dict):
+        opts = raw.get("options") or raw.get("values")
+        if isinstance(opts, list):
+            allowed = [str(v) for v in opts if v]
+    return [r.strip() for r in allowed if isinstance(r, str) and r.strip()]
+
+MAX_VEO_IMAGE_BYTES = 5 * 1024 * 1024
+
+
+def _parse_webapp_payload(raw: str) -> Optional[Dict[str, Any]]:
+    """
+    Аккуратно парсим web_app_data, учитывая экранирование и двойное кодирование.
+    """
+    raw_data = raw or "{}"
+    try:
+        if raw_data.startswith('{\\"') or raw_data.startswith("{\\'"):
+            try:
+                raw_data = raw_data.encode().decode("unicode_escape")
+            except Exception:
+                pass
+        payload = json.loads(raw_data)
+        if isinstance(payload, str):
+            try:
+                payload = json.loads(payload)
+            except Exception:
+                pass
+        return payload if isinstance(payload, dict) else None
+    except Exception:
+        return None
+
 
 @router.message(StateFilter("*"), F.web_app_data)
 async def handle_kling_webapp_data(message: Message, state: FSMContext):
     """Принимаем данные Kling WebApp и запускаем генерацию."""
-    try:
-        payload = json.loads(message.web_app_data.data)
-    except Exception:
+    payload = _parse_webapp_payload(message.web_app_data.data or "{}")
+    if not payload:
         await message.answer(
             "❌ Не удалось прочитать данные из окна настроек. Откройте его и попробуйте ещё раз.",
             reply_markup=get_cancel_keyboard(),
@@ -315,6 +351,225 @@ async def handle_kling_webapp_data(message: Message, state: FSMContext):
             payload={
                 "generation_type": generation_type,
                 "duration": duration_value,
+                "aspect_ratio": aspect_ratio,
+            },
+            exc=exc,
+        )
+        await state.clear()
+        return
+
+    await message.answer(
+        get_generation_start_message().format(
+            model=model.display_name,
+            prompt=prompt,
+        ),
+        reply_markup=get_main_menu_inline_keyboard()
+    )
+
+    generate_video_task.delay(gen_request.id)
+    await state.clear()
+
+
+@router.message(StateFilter("*"), F.web_app_data)
+async def handle_veo_webapp_data(message: Message, state: FSMContext):
+    """Принимаем данные Veo WebApp и запускаем генерацию."""
+    user_id = message.from_user.id
+    payload = _parse_webapp_payload(message.web_app_data.data or "{}")
+    if not payload:
+        await message.answer(
+            "❌ Не удалось прочитать данные из окна настроек. Откройте его и попробуйте ещё раз.",
+            reply_markup=get_cancel_keyboard(),
+        )
+        await state.clear()
+        return
+
+    if payload.get("kind") != "veo_video_settings":
+        return
+
+    data = await state.get_data()
+    model_slug = payload.get("modelSlug") or data.get("model_slug") or data.get("selected_model") or "veo3-fast"
+
+    try:
+        model = await sync_to_async(AIModel.objects.get)(slug=model_slug, is_active=True)
+    except AIModel.DoesNotExist:
+        await message.answer(
+            "Модель Veo недоступна. Выберите её заново из списка моделей.",
+            reply_markup=get_main_menu_inline_keyboard(),
+        )
+        await state.clear()
+        return
+
+    if model.provider != "veo":
+        await message.answer(
+            "Эта WebApp работает только с моделью Veo. Выберите её из списка моделей.",
+            reply_markup=get_main_menu_inline_keyboard(),
+        )
+        await state.clear()
+        return
+
+    await state.update_data(model_id=model.id, model_slug=model.slug, model_provider=model.provider)
+
+    prompt = (payload.get("prompt") or "").strip()
+    if not prompt:
+        await message.answer("Введите промт в окне Veo и отправьте ещё раз.", reply_markup=get_cancel_keyboard())
+        return
+    if len(prompt) > model.max_prompt_length:
+        await message.answer(
+            f"❌ Промт слишком длинный! Максимум {model.max_prompt_length} символов.",
+            reply_markup=get_cancel_keyboard(),
+        )
+        return
+
+    generation_type = (payload.get("mode") or "text2video").lower()
+    generation_type = "image2video" if generation_type == "image2video" else "text2video"
+
+    defaults = model.default_params or {}
+    aspect_ratio = (
+        payload.get("aspectRatio")
+        or data.get("default_aspect_ratio")
+        or defaults.get("aspect_ratio")
+        or "9:16"
+    )
+    allowed_ratios = _extract_allowed_aspect_ratios(model) or ["9:16", "16:9", "1:1"]
+    if aspect_ratio not in allowed_ratios:
+        aspect_ratio = allowed_ratios[0]
+
+    duration = data.get("default_duration") or defaults.get("duration") or 8
+    resolution = data.get("default_resolution") or defaults.get("resolution") or "720p"
+
+    input_images: List[Dict[str, Any]] = []
+    final_frame: Optional[Dict[str, Any]] = None
+
+    def _prepare_inline_image(raw_b64: Optional[str], mime: Optional[str], name: Optional[str]) -> Dict[str, Any]:
+        if not raw_b64:
+            raise ValueError("missing image")
+        try:
+            decoded = base64.b64decode(raw_b64)
+        except Exception as exc:
+            raise ValueError("decode_error") from exc
+        if len(decoded) > MAX_VEO_IMAGE_BYTES:
+            raise ValueError("too_large")
+        normalized = base64.b64encode(decoded).decode("ascii")
+        return {
+            "content_base64": normalized,
+            "mime_type": mime or "image/png",
+            "filename": name or "image.png",
+        }
+
+    if generation_type == "image2video":
+        try:
+            start_image = _prepare_inline_image(
+                payload.get("startImage"),
+                payload.get("startImageMime"),
+                payload.get("startImageName"),
+            )
+        except ValueError as exc:
+            reason = str(exc)
+            if reason == "too_large":
+                await message.answer("Начальный кадр превышает 5 МБ. Загрузите файл поменьше.", reply_markup=get_cancel_keyboard())
+            else:
+                await message.answer("Не удалось прочитать начальный кадр. Попробуйте загрузить другое изображение.", reply_markup=get_cancel_keyboard())
+            return
+        input_images.append(start_image)
+
+        end_raw = payload.get("endImage")
+        if end_raw:
+            try:
+                final_frame = _prepare_inline_image(
+                    end_raw,
+                    payload.get("endImageMime"),
+                    payload.get("endImageName"),
+                )
+            except ValueError as exc:
+                reason = str(exc)
+                if reason == "too_large":
+                    await message.answer("Конечный кадр превышает 5 МБ. Загрузите файл поменьше или оставьте поле пустым.", reply_markup=get_cancel_keyboard())
+                else:
+                    await message.answer("Не удалось прочитать конечный кадр. Попробуйте другой файл или оставьте поле пустым.", reply_markup=get_cancel_keyboard())
+                return
+
+    generation_params: Dict[str, Any] = {
+        "duration": duration,
+        "resolution": resolution,
+        "aspect_ratio": aspect_ratio,
+    }
+    if final_frame:
+        generation_params["final_frame"] = final_frame
+
+    try:
+        user = await sync_to_async(TgUser.objects.get)(chat_id=user_id)
+    except TgUser.DoesNotExist:
+        await message.answer(
+            "Не удалось найти пользователя. Начните заново.",
+            reply_markup=get_main_menu_inline_keyboard(),
+        )
+        await state.clear()
+        return
+
+    try:
+        _, cost_tokens = await sync_to_async(calculate_request_cost)(
+            model, quantity=1, duration=duration, params=generation_params
+        )
+        can_generate, error_msg = await sync_to_async(BalanceService.check_can_generate)(
+            user, model, quantity=1, total_cost_tokens=cost_tokens
+        )
+        if not can_generate:
+            await message.answer(
+                f"❌ {error_msg}",
+                reply_markup=get_main_menu_inline_keyboard(),
+            )
+            await state.clear()
+            return
+    except Exception as exc:
+        await message.answer(
+            "❌ Произошла ошибка при проверке баланса. Попробуйте позже.",
+            reply_markup=get_main_menu_inline_keyboard(),
+        )
+        await ErrorTracker.alog(
+            origin=BotErrorEvent.Origin.TELEGRAM,
+            severity=BotErrorEvent.Severity.WARNING,
+            handler="video_generation.handle_veo_webapp_data.balance_check",
+            chat_id=message.chat.id,
+            payload={"model": model.slug},
+            exc=exc,
+        )
+        await state.clear()
+        return
+
+    try:
+        gen_request = await sync_to_async(GenerationService.create_generation_request)(
+            user=user,
+            ai_model=model,
+            prompt=prompt,
+            quantity=1,
+            generation_type=generation_type,
+            input_images=input_images,
+            generation_params=generation_params,
+            duration=duration,
+            video_resolution=resolution,
+            aspect_ratio=aspect_ratio,
+        )
+    except InsufficientBalanceError as exc:
+        await message.answer(str(exc), reply_markup=get_main_menu_inline_keyboard())
+        await state.clear()
+        return
+    except ValueError as exc:
+        await message.answer(str(exc), reply_markup=get_main_menu_inline_keyboard())
+        await state.clear()
+        return
+    except Exception as exc:
+        await message.answer(
+            "❌ Произошла ошибка при подготовке генерации. Попробуйте ещё раз.",
+            reply_markup=get_main_menu_inline_keyboard(),
+        )
+        await ErrorTracker.alog(
+            origin=BotErrorEvent.Origin.TELEGRAM,
+            severity=BotErrorEvent.Severity.ERROR,
+            handler="video_generation.handle_veo_webapp_data",
+            chat_id=message.chat.id,
+            payload={
+                "generation_type": generation_type,
+                "duration": duration,
                 "aspect_ratio": aspect_ratio,
             },
             exc=exc,

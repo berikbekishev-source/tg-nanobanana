@@ -28,3 +28,16 @@ def kling_webapp(request):
     with open(page_path, "r", encoding="utf-8") as f:
         html_content = f.read()
     return HttpResponse(html_content, content_type="text/html")
+
+
+@csrf_exempt
+@xframe_options_exempt
+def veo_webapp(request):
+    """Отдаёт статический WebApp для настроек Veo."""
+    base_dir = os.path.dirname(__file__)
+    page_path = os.path.join(base_dir, "veo", "index.html")
+    if not os.path.exists(page_path):
+        raise Http404("Veo WebApp not found")
+    with open(page_path, "r", encoding="utf-8") as f:
+        html_content = f.read()
+    return HttpResponse(html_content, content_type="text/html")

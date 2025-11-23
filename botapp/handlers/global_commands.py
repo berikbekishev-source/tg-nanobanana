@@ -357,12 +357,15 @@ async def global_select_video_model(callback: CallbackQuery, state: FSMContext):
         model_price=float(model_cost),
         supports_images=model.supports_image_input,
         generation_type='text2video',
+        default_duration=(model.default_params or {}).get("duration"),
+        default_resolution=(model.default_params or {}).get("resolution"),
+        default_aspect_ratio=(model.default_params or {}).get("aspect_ratio"),
     )
 
     if model.provider == "kling":
         price_label = f"⚡{model_cost:.2f} токенов"
         base = PUBLIC_BASE_URL or "https://example.com"
-        webapp_url = f"{base}/kling/?price={quote_plus(price_label)}"
+        webapp_url = f"{base}/kling/?price={quote_plus(price_label)}&model={quote_plus(model.slug)}"
         try:
             await callback.answer(url=webapp_url)
         except Exception:
@@ -377,6 +380,51 @@ async def global_select_video_model(callback: CallbackQuery, state: FSMContext):
                 reply_markup=keyboard,
             )
         await state.set_state(BotStates.kling_wait_settings)
+        return
+
+    if model.slug == "veo3-fast":
+        if not PUBLIC_BASE_URL:
+            await callback.message.answer(
+                "Не удалось открыть WebApp: не указан PUBLIC_BASE_URL.",
+                reply_markup=get_main_menu_inline_keyboard(),
+            )
+            await state.clear()
+            return
+
+        price_label = f"⚡{model_cost:.2f} токенов"
+        webapp_url = f"{PUBLIC_BASE_URL}/veo/?price={quote_plus(price_label)}&model={quote_plus(model.slug)}"
+        keyboard = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text="Открыть WebApp", web_app=WebAppInfo(url=webapp_url))],
+                [InlineKeyboardButton(text="❌ Отмена", callback_data="cancel")],
+            ]
+        )
+
+        info = (
+            f"{get_model_info_message(model, base_price=model_cost)}\n\n"
+            "Режимы:\n"
+            "• Текст → Видео\n"
+            "• Изображение → Видео (начальный кадр обязателен, до 5 МБ; конечный кадр опционален, до 5 МБ)\n\n"
+            "После отправки WebApp закроется, а в чат придёт уведомление о старте генерации."
+        )
+
+        try:
+            await callback.answer(url=webapp_url)
+        except Exception:
+            keyboard = InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [InlineKeyboardButton(text="Открыть WebApp", web_app=WebAppInfo(url=webapp_url))],
+                    [InlineKeyboardButton(text="❌ Отмена", callback_data="cancel")],
+                ]
+            )
+            await callback.message.answer(
+                "Если окно не открылось автоматически, нажмите кнопку ниже.",
+                reply_markup=keyboard,
+                parse_mode="Markdown",
+            )
+
+        await callback.message.answer(info, reply_markup=keyboard, parse_mode="Markdown")
+        await state.set_state(BotStates.veo_wait_settings)
         return
 
     info_message = get_model_info_message(model, base_price=model_cost)
