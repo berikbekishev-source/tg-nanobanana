@@ -1,17 +1,14 @@
-## [2025-11-22] Staging Deployment: UI Improvements & Security Restore
+## [2025-11-22] Documentation: WebApp Architecture
 
 **Агент:** Agent (Session 9K9rh)
 **Ветка:** chore-debug-telegram-send-9K9rh
-**PR:** #307
-**Коммит:** (Latest HEAD)
+**PR:** #310 (Auto-created)
+**Коммит:** ab5013e
 
 ### Выполненные действия:
-1. **Security:** Восстановлена проверка `X-Telegram-Bot-Api-Secret-Token` (удалены комментарии).
-2. **Cleanup:** Удалены отладочные `print` из кода (подготовка к проду).
-3. **UI Fix (WebApp):**
-   - Удалена кнопка "Сгенерировать" из HTML (дубликат).
-   - Синяя кнопка Telegram (`MainButton`) теперь динамическая (появляется при вводе текста).
-   - Ошибки валидации показываются через `tg.showAlert()`.
+1. Создан файл `Документация/WEBAPP_ARCHITECTURE.md`.
+   - Содержит детальное описание архитектуры WebApp (Frontend, Backend, Transport).
+   - Служит техническим заданием для реализации WebApp других моделей (Kling, Nano Banana и др.).
 
 ### Результат:
-Ожидается автоматический деплой на Staging.
+Файл доступен в репозитории.
