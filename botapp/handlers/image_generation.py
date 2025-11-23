@@ -39,7 +39,10 @@ logger = logging.getLogger(__name__)
 # чтобы работать из любого состояния
 
 
-@router.message(StateFilter("*"), F.web_app_data)
+@router.message(
+    StateFilter("*"),
+    F.web_app_data.data.contains("midjourney_settings")
+)
 async def handle_midjourney_webapp_data(message: Message, state: FSMContext):
     """
     Принимаем данные из WebApp настроек Midjourney и запускаем/готовим генерацию.
