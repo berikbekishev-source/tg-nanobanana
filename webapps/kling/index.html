@@ -455,12 +455,16 @@
 
         function sendData() {
             els.prompt.blur();
+            if (!tg) {
+                setError("Откройте страницу через Telegram, чтобы отправить настройки.");
+                return;
+            }
             if (!state.prompt) {
-                setError("Введите промт, чтобы продолжить.");
+                tg.showAlert("Введите промт");
                 return;
             }
             if (state.mode === "image2video" && !state.imageData) {
-                setError("Загрузите изображение для режима Image → Video.");
+                tg.showAlert("Загрузите изображение для режима Image → Video.");
                 return;
             }
 
@@ -480,17 +484,35 @@
                 payload.imageName = state.imageName;
             }
 
-            try {
-                if (tg) {
-                    tg.sendData(JSON.stringify(payload));
-                    tg.close();
-                } else {
-                    alert("Откройте страницу через Telegram, чтобы отправить настройки.");
-                }
-            } catch (e) {
-                console.error("[Kling WebApp] Exception:", e);
-                setError("Не удалось отправить данные. Попробуйте ещё раз.");
+            const userId = tg.initDataUnsafe?.user?.id;
+            if (!userId) {
+                tg.showAlert("Ошибка: Не удалось определить пользователя Telegram.");
+                return;
             }
+
+            try {
+                tg.MainButton.showProgress();
+            } catch (_) {}
+
+            fetch('/api/kling/webapp/submit', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ user_id: userId, data: payload, initData: tg.initData })
+            })
+                .then((response) => {
+                    if (response.ok) {
+                        tg.close();
+                    } else {
+                        try { tg.MainButton.hideProgress(); } catch (_) {}
+                        tg.showAlert("Ошибка сервера. Попробуйте позже.");
+                        console.error("[Kling WebApp] Server error", response.status);
+                    }
+                })
+                .catch((error) => {
+                    try { tg.MainButton.hideProgress(); } catch (_) {}
+                    tg.showAlert("Ошибка сети: " + error.message);
+                    console.error("[Kling WebApp] Network error", error);
+                });
         }
 
         els.prompt.addEventListener("input", updateCounts);
