@@ -4,7 +4,7 @@
 import base64
 import json
 from io import BytesIO
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from aiogram import Router, F
 from aiogram.filters import StateFilter
