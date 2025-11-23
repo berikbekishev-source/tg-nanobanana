@@ -50,6 +50,11 @@ async def handle_midjourney_webapp_data(message: Message, state: FSMContext):
     """
     user_id = message.from_user.id
 
+    logger.warning(
+        "[MJ_WEBAPP] web_app_data received",
+        extra={"chat_id": message.chat.id, "from_user": user_id},
+    )
+
     # Детальное логирование начала обработки
     logging.info(f"[MIDJOURNEY_WEBAPP] Начало обработки данных от пользователя {user_id}")
     print(f"[MIDJOURNEY_WEBAPP] web_app_data received from user={user_id}", flush=True)

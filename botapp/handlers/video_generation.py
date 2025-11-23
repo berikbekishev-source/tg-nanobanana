@@ -637,6 +637,12 @@ async def handle_veo_webapp_data(message: Message, state: FSMContext):
         },
     )
 
+    if payload.get("mode") == "kling_settings":
+        logger.warning(
+            "[VEO_WEBAPP] Unexpected kling_settings payload routed here",
+            extra={"chat_id": message.chat.id},
+        )
+
     data = await state.get_data()
     model_slug = payload.get("modelSlug") or data.get("model_slug") or data.get("selected_model") or "veo3-fast"
 

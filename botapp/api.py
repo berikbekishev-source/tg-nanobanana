@@ -146,7 +146,14 @@ try:
             user_id = payload.get("user_id")
             data = payload.get("data")
 
-            logger.info(f"[WEBAPP_REST] Received submission for user {user_id}")
+            logger.warning(
+                "[WEBAPP_REST][MJ] payload received",
+                extra={
+                    "user_id": user_id,
+                    "kind": data.get("kind") if isinstance(data, dict) else None,
+                    "taskType": data.get("taskType") if isinstance(data, dict) else None,
+                },
+            )
             # Debug prints removed for production
             # print(f"[WEBAPP_REST] Submission: user={user_id}, data={json.dumps(data)[:100]}", flush=True)
 
@@ -224,7 +231,14 @@ try:
             user_id = payload.get("user_id")
             data = payload.get("data")
 
-            logger.info(f"[WEBAPP_REST][KLING] Received submission for user {user_id}")
+            logger.warning(
+                "[WEBAPP_REST][KLING] payload received",
+                extra={
+                    "user_id": user_id,
+                    "kind": data.get("kind") if isinstance(data, dict) else None,
+                    "mode": data.get("mode") if isinstance(data, dict) else None,
+                },
+            )
 
             if not user_id or not data:
                 return JsonResponse({"ok": False, "error": "Missing user_id or data"}, status=400)
