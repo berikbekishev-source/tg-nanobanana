@@ -138,19 +138,21 @@ def _parse_webapp_payload(raw: str) -> Optional[Dict[str, Any]]:
     """
     Аккуратно парсим web_app_data, учитывая экранирование и двойное кодирование.
     """
-    raw_data = raw or "{}"
+    decoded = raw or "{}"
     try:
-        if raw_data.startswith('{\\"') or raw_data.startswith("{\\'"):
+        if isinstance(decoded, bytes):
+            decoded = decoded.decode("utf-8", errors="ignore")
+        if decoded.startswith('{\"') or decoded.startswith("{\'"):
             try:
-                raw_data = raw_data.encode().decode("unicode_escape")
+                decoded = decoded.encode().decode("unicode_escape")
             except Exception:
                 pass
-        payload = json.loads(raw_data)
+        payload = json.loads(decoded)
         if isinstance(payload, str):
             try:
                 payload = json.loads(payload)
             except Exception:
-                pass
+                return None
         return payload if isinstance(payload, dict) else None
     except Exception:
         return None
@@ -385,7 +387,6 @@ async def handle_kling_webapp_data(message: Message, state: FSMContext):
 @router.message(StateFilter("*"), F.web_app_data)
 async def handle_veo_webapp_data(message: Message, state: FSMContext):
     """Принимаем данные Veo WebApp и запускаем генерацию."""
-    user_id = message.from_user.id
     payload = _parse_webapp_payload(message.web_app_data.data or "{}")
     if not payload:
         await message.answer(
@@ -421,7 +422,9 @@ async def handle_veo_webapp_data(message: Message, state: FSMContext):
 
     await state.update_data(model_id=model.id, model_slug=model.slug, model_provider=model.provider)
 
-    prompt = (payload.get("prompt") or "").strip()
+    params_payload = payload.get("params") if isinstance(payload.get("params"), dict) else {}
+
+    prompt = (payload.get("prompt") or params_payload.get("prompt") or "").strip()
     if not prompt:
         await message.answer("Введите промт в окне Veo и отправьте ещё раз.", reply_markup=get_cancel_keyboard())
         return
@@ -432,12 +435,15 @@ async def handle_veo_webapp_data(message: Message, state: FSMContext):
         )
         return
 
-    generation_type = (payload.get("mode") or "text2video").lower()
-    generation_type = "image2video" if generation_type == "image2video" else "text2video"
+    mode_value = (payload.get("mode") or params_payload.get("mode") or "text2video").lower()
+    generation_type = "image2video" if mode_value == "image2video" else "text2video"
 
     defaults = model.default_params or {}
     aspect_ratio = (
-        payload.get("aspectRatio")
+        params_payload.get("aspectRatio")
+        or params_payload.get("aspect_ratio")
+        or payload.get("aspectRatio")
+        or payload.get("aspect_ratio")
         or data.get("default_aspect_ratio")
         or defaults.get("aspect_ratio")
         or "9:16"
@@ -449,16 +455,16 @@ async def handle_veo_webapp_data(message: Message, state: FSMContext):
     duration = data.get("default_duration") or defaults.get("duration") or 8
     resolution = data.get("default_resolution") or defaults.get("resolution") or "720p"
 
-    input_images: List[Dict[str, Any]] = []
-    final_frame: Optional[Dict[str, Any]] = None
+    input_images = []
+    final_frame = None
 
-    def _prepare_inline_image(raw_b64: Optional[str], mime: Optional[str], name: Optional[str]) -> Dict[str, Any]:
+    def _prepare_inline_image(raw_b64, mime, name):
         if not raw_b64:
-            raise ValueError("missing image")
+            raise ValueError("missing")
         try:
             decoded = base64.b64decode(raw_b64)
         except Exception as exc:
-            raise ValueError("decode_error") from exc
+            raise ValueError("decode") from exc
         if len(decoded) > MAX_VEO_IMAGE_BYTES:
             raise ValueError("too_large")
         normalized = base64.b64encode(decoded).decode("ascii")
@@ -469,38 +475,84 @@ async def handle_veo_webapp_data(message: Message, state: FSMContext):
         }
 
     if generation_type == "image2video":
+        start_raw = (
+            params_payload.get("startImage")
+            or params_payload.get("start_image")
+            or payload.get("startImage")
+            or payload.get("start_image")
+        )
+        start_mime = (
+            params_payload.get("startImageMime")
+            or params_payload.get("start_image_mime")
+            or payload.get("startImageMime")
+            or payload.get("start_image_mime")
+        )
+        start_name = (
+            params_payload.get("startImageName")
+            or params_payload.get("start_image_name")
+            or payload.get("startImageName")
+            or payload.get("start_image_name")
+        )
+
+        if not start_raw:
+            await message.answer("Загрузите начальный кадр (до 5 МБ).", reply_markup=get_cancel_keyboard())
+            return
+
         try:
-            start_image = _prepare_inline_image(
-                payload.get("startImage"),
-                payload.get("startImageMime"),
-                payload.get("startImageName"),
-            )
+            start_image = _prepare_inline_image(start_raw, start_mime, start_name)
         except ValueError as exc:
             reason = str(exc)
             if reason == "too_large":
-                await message.answer("Начальный кадр превышает 5 МБ. Загрузите файл поменьше.", reply_markup=get_cancel_keyboard())
+                await message.answer(
+                    "Начальный кадр превышает 5 МБ. Загрузите файл поменьше.",
+                    reply_markup=get_cancel_keyboard(),
+                )
             else:
-                await message.answer("Не удалось прочитать начальный кадр. Попробуйте загрузить другое изображение.", reply_markup=get_cancel_keyboard())
+                await message.answer(
+                    "Не удалось прочитать начальный кадр. Попробуйте загрузить другое изображение.",
+                    reply_markup=get_cancel_keyboard(),
+                )
             return
+
         input_images.append(start_image)
 
-        end_raw = payload.get("endImage")
+        end_raw = (
+            params_payload.get("endImage")
+            or params_payload.get("end_image")
+            or payload.get("endImage")
+            or payload.get("end_image")
+        )
         if end_raw:
+            end_mime = (
+                params_payload.get("endImageMime")
+                or params_payload.get("end_image_mime")
+                or payload.get("endImageMime")
+                or payload.get("end_image_mime")
+            )
+            end_name = (
+                params_payload.get("endImageName")
+                or params_payload.get("end_image_name")
+                or payload.get("endImageName")
+                or payload.get("end_image_name")
+            )
+
             try:
-                final_frame = _prepare_inline_image(
-                    end_raw,
-                    payload.get("endImageMime"),
-                    payload.get("endImageName"),
-                )
+                final_frame = _prepare_inline_image(end_raw, end_mime, end_name)
             except ValueError as exc:
                 reason = str(exc)
                 if reason == "too_large":
-                    await message.answer("Конечный кадр превышает 5 МБ. Загрузите файл поменьше или оставьте поле пустым.", reply_markup=get_cancel_keyboard())
+                    await message.answer(
+                        "Конечный кадр превышает 5 МБ. Загрузите файл поменьше или оставьте поле пустым.",
+                        reply_markup=get_cancel_keyboard(),
+                    )
                 else:
-                    await message.answer("Не удалось прочитать конечный кадр. Попробуйте другой файл или оставьте поле пустым.", reply_markup=get_cancel_keyboard())
+                    await message.answer(
+                        "Не удалось прочитать конечный кадр. Попробуйте другой файл или оставьте поле пустым.",
+                        reply_markup=get_cancel_keyboard(),
+                    )
                 return
 
-    generation_params: Dict[str, Any] = {
+    generation_params = {
         "duration": duration,
         "resolution": resolution,
         "aspect_ratio": aspect_ratio,
@@ -509,7 +561,7 @@ async def handle_veo_webapp_data(message: Message, state: FSMContext):
         generation_params["final_frame"] = final_frame
 
     try:
-        user = await sync_to_async(TgUser.objects.get)(chat_id=user_id)
+        user = await sync_to_async(TgUser.objects.get)(chat_id=message.from_user.id)
     except TgUser.DoesNotExist:
         await message.answer(
             "Не удалось найти пользователя. Начните заново.",
