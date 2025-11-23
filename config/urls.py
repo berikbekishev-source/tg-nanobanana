@@ -22,7 +22,7 @@ from django.conf.urls.static import static
 from botapp.api import api  # Ninja API
 from lavatop.api import miniapp_api  # Payment API
 from lavatop.views import miniapp_payment
-from webapps.views import midjourney_webapp, kling_webapp, veo_webapp, sora2_webapp
+from webapps.views import midjourney_webapp, kling_webapp, veo_webapp, sora2_webapp, gpt_image_webapp
 
 urlpatterns = [
     path("admin/", admin.site.urls),
@@ -33,6 +33,7 @@ urlpatterns = [
     path("kling/", kling_webapp, name='kling_webapp'),  # Kling WebApp
     path("veo/", veo_webapp, name='veo_webapp'),  # Veo WebApp
     path("sora2/", sora2_webapp, name='sora2_webapp'),  # Sora 2 WebApp
+    path("gpt-image/", gpt_image_webapp, name='gpt_image_webapp'),  # GPT Image WebApp
     path("dashboard/", include("dashboard.urls")),
 ]
 
