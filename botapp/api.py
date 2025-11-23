@@ -47,8 +47,6 @@ try:
         update = Update(update_id=0, message=message)
         await dp.feed_update(bot, update)
 
-
-
     def _extract_chat_id(update: Optional[Update]) -> Optional[int]:
         if not update:
             return None
