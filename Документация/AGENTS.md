@@ -247,7 +247,9 @@ curl -s -X POST https://backboard.railway.app/graphql/v2 \
 
 ## 4. 🚀 Fast Track Deployment Pipeline
 
-Главный принцип: **"Минимум бюрократии на Staging, Максимум надежности на Production".**
+Главный принцип: **"Push First, Fix Later (if needed). Минимум ручного слияния."**
+
+Мы используем возможности GitHub (Auto-merge, Update Branch) для автоматического слияния кода. Агенту НЕ НУЖНО вручную делать `git merge staging` перед каждым пушем, если нет конфликтов.
 
 ### 4.1 Подготовка: Настройка окружения
 
@@ -262,26 +264,13 @@ curl -s -X POST https://backboard.railway.app/graphql/v2 \
 export GH_TOKEN="<ваш_github_pat>"
 export RAILWAY_API_TOKEN="<ваш_railway_api_token>"
 
-# Проверка GitHub авторизации (токен автоматически используется)
+# Проверка GitHub авторизации
 gh auth status
 
-# 3. Авторизация в Railway
-railway login  # Откроется браузер
-railway whoami  # Проверка: Logged in as Berik
-railway link --project 866bc61a-0ef1-41d1-af53-26784f6e5f06
-
-# 4. Синхронизация с staging
-git checkout staging
-git pull origin staging
-
-# 5. Создание feature ветки
-git checkout -b feature/<название-задачи>
+# 3. Синхронизация с staging (ТОЛЬКО при создании новой ветки)
+git fetch origin staging
+git checkout -b feature/<название-задачи> origin/staging
 ```
-
-**💡 Почему GH_TOKEN вместо gh auth login?**
-- ✅ Несколько агентов могут работать параллельно без конфликтов
-- ✅ Не требует записи в `~/.config/gh/hosts.yml`
-- ✅ Токен изолирован в переменной окружения каждого агента
 
 ### 4.2 Разработка и Тестирование
 
@@ -291,54 +280,78 @@ git checkout -b feature/<название-задачи>
 # 1. Внесение изменений
 # ... пишем код ...
 
-# 2. Локальная проверка (опционально)
+# 2. Локальная проверка
 python manage.py test
 flake8 .
 
-# 3. Коммит изменений
+# 3. Коммит изменений (ВСЕГДА коммитьте перед любыми сетевыми операциями!)
 git add .
 git commit -m "feat: описание изменения"
 ```
 
 ### 4.3 Staging Deployment (Автоматический, 2-3 минуты)
 
-#### Шаг 1: Финальная синхронизация и Push
+#### Шаг 1: Push и Автоматика
+
+Вместо сложного ручного `git pull/merge`, просто отправьте изменения.
 
 ```bash
-# Подтягиваем свежие изменения из staging
-git pull origin staging
-
-# Пушим feature ветку
+# Просто пушим feature ветку
 git push origin feature/<название-задачи>
 ```
 
 **Что происходит автоматически:**
-- 🤖 GitHub Actions создает PR `feature/* → staging` (workflow: `pr-from-feature.yml`)
-- 🔍 Запускается **Lint Check** (только синтаксис, ~30-60 сек)
-- ✅ Если линтер прошел → `auto-merge-staging.yml` автоматически мержит PR (squash)
-- 🚀 Railway видит изменения в `staging` и запускает deploy (~2 мин)
+- 🤖 GitHub Actions создает PR `feature/* → staging`.
+- 🔄 GitHub проверяет актуальность ветки. Если конфликтов нет, он сам обновляет ветку (Update Branch) или сразу мерджит (Auto-merge).
+- 🚀 Railway запускает deploy.
 
-#### Шаг 2: Мониторинг Staging Deployment
+#### Шаг 2: Мониторинг PR (КРИТИЧЕСКИ ВАЖНО)
 
-**Агент подключается к GitHub для проверки статуса:**
+Сразу после пуша проверьте статус PR. Здесь могут возникнуть конфликты, которые нужно решать.
 
 ```bash
-# Проверка статуса PR (найти номер своего PR)
-gh pr list --head feature/<название-задачи> --state all
+# 1. Получить статус PR
+gh pr view --json state,mergeable,statusCheckRollup,url
 
-# Проверка статуса CI
-gh pr view <PR_NUMBER> --json state,mergeable,statusCheckRollup
-
-# Ожидание: state = "MERGED", все checks = "SUCCESS"
+# ВОЗМОЖНЫЕ СТАТУСЫ:
+# mergeable: "MERGEABLE" -> Всё отлично, ждите авто-мержа.
+# mergeable: "CONFLICTING" -> ЕСТЬ КОНФЛИКТЫ! (См. Шаг 3)
+# mergeable: "UNKNOWN" -> GitHub ещё думает, повторите через 10 сек.
 ```
 
-**Ожидание Railway deployment (~2 минуты):**
+#### Шаг 3: Разрешение конфликтов (ТОЛЬКО ЕСЛИ НУЖНО)
+
+Если `mergeable: "CONFLICTING"`, значит, другой агент изменил те же файлы.
+**Только в этом случае** выполняйте ручное слияние:
+
+```bash
+# 1. Подтяните свежий staging
+git fetch origin staging
+
+# 2. Смерджите его в свою ветку
+git merge origin/staging
+
+# 3. При возникновении конфликта:
+# ❌ ЗАПРЕЩЕНО: использовать `git checkout --theirs` или `git stash`
+# ✅ ОБЯЗАТЕЛЬНО: откройте файл, найдите `<<<<<<<` и `>>>>>>>`, отредактируйте код вручную, сохраняя логику обоих изменений.
+
+# 4. Зафиксируйте решение конфликта
+git add .
+git commit -m "merge: resolve conflicts with staging"
+
+# 5. Отправьте исправленный код
+git push origin feature/<название-задачи>
+```
+
+#### Шаг 4: Мониторинг Deployment
+
+После успешного мержа (автоматического или ручного) ждем деплой.
 
 ```bash
 # Подождать завершения деплоя
 sleep 120
 
-# Проверка статуса через Railway GraphQL API
+# Проверка через Railway GraphQL API
 curl -s -X POST https://backboard.railway.app/graphql/v2 \
   -H "Authorization: Bearer $RAILWAY_API_TOKEN" \
   -H "Content-Type: application/json" \
@@ -349,497 +362,72 @@ curl -s -X POST https://backboard.railway.app/graphql/v2 \
 # Ожидаемый результат: "status": "SUCCESS"
 ```
 
-#### Шаг 3: Проверка Staging Health
-
-**Агент подключается к Railway для проверки логов:**
-
-```bash
-# Проверка статуса всех сервисов
-for service_id in "29038dc3-c812-4b0d-9749-23cdd1b91863" "aeb9b998-c05b-41a0-865c-5b58b26746d2" "4e7336b6-89b9-4385-b0d2-3832cab482e0"; do
-  service_name=$(case $service_id in 
-    "29038dc3-c812-4b0d-9749-23cdd1b91863") echo "web" ;;
-    "aeb9b998-c05b-41a0-865c-5b58b26746d2") echo "worker" ;;
-    "4e7336b6-89b9-4385-b0d2-3832cab482e0") echo "beat" ;;
-  esac)
-  
-  deploy_status=$(curl -s -X POST https://backboard.railway.app/graphql/v2 \
-    -H "Authorization: Bearer $RAILWAY_API_TOKEN" \
-    -H "Content-Type: application/json" \
-    -d "{\"query\": \"query { deployments(input: { environmentId: \\\"9e15b55d-8220-4067-a47e-191a57c2bcca\\\", serviceId: \\\"$service_id\\\" }) { edges { node { status } } } }\"}" | jq -r '.data.deployments.edges[0].node.status')
-  
-  echo "$service_name: $deploy_status"
-done
-
-# Ожидаемый результат: все сервисы "SUCCESS"
-```
-
-**Проверка логов (опционально, для диагностики):**
-
-```bash
-railway logs --service web --tail 50
-railway logs --service worker --tail 30
-railway logs --service beat --tail 20
-```
-
-#### Шаг 4: Отчет человеку
-
-**Агент сообщает:**
-
-```
-✅ Staging Deployment SUCCESS
-
-📋 Детали:
-- PR #<NUMBER>: merged into staging
-- Railway deployment: SUCCESS (web/worker/beat)
-- Deployed at: <timestamp>
-
-🧪 Staging готов к ручному тестированию в @test_integer_ai_bot
-
-Ожидаю вашего подтверждения для деплоя в production.
-```
-
-**Что если два агента запушили одновременно?**
-- GitHub обработает PR-ы последовательно (concurrency control)
-- Railway задеплоит кумулятивный результат обоих изменений
-
 ### 4.4 Production Release (Контролируемый, ~10-15 минут)
 
 #### Шаг 1: Получение команды от человека
-
-**Человек тестирует staging и дает команду:**
-```
-"Все ок, даю добро на деплой в production"
-```
+Человек тестирует staging и дает команду: "Все ок, даю добро на деплой в production".
 
 #### Шаг 2: Создание Release PR
-
-**Агент подключается к GitHub для создания Release PR:**
 
 ```bash
 # Запуск workflow через GitHub CLI
 gh workflow run create-release-pr.yml \
   -f release_title="Release: <краткое описание изменений>" \
-  -f release_notes="Список изменений:
-- feat: <описание фичи 1>
-- fix: <описание фикса 1>
-- ..."
+  -f release_notes="Список изменений: ..."
 ```
-
-**Что происходит автоматически:**
-- 🤖 Workflow создает PR `staging → main`
-- 🔍 Запускается **Full CI** (lint + unit tests + integration tests, ~5-10 мин)
-- ⏸️ **Auto-merge ОТКЛЮЧЕН** - мерджит только человек
 
 #### Шаг 3: Мониторинг Release PR
 
-**Агент проверяет статус CI через GitHub:**
-
 ```bash
-# Найти Release PR
-gh pr list --base main --head staging
+# Проверка статуса CI
+gh pr view <PR_NUMBER> --json state,mergeable,statusCheckRollup
 
-# Проверка статуса CI и mergeable
-gh pr view <PR_NUMBER> --json state,mergeable,statusCheckRollup,mergeStateStatus
-
-# Ожидаемый результат:
-# - mergeable: "MERGEABLE"
-# - mergeStateStatus: "CLEAN"
-# - все statusCheckRollup: "SUCCESS"
+# Если mergeable: "CONFLICTING" -> Выполните процедуру разрешения конфликтов (аналогично п. 4.3 Шаг 3), но через промежуточную ветку `release/manual`.
 ```
 
-**Ожидание завершения CI (~5-10 минут):**
+#### Шаг 4: Отчет и Merge
+После успешного прохождения всех тестов сообщите человеку. Мердж в `main` делает **человек** (кнопкой или командой).
 
-```bash
-# Проверять статус каждые 30 секунд
-while true; do
-  status=$(gh pr view <PR_NUMBER> --json statusCheckRollup --jq '.statusCheckRollup[] | select(.name=="CI / full-test") | .status')
-  echo "CI Status: $status"
-  
-  if [ "$status" = "COMPLETED" ]; then
-    conclusion=$(gh pr view <PR_NUMBER> --json statusCheckRollup --jq '.statusCheckRollup[] | select(.name=="CI / full-test") | .conclusion')
-    echo "CI Conclusion: $conclusion"
-    break
-  fi
-  
-  sleep 30
-done
-```
-
-#### Шаг 4: Обработка результатов CI
-
-**Если CI FAILED:**
-
-```bash
-# 1. Изучить логи CI
-gh pr checks <PR_NUMBER>
-
-# 2. Исправить проблемы в staging
-git checkout staging
-git pull origin staging
-# ... исправления ...
-git add . && git commit -m "fix: <описание фикса>"
-git push origin staging
-
-# 3. Закрыть старый Release PR
-gh pr close <PR_NUMBER>
-
-# 4. Создать новый Release PR (повторить Шаг 2)
-```
-
-**Если CI SUCCESS:**
-
-```bash
-# Проверить что нет конфликтов
-gh pr view <PR_NUMBER> --json mergeable,mergeStateStatus
-
-# Если mergeable = "CONFLICTING" - нужно разрешить конфликты
-# Если mergeable = "MERGEABLE" - сообщить человеку
-```
-
-#### Шаг 5: Отчет человеку о готовности PR
-
-**Агент сообщает:**
-
-```
-✅ Release PR готов к merge
-
-📋 PR #<NUMBER>: staging → main
-🔍 CI Status: ALL PASSED
-- Lint: ✅
-- Unit Tests: ✅
-- Integration Tests: ✅
-
-✅ Mergeable: CLEAN (нет конфликтов)
-
-📝 Release Notes:
-<список изменений из PR description>
-
-🔒 Ожидаю вашего ручного merge в GitHub.
-```
-
-#### Шаг 6: Человек мерджит PR
-
-**Человек открывает PR в GitHub и нажимает "Squash and Merge"**
-
-**ИЛИ через CLI (только человек):**
-```bash
-gh pr merge <PR_NUMBER> --squash
-```
-
-#### Шаг 7: Мониторинг Production Deployment
-
-**Агент подключается к GitHub для подтверждения merge:**
-
-```bash
-# Проверка что PR смержен
-gh pr view <PR_NUMBER> --json state,mergedAt,mergedBy
-
-# Ожидаемый результат: state = "MERGED"
-```
-
-**Ожидание Railway production deploy (~2-3 минуты):**
-
-```bash
-# Подождать завершения деплоя
-sleep 120
-
-# Проверка статуса production deployment
-curl -s -X POST https://backboard.railway.app/graphql/v2 \
-  -H "Authorization: Bearer $RAILWAY_API_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "query": "query { deployments(input: { environmentId: \"2eee50d8-402e-44bf-9035-8298efef91bc\", serviceId: \"29038dc3-c812-4b0d-9749-23cdd1b91863\" }) { edges { node { status createdAt meta } } } }"
-  }' | jq '.data.deployments.edges[0].node'
-```
-
-**Проверка статуса всех production сервисов:**
-
-```bash
-for service_id in "29038dc3-c812-4b0d-9749-23cdd1b91863" "aeb9b998-c05b-41a0-865c-5b58b26746d2" "4e7336b6-89b9-4385-b0d2-3832cab482e0"; do
-  service_name=$(case $service_id in 
-    "29038dc3-c812-4b0d-9749-23cdd1b91863") echo "web" ;;
-    "aeb9b998-c05b-41a0-865c-5b58b26746d2") echo "worker" ;;
-    "4e7336b6-89b9-4385-b0d2-3832cab482e0") echo "beat" ;;
-  esac)
-  
-  deploy_status=$(curl -s -X POST https://backboard.railway.app/graphql/v2 \
-    -H "Authorization: Bearer $RAILWAY_API_TOKEN" \
-    -H "Content-Type: application/json" \
-    -d "{\"query\": \"query { deployments(input: { environmentId: \\\"2eee50d8-402e-44bf-9035-8298efef91bc\\\", serviceId: \\\"$service_id\\\" }) { edges { node { status } } } }\"}" | jq -r '.data.deployments.edges[0].node.status')
-  
-  echo "$service_name: $deploy_status"
-done
-```
-
-#### Шаг 8: Финальный отчет
-
-**Если Production Deployment SUCCESS:**
-
-```
-🎉 Production Deployment SUCCESS
-
-📋 Детали:
-- PR #<NUMBER>: merged into main by <user>
-- Railway deployment: SUCCESS (web/worker/beat)
-- Deployed at: <timestamp>
-- Commit: <commit_hash>
-
-✅ Production bot @tg_nanobanana_bot работает корректно
-
-📊 Все сервисы:
-- web: SUCCESS
-- worker: SUCCESS
-- beat: SUCCESS
-
-Релиз успешно завершен! 🚀
-```
-
-**Если Production Deployment FAILED:**
-
-```bash
-# 1. Собрать логи ошибок
-railway logs --service web --tail 100 > production_error.log
-railway logs --service worker --tail 50 >> production_error.log
-
-# 2. Сообщить человеку об ошибке с логами
-# 3. Предложить rollback (ТОЛЬКО после подтверждения человека)
-
-# Rollback (если человек подтвердил):
-git checkout main
-git pull origin main
-git revert HEAD --no-edit
-git push origin main
-```
+#### Шаг 5: Мониторинг Production Deployment
+Аналогично Staging, проверяйте статус через API или логи.
 
 ### 4.5 Временные рамки Fast Track Pipeline
 
 | Этап | Время | Автоматизация |
 |------|-------|---------------|
-| **Staging Deployment** | **~2-3 мин** | **Полностью автоматический** |
-| - Feature push → PR creation | ~10 сек | Auto |
-| - Lint check | ~30-60 сек | Auto |
-| - Auto-merge | ~10 сек | Auto |
+| **Staging Deployment** | **~2-3 мин** | **Авто (GitHub)** |
+| - Feature push | ~5 сек | Агент |
+| - Auto-merge / Update Branch | ~10 сек | Auto |
+| - Conflict Resolution | ~5 мин | Агент (если есть) |
 | - Railway deploy | ~2 мин | Auto |
-| **Ручное тестирование staging** | По необходимости | Человек |
-| **Production Release** | **~10-15 мин** | **Полуавтоматический** |
-| - Release PR creation | ~10 сек | Auto (по команде) |
-| - Full CI (lint + tests) | ~5-10 мин | Auto |
-| - Human review & merge | По необходимости | Человек |
-| - Railway production deploy | ~2 мин | Auto |
-
-**Итого:** От feature push до production ~15-20 минут (при условии что staging тестирование прошло быстро)
 
 ### 4.6 Критические правила Fast Track Pipeline
 
 #### ❌ НИКОГДА НЕ ДЕЛАЙТЕ:
-
-1. **НЕ мерджите PR в main автоматически**
-   - Только человек принимает решение о production release
-   - Использование `gh pr merge --auto` для main запрещено
-
-2. **НЕ пушьте напрямую в staging или main**
-   - Ветки защищены branch protection rules
-   - Все изменения только через PR
-
-3. **НЕ используйте `railway deploy/up/redeploy`**
-   - Код выкатывается ТОЛЬКО через GitHub Actions
-   - Railway CLI используется только для мониторинга (logs, status)
-
-4. **НЕ делайте rollback без подтверждения человека**
-   - Rollback - это критическая операция
-   - Всегда сначала сообщите о проблеме и дождитесь команды
-
-5. **НЕ коммитьте токены и секреты**
-   - GitHub PAT не должен попасть в репозиторий
-   - Railway API Token хранится только в GitHub Secrets
+1. **НЕ используйте `git stash` при конфликтах.** Это приводит к потере контекста. Лучше `commit`, потом `merge`.
+2. **НЕ используйте скрипты для "патчинга" файлов.** Разрешайте конфликты только через редактирование стандартных маркеров Git (`<<<<`, `>>>>`).
+3. **НЕ делайте `git merge staging` локально, если GitHub этого не требует.** Доверьтесь `Update Branch`.
 
 #### ✅ ВСЕГДА ДЕЛАЙТЕ:
-
-1. **Синхронизируйтесь перед началом работы**
-   ```bash
-   git checkout staging && git pull origin staging
-   ```
-
-2. **Проверяйте статус CI перед переходом к следующему шагу**
-   ```bash
-   gh pr checks <PR_NUMBER>
-   ```
-
-3. **Ждите завершения Railway deployment (~2 мин)**
-   - Не спешите проверять логи сразу после push
-   - Используйте `sleep 120` или GraphQL API для проверки статуса
-
-4. **Сообщайте человеку о каждом важном этапе**
-   - После staging deployment
-   - После создания Release PR
-   - После production deployment
-
-5. **Записывайте все действия в AGENTS_LOGS.md**
-   - Дата, задача, действие, ссылка на PR/коммит
-   - Результаты проверок (CI status, Railway status, health checks)
-
-### 4.7 FAQ и Troubleshooting
-
-**Q: PR не создался автоматически после push feature ветки**
-
-A: Проверьте:
-```bash
-# 1. Проверка workflow
-gh run list --workflow=pr-from-feature.yml --limit 5
-
-# 2. Создайте PR вручную
-gh pr create --base staging --head feature/<название> --title "feat: <описание>" --body "Auto-generated PR"
-```
-
-**Q: Auto-merge не сработал после успешного линтера**
-
-A: Проверьте:
-```bash
-# 1. Статус всех checks
-gh pr view <PR_NUMBER> --json statusCheckRollup
-
-# 2. Mergeable status
-gh pr view <PR_NUMBER> --json mergeable
-
-# 3. Если все зеленое - смерджите вручную
-gh pr merge <PR_NUMBER> --squash
-```
-
-**Q: Railway deployment завис в статусе "BUILDING"**
-
-A: Проверьте логи:
-```bash
-# 1. Логи build
-railway logs --service web --tail 100
-
-# 2. Проверка через GraphQL (может быть в очереди)
-curl -s -X POST https://backboard.railway.app/graphql/v2 \
-  -H "Authorization: Bearer $RAILWAY_API_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"query": "query { deployments(input: { environmentId: \"9e15b55d-8220-4067-a47e-191a57c2bcca\", serviceId: \"29038dc3-c812-4b0d-9749-23cdd1b91863\" }) { edges { node { status buildLogs } } } }"}' | jq '.'
-
-# 3. Если застрял >10 минут - сообщите человеку
-```
-
-**Q: CI tests failed на Release PR**
-
-A: Исправьте проблемы:
-```bash
-# 1. Посмотрите детали ошибок
-gh pr checks <PR_NUMBER>
-gh run view <RUN_ID> --log-failed
-
-# 2. Исправьте в staging
-git checkout staging
-git pull origin staging
-# ... фиксы ...
-git add . && git commit -m "fix: <описание>"
-git push origin staging
-
-# 3. Закройте старый PR и создайте новый
-gh pr close <OLD_PR_NUMBER>
-gh workflow run create-release-pr.yml -f release_title="..." -f release_notes="..."
-```
-
-**Q: Merge conflicts в Release PR**
-
-A: Разрешите конфликты:
-```bash
-# 1. Создайте clean release branch
-git checkout main
-git pull origin main
-git checkout staging
-git pull origin staging
-git checkout -b release/manual-clean
-git merge origin/main -m "sync: merge main for clean release"
-
-# 2. Разрешите конфликты вручную
-# ... resolve conflicts ...
-git add .
-git commit -m "merge: resolve conflicts"
-git push origin release/manual-clean
-
-# 3. Создайте PR через UI
-# staging → main (но используя release/manual-clean как source)
-```
-
-**Q: Production deployment failed - что делать?**
-
-A: **СООБЩИТЕ ЧЕЛОВЕКУ НЕМЕДЛЕННО:**
-```
-🚨 Production Deployment FAILED
-
-📋 PR #<NUMBER>: merged into main
-❌ Railway deployment: FAILED
-🔍 Service: <web/worker/beat>
-📝 Error: <краткое описание из логов>
-
-📎 Полные логи:
-<вставьте последние 50 строк из railway logs>
-
-⚠️ Предлагаю rollback на предыдущую версию.
-Ожидаю вашего подтверждения.
-```
+1. **Смотрите статус PR сразу после пуша.** (`gh pr view`).
+2. **Коммитьте локальные изменения перед любыми действиями с git (pull/merge).**
 
 ## 5. Журнал действий (AGENTS_LOGS.md)
 
-После каждого staging deployment агент должен добавить запись в `Документация/AGENTS_LOGS.md`:
+После каждого деплоя обновляйте журнал.
 
 ```markdown
 ## [2025-11-19] Staging Deployment: <описание задачи>
 
 **Агент:** AI Agent Name  
 **Ветка:** feature/<название>  
-**PR:** #<NUMBER>  
-**Коммит:** <commit_hash>
+**PR:** #<NUMBER> (Status: MERGED)
 
 ### Выполненные действия:
-1. Создана feature ветка из staging
-2. Внесены изменения: <краткое описание>
-3. Push в GitHub → автоматическое создание PR
-4. Lint Check: ✅ PASSED
-5. Auto-merge: ✅ SUCCESS
-6. Railway deployment: ✅ SUCCESS (web/worker/beat)
-
-### Проверки:
-- GitHub PR: https://github.com/berikbekishev-source/tg-nanobanana/pull/<NUMBER>
-- Railway status: SUCCESS
-- Deployed at: <timestamp>
-- Health check: OK
+1. Push в GitHub.
+2. PR Status: MERGEABLE (Auto-merged) [ИЛИ] CONFLICTING (Resolved manually).
+3. Railway deployment: ✅ SUCCESS.
 
 ### Результат:
-✅ Staging готов к ручному тестированию.
-Уведомлен человек: <дата/время>
+✅ Staging готов к тестированию.
 ```
-
-После каждого production release:
-
-```markdown
-## [2025-11-19] Production Release: <описание релиза>
-
-**Release PR:** #<NUMBER>  
-**Merged by:** <username>  
-**Merge commit:** <commit_hash>
-
-### Изменения в релизе:
-- feat: <описание фичи 1>
-- fix: <описание фикса 1>
-- ...
-
-### CI Results:
-- Lint: ✅ PASSED
-- Unit Tests: ✅ PASSED
-- Integration Tests: ✅ PASSED
-
-### Production Deployment:
-- Railway status: ✅ SUCCESS (web/worker/beat)
-- Deployed at: <timestamp>
-- Health check: OK
-
-### Результат:
-🎉 Production release успешно завершен!
-```
-
----
-
-Соблюдайте эти правила, оперативно обновляйте журнал действий и не забывайте согласовывать любые нетипичные шаги. Это гарантирует предсказуемые деплои и быстрый отклик на инциденты.
