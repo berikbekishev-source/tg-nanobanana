@@ -482,27 +482,8 @@
 
             try {
                 if (tg) {
-                    const userId = tg.initDataUnsafe?.user?.id;
-
-                    try {
-                        tg.showAlert("Отправляем запрос на генерацию…");
-                    } catch (e) {
-                        console.error("[Kling WebApp] showAlert error", e);
-                    }
-
-                    fetch('/api/kling/webapp/submit', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ user_id: userId, data: payload })
-                    }).catch((e) => {
-                        console.error("[Kling WebApp] REST error", e);
-                        try { tg.showAlert("Не удалось отправить fallback: " + (e?.message || e)); } catch (_) {}
-                    });
-
-                    setTimeout(() => {
-                        tg.sendData(JSON.stringify(payload));
-                        tg.close();
-                    }, 500);
+                    tg.sendData(JSON.stringify(payload));
+                    tg.close();
                 } else {
                     alert("Откройте страницу через Telegram, чтобы отправить настройки.");
                 }
