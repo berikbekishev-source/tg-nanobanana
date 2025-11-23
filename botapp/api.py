@@ -25,8 +25,7 @@ try:
 
     async def _feed_webapp_update(user_id: int, data: Dict[str, Any]) -> None:
         """
-        Формирует mock Update с web_app_data и передаёт его в диспетчер aiogram.
-        Используется REST WebApp сабмитами (tg.sendData недоступен из inline-кнопок).
+        Формирует mock Update с WebAppData и передает его в диспетчер.
         """
         from aiogram.types import Message, WebAppData, User, Chat
         from datetime import datetime
@@ -34,16 +33,14 @@ try:
         user_obj = User(id=int(user_id), is_bot=False, first_name="User")
         chat_obj = Chat(id=int(user_id), type="private")
         web_app_data_obj = WebAppData(data=json.dumps(data), button_text="Generate")
-
         message = Message(
             message_id=0,
             date=datetime.now(),
             chat=chat_obj,
             from_user=user_obj,
             web_app_data=web_app_data_obj,
-            text=None,  # text is Optional
+            text=None  # text is Optional
         )
-
         update = Update(update_id=0, message=message)
         await dp.feed_update(bot, update)
 
@@ -156,81 +153,12 @@ try:
             if not user_id or not data:
                 return JsonResponse({"ok": False, "error": "Missing user_id or data"}, status=400)
 
-            # Construct a fake Update object
-            from aiogram.types import Update, Message, WebAppData, User, Chat
-            import time
-
-            # Mock objects
-            # Note: date is datetime in latest aiogram (3.x), but let's check usage. 
-            # Actually aiogram 3.x expects datetime for date.
-            from datetime import datetime
-            
-            user_obj = User(id=int(user_id), is_bot=False, first_name="User")
-            chat_obj = Chat(id=int(user_id), type="private")
-            web_app_data_obj = WebAppData(data=json.dumps(data), button_text="Generate")
-
-            # We use minimal required fields. 
-            # Note: check your aiogram version for exact field requirements.
-            # Assuming aiogram 3.x
-            message = Message(
-                message_id=0,
-                date=datetime.now(),
-                chat=chat_obj,
-                from_user=user_obj,
-                web_app_data=web_app_data_obj,
-                text=None # text is Optional
-            )
-
-            update = Update(update_id=0, message=message)
-
-            # Feed to dispatcher
-            await dp.feed_update(bot, update)
+            await _feed_webapp_update(int(user_id), data)
             logger.info(f"[WEBAPP_REST] Update fed to dispatcher for user {user_id}")
 
             return JsonResponse({"ok": True})
         except Exception as e:
             logger.error(f"[WEBAPP_REST] Error: {e}", exc_info=True)
-            return JsonResponse({"ok": False, "error": str(e)}, status=500)
-
-    @api.post("/sora2/webapp/submit")
-    async def sora2_webapp_submit(request):
-        """
-        Fallback endpoint для WebApp Sora 2 (если tg.sendData не сработал).
-        """
-        try:
-            payload = json.loads(request.body.decode("utf-8"))
-            user_id = payload.get("user_id")
-            data = payload.get("data")
-
-            logger.info(f"[WEBAPP_REST] Received Sora2 submission for user {user_id}")
-
-            if not user_id or not data:
-                return JsonResponse({"ok": False, "error": "Missing user_id or data"}, status=400)
-
-            from aiogram.types import Update, Message, WebAppData, User, Chat
-            from datetime import datetime
-
-            user_obj = User(id=int(user_id), is_bot=False, first_name="User")
-            chat_obj = Chat(id=int(user_id), type="private")
-            web_app_data_obj = WebAppData(data=json.dumps(data), button_text="Generate")
-
-            message = Message(
-                message_id=0,
-                date=datetime.now(),
-                chat=chat_obj,
-                from_user=user_obj,
-                web_app_data=web_app_data_obj,
-                text=None # text is Optional
-            )
-
-            update = Update(update_id=0, message=message)
-
-            await dp.feed_update(bot, update)
-            logger.info(f"[WEBAPP_REST] Sora2 update fed to dispatcher for user {user_id}")
-
-            return JsonResponse({"ok": True})
-        except Exception as e:
-            logger.error(f"[WEBAPP_REST] Sora2 error: {e}", exc_info=True)
             return JsonResponse({"ok": False, "error": str(e)}, status=500)
 
     @api.post("/veo/webapp/submit")
@@ -256,6 +184,29 @@ try:
             logger.error(f"[WEBAPP_REST] Veo submit error: {e}", exc_info=True)
             return JsonResponse({"ok": False, "error": str(e)}, status=500)
 
+    @api.post("/gpt-image/webapp/submit")
+    async def gpt_image_webapp_submit(request):
+        """
+        Fallback endpoint для GPT Image WebApp: шлёт mock Update с web_app_data.
+        """
+        try:
+            payload = json.loads(request.body.decode("utf-8"))
+            user_id = payload.get("user_id")
+            data = payload.get("data")
+
+            logger.info(f"[WEBAPP_REST][GPT_IMAGE] Received submission for user {user_id}")
+
+            if not user_id or not data:
+                return JsonResponse({"ok": False, "error": "Missing user_id or data"}, status=400)
+
+            await _feed_webapp_update(int(user_id), data)
+            logger.info(f"[WEBAPP_REST][GPT_IMAGE] Update fed to dispatcher for user {user_id}")
+
+            return JsonResponse({"ok": True})
+        except Exception as exc:
+            logger.error(f"[WEBAPP_REST][GPT_IMAGE] Error: {exc}", exc_info=True)
+            return JsonResponse({"ok": False, "error": str(exc)}, status=500)
+
     @api.post("/kling/webapp/submit")
     async def kling_webapp_submit(request):
         """
@@ -278,7 +229,6 @@ try:
         except Exception as exc:
             logger.error(f"[WEBAPP_REST][KLING] Error: {exc}", exc_info=True)
             return JsonResponse({"ok": False, "error": str(exc)}, status=500)
-
 
 except ImportError:
     # aiogram not installed yet - create placeholder endpoint

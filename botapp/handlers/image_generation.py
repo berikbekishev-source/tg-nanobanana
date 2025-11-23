@@ -257,6 +257,180 @@ async def handle_midjourney_webapp_data(message: Message, state: FSMContext):
     await state.set_state(BotStates.image_wait_prompt)
 
 
+@router.message(
+    StateFilter("*"),
+    F.web_app_data.data.contains("gpt_image_settings"),
+)
+async def handle_gpt_image_webapp_data(message: Message, state: FSMContext):
+    """
+    Принимаем данные из WebApp настроек GPT Image и запускаем генерацию.
+    """
+    user_id = message.from_user.id
+    logger.info(f"[GPT_IMAGE_WEBAPP] Получены данные от пользователя {user_id}")
+
+    try:
+        payload = json.loads(message.web_app_data.data or "{}")
+        logger.info(f"[GPT_IMAGE_WEBAPP] Payload: {json.dumps(payload, ensure_ascii=False)[:500]}")
+    except Exception as exc:
+        logger.error(f"[GPT_IMAGE_WEBAPP] Ошибка парсинга: {exc}")
+        await message.answer(
+            "❌ Не удалось прочитать данные из окна настроек. Попробуйте открыть снова.",
+            reply_markup=get_cancel_keyboard(),
+        )
+        return
+
+    if payload.get("kind") != "gpt_image_settings":
+        logger.warning(f"[GPT_IMAGE_WEBAPP] Неверный тип данных: {payload.get('kind')}")
+        return
+
+    data = await state.get_data()
+    model_slug = (
+        payload.get("modelSlug")
+        or data.get("model_slug")
+        or data.get("selected_model")
+        or "gpt-image-1"
+    )
+
+    try:
+        model = await sync_to_async(AIModel.objects.get)(slug=model_slug, is_active=True)
+    except AIModel.DoesNotExist:
+        await message.answer(
+            f"⚠️ Модель {model_slug} недоступна. Выберите её заново из списка моделей.",
+            reply_markup=get_main_menu_inline_keyboard(),
+        )
+        await state.clear()
+        return
+
+    if model.provider != "openai_image":
+        await message.answer(
+            "⚠️ Этот WebApp работает только с моделью GPT Image.",
+            reply_markup=get_main_menu_inline_keyboard(),
+        )
+        await state.clear()
+        return
+
+    cost = await sync_to_async(get_base_price_tokens)(model)
+    max_images_supported = getattr(model, "max_input_images", 0) or 4
+    await state.update_data(
+        model_id=model.id,
+        model_slug=model.slug,
+        selected_model=model.slug,
+        model_name=model.display_name,
+        model_provider=model.provider,
+        model_price=cost,
+        max_images=max_images_supported,
+        supports_images=model.supports_image_input,
+    )
+
+    prompt = (payload.get("prompt") or "").strip()
+    if not prompt:
+        await message.answer(
+            "Введите промт в окне настроек и отправьте ещё раз.",
+            reply_markup=get_cancel_keyboard(),
+        )
+        return
+
+    # Проверка баланса
+    try:
+        user = await sync_to_async(TgUser.objects.get)(chat_id=user_id)
+        balance_service = BalanceService()
+        await sync_to_async(balance_service.check_balance)(user, cost)
+    except InsufficientBalanceError as exc:
+        await message.answer(
+            f"❌ Недостаточно токенов.\n"
+            f"Необходимо: ⚡{cost:.2f}\n"
+            f"Ваш баланс: ⚡{exc.current_balance:.2f}\n\n"
+            f"Пополните баланс и попробуйте снова.",
+            reply_markup=get_main_menu_inline_keyboard(),
+        )
+        await state.clear()
+        return
+    except Exception as exc:
+        logger.error(f"[GPT_IMAGE_WEBAPP] Ошибка проверки баланса: {exc}")
+        await message.answer(
+            "❌ Произошла ошибка при проверке баланса. Попробуйте позже.",
+            reply_markup=get_main_menu_inline_keyboard(),
+        )
+        await state.clear()
+        return
+
+    task_type = payload.get("taskType") or "gpt_txt2img"
+    mode = "text" if task_type == "gpt_txt2img" else "edit"
+
+    def normalize_size(value: Any) -> str:
+        allowed = {
+            "512x512",
+            "768x1024",
+            "1024x768",
+            "1024x1024",
+            "1024x1536",
+            "1536x1024",
+            "auto",
+        }
+        text_value = str(value or "1024x1024").lower()
+        return text_value if text_value in allowed else "1024x1024"
+
+    def normalize_quality(value: Any) -> str:
+        allowed = {"low", "medium", "high", "auto"}
+        text_value = str(value or "auto").lower()
+        return text_value if text_value in allowed else "auto"
+
+    raw_params = payload.get("params") or {}
+    gpt_params = {
+        "size": normalize_size(raw_params.get("size")),
+        "quality": normalize_quality(raw_params.get("quality")),
+    }
+
+    inline_images: List[Dict[str, Any]] = []
+    for item in payload.get("images") or []:
+        base = item.get("data")
+        if not base:
+            continue
+        try:
+            raw_bytes = base64.b64decode(base)
+        except Exception as exc:
+            logger.error(f"[GPT_IMAGE_WEBAPP] Ошибка декодирования изображения: {exc}")
+            await message.answer(
+                "Не удалось прочитать одно из изображений. Загрузите файл снова.",
+                reply_markup=get_cancel_keyboard(),
+            )
+            return
+        mime = item.get("mime") or "image/png"
+        name = item.get("name") or "image.png"
+        inline_images.append({"content": raw_bytes, "mime": mime, "name": name})
+
+    if mode == "edit" and not inline_images:
+        await message.answer(
+            "Для режима «Изображение → Изображение» нужно загрузить хотя бы одну картинку в WebApp.",
+            reply_markup=get_cancel_keyboard(),
+        )
+        return
+
+    if inline_images and len(inline_images) > max_images_supported:
+        inline_images = inline_images[:max_images_supported]
+
+    await state.update_data(
+        image_mode=mode,
+        remix_images=[],
+        edit_base_id=None,
+        pending_caption=prompt,
+        midjourney_inline_images=inline_images,
+        midjourney_params=gpt_params,
+        generation_params=gpt_params,
+    )
+
+    try:
+        await _start_generation(message, state, prompt)
+    except Exception as exc:
+        logger.error(f"[GPT_IMAGE_WEBAPP] Ошибка запуска генерации: {exc}", exc_info=True)
+        await message.answer(
+            "❌ Произошла ошибка при запуске генерации. Попробуйте позже.",
+            reply_markup=get_main_menu_inline_keyboard(),
+        )
+        await state.clear()
+
+
+
 async def _start_generation(message: Message, state: FSMContext, prompt: str):
     """
     Internal helper to start generation process.

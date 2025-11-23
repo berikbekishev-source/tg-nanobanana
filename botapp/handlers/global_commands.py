@@ -110,21 +110,32 @@ async def global_create_image_start(message: Message, state: FSMContext):
         return
 
     midjourney_webapps = {}
+    gpt_image_webapps = {}
     if PUBLIC_BASE_URL:
         for model in models:
-            if model.provider != "midjourney":
-                continue
-            cost = await sync_to_async(get_base_price_tokens)(model)
-            price_label = f"⚡{cost:.2f} токенов"
-            midjourney_webapps[model.slug] = (
-                f"{PUBLIC_BASE_URL}/midjourney/?"
-                f"model={quote_plus(model.slug)}&price={quote_plus(price_label)}"
-            )
+            if model.provider == "midjourney":
+                cost = await sync_to_async(get_base_price_tokens)(model)
+                price_label = f"⚡{cost:.2f} токенов"
+                midjourney_webapps[model.slug] = (
+                    f"{PUBLIC_BASE_URL}/midjourney/?"
+                    f"model={quote_plus(model.slug)}&price={quote_plus(price_label)}"
+                )
+            if model.provider == "openai_image":
+                cost = await sync_to_async(get_base_price_tokens)(model)
+                price_label = f"⚡{cost:.2f} токенов"
+                gpt_image_webapps[model.slug] = (
+                    f"{PUBLIC_BASE_URL}/gpt-image/?"
+                    f"model={quote_plus(model.slug)}&price={quote_plus(price_label)}"
+                )
 
-    # Отправляем список моделей (Midjourney открывается сразу через WebApp)
+    # Отправляем список моделей (Midjourney/GPT Image открываются сразу через WebApp)
     await message.answer(
         "🎨 Выберите модель для генерации изображений:",
-        reply_markup=get_image_models_keyboard(models, midjourney_webapps=midjourney_webapps)
+        reply_markup=get_image_models_keyboard(
+            models,
+            midjourney_webapps=midjourney_webapps,
+            gpt_image_webapps=gpt_image_webapps,
+        )
     )
 
     # Переводим в состояние выбора модели
