@@ -51,6 +51,7 @@ class BotStates(StatesGroup):
     kling_wait_settings = State()       # Ожидание настроек Kling из WebApp
     veo_wait_settings = State()         # Ожидание настроек Veo из WebApp
     sora_wait_settings = State()        # Ожидание настроек Sora из WebApp
+    nano_wait_settings = State()        # Ожидание настроек Nano Banana из WebApp
 
     # Помощь и поддержка
     help_menu = State()                 # Меню помощи

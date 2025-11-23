@@ -487,20 +487,47 @@ def _prepare_input_images(sources: List[Any], limit: Optional[int]) -> List[Dict
             break
         file_id: Optional[str] = None
         role: Optional[str] = None
+        mime_type: Optional[str] = None
+        filename = f"input_{idx}.png"
+        base64_data: Optional[str] = None
+        storage_url: Optional[str] = None
+        content: Optional[bytes] = None
+
         if isinstance(entry, dict):
             file_id = entry.get("telegram_file_id") or entry.get("file_id")
             role = entry.get("type") or entry.get("role")
+            mime_type = entry.get("mime_type") or entry.get("mime")
+            filename = entry.get("filename") or entry.get("file_name") or entry.get("name") or filename
+            base64_data = entry.get("content_base64") or entry.get("base64") or entry.get("data")
+            storage_url = entry.get("storage_url") or entry.get("url")
         elif isinstance(entry, str):
             file_id = entry
-        if not file_id:
+
+        if file_id:
+            image_bytes, mime_type_raw = download_telegram_file(file_id)
+            mime_type = mime_type or mime_type_raw
+            content = image_bytes
+        elif base64_data:
+            try:
+                data_str = base64_data.split(",")[-1] if "," in base64_data else base64_data
+                content = base64.b64decode(data_str)
+            except Exception:
+                content = None
+        elif storage_url:
+            try:
+                content = fetch_remote_file(storage_url)
+            except Exception:
+                content = None
+
+        if content is None:
             continue
-        image_bytes, mime_type = download_telegram_file(file_id)
-        png_bytes, png_mime = ensure_png_format(image_bytes, mime_type)
+
+        png_bytes, png_mime = ensure_png_format(content, mime_type or "image/png")
         payloads.append(
             {
                 "content": png_bytes,
                 "mime_type": png_mime,
-                "filename": f"input_{idx}.png",
+                "filename": filename,
                 "role": role,
             }
         )
