@@ -411,16 +411,6 @@
 
         <div id="error" class="error" style="display:none;"></div>
 
-        <div class="footer">
-            <div class="price-row">
-                <div>
-                    <div class="price-label">Стоимость</div>
-                    <div class="price-label" style="margin-top:2px;">Фиксированная цена за генерацию</div>
-                </div>
-                <div class="price-value" id="priceValue">—</div>
-            </div>
-            <button class="main-btn" id="submitBtn" type="button">Сгенерировать</button>
-        </div>
     </div>
 
     <script>
@@ -455,8 +445,6 @@
             weirdnessValue: document.getElementById("weirdnessValue"),
             varietyValue: document.getElementById("varietyValue"),
             version: document.getElementById("version"),
-            submitBtn: document.getElementById("submitBtn"),
-            priceValue: document.getElementById("priceValue"),
             error: document.getElementById("error"),
         };
 
@@ -468,21 +456,29 @@
         function updateCounts() {
             state.prompt = els.prompt.value.trim();
             els.promptCount.textContent = `${state.prompt.length}/2000`;
+            
+            if (tg?.MainButton) {
+                if (state.prompt.length > 0) {
+                    tg.MainButton.show();
+                } else {
+                    tg.MainButton.hide();
+                }
+            }
         }
 
         function setError(text) {
-            els.error.textContent = text;
-            els.error.style.display = text ? "block" : "none";
+            // Deprecated: now using tg.showAlert
+            if (text && tg) {
+                tg.showAlert(text);
+            }
         }
 
         function setPriceLabel(label) {
             state.priceLabel = label || "—";
-            els.priceValue.textContent = state.priceLabel;
             if (tg?.MainButton) {
                 const btnText = state.priceLabel === "—" ? "Сгенерировать" : `Сгенерировать · ${state.priceLabel}`;
                 tg.MainButton.setText(btnText);
-                tg.MainButton.show();
-                tg.MainButton.enable();
+                // Visibility is controlled by prompt input now
             }
         }
 
@@ -490,14 +486,14 @@
             // Скрываем клавиатуру перед отправкой
             els.prompt.blur();
             if (!state.prompt) {
-                setError("Введите промт, чтобы продолжить.");
+                tg.showAlert("Введите промт, чтобы продолжить.");
                 return;
             }
             if (state.taskType === "mj_img2img" && !state.imageData) {
-                setError("Загрузите изображение для режима Изображение → Изображение.");
+                tg.showAlert("Загрузите изображение для режима Изображение → Изображение.");
                 return;
             }
-            setError("");
+            
             const payload = {
                 kind: "midjourney_settings",
                 taskType: state.taskType,
@@ -544,11 +540,10 @@
                         tg.close();
                     }, 800);
                 } else {
-                    setError("Откройте страницу через Telegram, чтобы отправить настройки.");
+                    alert("Откройте страницу через Telegram, чтобы отправить настройки.");
                 }
             } catch (e) {
                 console.error("[Midjourney WebApp] Exception:", e);
-                setError("Не удалось отправить данные: " + e.message);
                 if (tg) tg.showAlert("Ошибка: " + e.message);
             }
         }
@@ -643,7 +638,7 @@
             reader.readAsDataURL(file);
         });
 
-        els.submitBtn.addEventListener("click", sendData);
+        els.submitBtn?.addEventListener("click", sendData);
 
         // Установим цену из query (?price=...) или initData.start_param = price=...
         const priceFromQuery = params.get("price");
@@ -670,12 +665,14 @@
             try {
                 tg.ready();
                 tg.expand();
+                // Hide button initially if prompt is empty
+                if (!state.prompt) tg.MainButton.hide();
                 tg.onEvent("mainButtonClicked", sendData);
             } catch (e) {
                 /* ignore */
             }
         } else {
-            setError("Откройте страницу через Telegram, чтобы отправить настройки.");
+            alert("Откройте страницу через Telegram, чтобы отправить настройки.");
         }
     </script>
 </body>
