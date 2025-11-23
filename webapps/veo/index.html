@@ -397,22 +397,16 @@
             }
         }
 
-        function syncMainButton() {
-            if (!tg?.MainButton) return;
-            const text = state.priceLabel === "—" ? "Сгенерировать" : `Сгенерировать · ${state.priceLabel}`;
-            const hasPrompt = state.prompt.length > 0;
-            tg.MainButton.setText(text);
-            if (hasPrompt) {
-                tg.MainButton.show();
-            } else {
-                tg.MainButton.hide();
-            }
-        }
-
         function updateCounts() {
             state.prompt = els.prompt.value.trim();
             els.promptCount.textContent = `${state.prompt.length}/${MAX_PROMPT}`;
-            syncMainButton();
+            if (tg?.MainButton) {
+                if (state.prompt.length > 0) {
+                    tg.MainButton.show();
+                } else {
+                    tg.MainButton.hide();
+                }
+            }
         }
 
         function toggleUploads(show) {
@@ -430,7 +424,10 @@
         function setPriceLabel(label) {
             state.priceLabel = label || "—";
             els.priceValue.textContent = state.priceLabel;
-            syncMainButton();
+            if (tg?.MainButton) {
+                const btnText = state.priceLabel === "—" ? "Сгенерировать" : `Сгенерировать · ${state.priceLabel}`;
+                tg.MainButton.setText(btnText);
+            }
         }
 
         function formatSize(bytes) {
@@ -563,7 +560,6 @@
                 showAlert("Не удалось отправить данные. Попробуйте ещё раз.");
             }
         }
-        }
 
         els.prompt.addEventListener("input", updateCounts);
 
@@ -613,7 +609,6 @@
             try {
                 tg.ready();
                 tg.expand();
-                syncMainButton();
                 tg.onEvent("mainButtonClicked", sendData);
             } catch (e) {
                 /* ignore */
