@@ -185,6 +185,30 @@ try:
             return JsonResponse({"ok": False, "error": str(e)}, status=500)
 
 
+    @api.post("/kling/webapp/submit")
+    async def kling_webapp_submit(request):
+        """
+        Fallback endpoint для Kling WebApp: шлёт mock Update с web_app_data.
+        """
+        try:
+            payload = json.loads(request.body.decode("utf-8"))
+            user_id = payload.get("user_id")
+            data = payload.get("data")
+
+            logger.info(f"[WEBAPP_REST][KLING] Received submission for user {user_id}")
+
+            if not user_id or not data:
+                return JsonResponse({"ok": False, "error": "Missing user_id or data"}, status=400)
+
+            await _feed_webapp_update(int(user_id), data)
+            logger.info(f"[WEBAPP_REST][KLING] Update fed to dispatcher for user {user_id}")
+
+            return JsonResponse({"ok": True})
+        except Exception as exc:
+            logger.error(f"[WEBAPP_REST][KLING] Error: {exc}", exc_info=True)
+            return JsonResponse({"ok": False, "error": str(exc)}, status=500)
+
+
 except ImportError:
     # aiogram not installed yet - create placeholder endpoint
     @api.post("/telegram/webhook")

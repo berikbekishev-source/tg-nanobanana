@@ -189,29 +189,51 @@ async def handle_kling_webapp_data(message: Message, state: FSMContext):
         )
         await state.clear()
         return
-    await state.update_data(model_id=model.id, model_slug=model.slug, model_provider=model.provider)
+    await state.update_data(
+        model_id=model.id,
+        model_slug=model.slug,
+        model_provider=model.provider,
+        selected_model=model.slug,
+    )
 
     prompt = (payload.get("prompt") or "").strip()
     if not prompt:
         await message.answer("Введите промт в окне Kling и отправьте ещё раз.", reply_markup=get_cancel_keyboard())
         return
-
-    try:
-        model = await sync_to_async(AIModel.objects.get)(id=data["model_id"])
-    except Exception:
-        await message.answer(
-            "Модель Kling недоступна. Выберите её заново из списка моделей.",
-            reply_markup=get_main_menu_inline_keyboard(),
-        )
-        await state.clear()
-        return
-
     if len(prompt) > model.max_prompt_length:
         await message.answer(
             f"❌ Промт слишком длинный! Максимум {model.max_prompt_length} символов.",
             reply_markup=get_cancel_keyboard(),
         )
         return
+
+    try:
+        user = await sync_to_async(TgUser.objects.get)(chat_id=message.from_user.id)
+    except TgUser.DoesNotExist:
+        await message.answer(
+            "Не удалось найти пользователя. Начните заново.",
+            reply_markup=get_main_menu_inline_keyboard(),
+        )
+        await state.clear()
+        return
+
+    try:
+        cost_tokens = await sync_to_async(get_base_price_tokens)(model)
+        can_generate, error_msg = await sync_to_async(BalanceService.check_can_generate)(
+            user,
+            model,
+            total_cost_tokens=cost_tokens,
+        )
+        if not can_generate:
+            await message.answer(
+                f"❌ {error_msg}",
+                reply_markup=get_main_menu_inline_keyboard(),
+            )
+            await state.clear()
+            return
+    except Exception:
+        # Проверку баланса пропускаем при ошибке — сервис проверит перед запуском задачи
+        pass
 
     generation_type = (payload.get("generationType") or "text2video").lower()
     if generation_type not in {"text2video", "image2video"}:
@@ -307,16 +329,6 @@ async def handle_kling_webapp_data(message: Message, state: FSMContext):
             "size_bytes": len(raw),
             "source": "kling_webapp",
         }
-
-    try:
-        user = await sync_to_async(TgUser.objects.get)(chat_id=message.from_user.id)
-    except TgUser.DoesNotExist:
-        await message.answer(
-            "Не удалось найти пользователя. Начните заново.",
-            reply_markup=get_main_menu_inline_keyboard(),
-        )
-        await state.clear()
-        return
 
     try:
         gen_request = await sync_to_async(GenerationService.create_generation_request)(
