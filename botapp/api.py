@@ -172,7 +172,14 @@ try:
             user_id = payload.get("user_id")
             data = payload.get("data")
 
-            logger.info(f"[WEBAPP_REST] Received Veo submission for user {user_id}")
+            logger.warning(
+                "[WEBAPP_REST][VEO] payload received",
+                extra={
+                    "user_id": user_id,
+                    "kind": data.get("kind") if isinstance(data, dict) else None,
+                    "mode": data.get("mode") if isinstance(data, dict) else None,
+                },
+            )
 
             if not user_id or not data:
                 return JsonResponse({"ok": False, "error": "Missing user_id or data"}, status=400)
