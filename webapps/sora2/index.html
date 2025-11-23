@@ -1,0 +1,535 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Sora 2 · INTEGER</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        :root {
+            --bg: #040810;
+            --pane: #0b1727;
+            --pane-2: #0f1f36;
+            --text: #eef4ff;
+            --muted: #a4b5cc;
+            --accent: #4bc3ff;
+            --accent-2: #7be0ff;
+            --danger: #ff7b7b;
+            --border: #163453;
+            --radius: 18px;
+            --shadow: 0 16px 44px rgba(0, 0, 0, 0.42);
+            --font: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        }
+
+        * { box-sizing: border-box; }
+
+        body {
+            margin: 0;
+            padding: 18px 16px 26px;
+            font-family: var(--font);
+            color: var(--text);
+            background: radial-gradient(circle at 20% 20%, rgba(75,195,255,0.07), transparent 35%),
+                        radial-gradient(circle at 80% 10%, rgba(123,224,255,0.05), transparent 30%),
+                        var(--bg);
+        }
+
+        .card {
+            background: linear-gradient(135deg, var(--pane) 0%, #0a1322 60%, #07101f 100%);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            box-shadow: var(--shadow);
+            padding: 16px;
+        }
+
+        .header {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 10px;
+        }
+
+        .badge {
+            width: 48px;
+            height: 48px;
+            border-radius: 15px;
+            background: linear-gradient(145deg, var(--accent) 0%, var(--accent-2) 100%);
+            color: #031423;
+            font-weight: 900;
+            font-size: 18px;
+            display: grid;
+            place-items: center;
+            box-shadow: 0 12px 30px rgba(75,195,255,0.35);
+        }
+
+        h1 {
+            margin: 0;
+            font-size: 19px;
+            font-weight: 800;
+            letter-spacing: 0.1px;
+        }
+
+        .sub {
+            margin: 3px 0 0;
+            color: var(--muted);
+            font-size: 13px;
+        }
+
+        .section {
+            background: rgba(15, 28, 45, 0.7);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 12px;
+            margin: 12px 0;
+        }
+
+        .section-title {
+            margin: 0 0 10px;
+            font-size: 14px;
+            font-weight: 700;
+        }
+
+        .chip-toggle {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 8px;
+        }
+
+        .chip {
+            background: #060f1d;
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            padding: 12px;
+            text-align: center;
+            font-weight: 700;
+            font-size: 14px;
+            color: var(--text);
+            cursor: pointer;
+            transition: all 0.14s ease;
+        }
+
+        .chip.active {
+            background: linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 100%);
+            color: #031423;
+            box-shadow: 0 10px 26px rgba(75,195,255,0.35);
+        }
+
+        .label {
+            font-size: 13px;
+            color: var(--muted);
+            margin: 10px 0 6px;
+        }
+
+        textarea {
+            width: 100%;
+            min-height: 120px;
+            padding: 12px;
+            background: #060f1d;
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            color: var(--text);
+            font-size: 14px;
+            resize: vertical;
+            outline: none;
+            transition: border-color 0.14s ease;
+        }
+
+        textarea:focus { border-color: var(--accent); }
+
+        .count {
+            font-size: 12px;
+            color: var(--muted);
+            text-align: right;
+            margin-top: 4px;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 8px;
+        }
+
+        .pill {
+            background: #060f1d;
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 10px;
+            text-align: center;
+            font-weight: 700;
+            font-size: 14px;
+            color: var(--text);
+            cursor: pointer;
+            transition: all 0.14s ease;
+        }
+
+        .pill.active {
+            background: linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 100%);
+            color: #031423;
+            box-shadow: 0 8px 20px rgba(75,195,255,0.3);
+        }
+
+        .upload {
+            border: 1px dashed var(--border);
+            border-radius: 12px;
+            padding: 12px;
+            background: rgba(10, 22, 36, 0.7);
+        }
+
+        .upload input {
+            width: 100%;
+            margin-top: 8px;
+        }
+
+        .hint {
+            font-size: 12px;
+            color: var(--muted);
+            margin-top: 4px;
+        }
+
+        .error {
+            display: none;
+            color: var(--danger);
+            font-size: 13px;
+            margin-top: 6px;
+        }
+
+        .row {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 8px;
+        }
+
+        .footer {
+            margin-top: 12px;
+            font-size: 12px;
+            color: var(--muted);
+            line-height: 1.4;
+        }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <div class="header">
+            <div class="badge">S2</div>
+            <div>
+                <h1>Sora 2 · Видео</h1>
+                <p class="sub">Text→Video и Image→Video до 60 c, 16:9 или 9:16</p>
+            </div>
+        </div>
+
+        <div class="section">
+            <div class="section-title">Режим генерации</div>
+            <div id="modeToggle" class="chip-toggle">
+                <div class="chip active" data-mode="text2video">Текст → Видео</div>
+                <div class="chip" data-mode="image2video">Изображение → Видео</div>
+            </div>
+        </div>
+
+        <div class="section">
+            <div class="section-title">Промт</div>
+            <textarea id="prompt" maxlength="2000" placeholder="Опишите сюжет, движение камеры, свет и звук..."></textarea>
+            <div class="count" id="promptCount">0/2000</div>
+        </div>
+
+        <div class="section">
+            <div class="section-title">Настройки</div>
+
+            <div class="label">Соотношение сторон</div>
+            <div id="ratioGrid" class="grid">
+                <div class="pill active" data-ratio="16:9">16:9</div>
+                <div class="pill" data-ratio="9:16">9:16</div>
+            </div>
+
+            <div class="label">Длительность (сек.)</div>
+            <div id="durationGrid" class="grid">
+                <div class="pill active" data-duration="8">8</div>
+                <div class="pill" data-duration="12">12</div>
+                <div class="pill" data-duration="30">30</div>
+                <div class="pill" data-duration="45">45</div>
+                <div class="pill" data-duration="60">60</div>
+            </div>
+
+            <div class="label">Качество</div>
+            <div id="qualityToggle" class="chip-toggle">
+                <div class="chip active" data-quality="standard">Standard (720p)</div>
+                <div class="chip" data-quality="hd">HD (1080p)</div>
+            </div>
+        </div>
+
+        <div id="imgBlock" class="section" style="display:none;">
+            <div class="section-title">Изображение-референс</div>
+            <div class="upload">
+                <div class="label" style="margin:0 0 6px;">PNG/JPG/WebP до 10 МБ. Подготовим к нужному размеру автоматически.</div>
+                <input type="file" id="imgInput" accept="image/png,image/jpeg,image/webp">
+                <div class="hint" id="imgPreview">Файл не выбран</div>
+            </div>
+        </div>
+
+        <div class="error" id="error"></div>
+        <div class="footer">
+            • Standard/HD влияют на разрешение: 720p или 1080p.<br>
+            • Sora 2 поддерживает до 60 секунд. Критичные сцены описывайте в промте.
+        </div>
+    </div>
+
+    <script>
+        const tg = window.Telegram?.WebApp;
+        const params = new URLSearchParams(window.location.search);
+
+        const durations = [8, 12, 30, 45, 60];
+        const ratios = ["16:9", "9:16"];
+        const state = {
+            modelSlug: params.get("model") || "sora2",
+            generationType: "text2video",
+            prompt: "",
+            aspectRatio: "16:9",
+            duration: 8,
+            quality: "standard",
+            resolution: "720p",
+            imageData: null,
+            imageMime: null,
+            imageName: null,
+            priceLabel: "—",
+        };
+
+        const els = {
+            modeToggle: document.getElementById("modeToggle"),
+            ratioGrid: document.getElementById("ratioGrid"),
+            durationGrid: document.getElementById("durationGrid"),
+            qualityToggle: document.getElementById("qualityToggle"),
+            prompt: document.getElementById("prompt"),
+            promptCount: document.getElementById("promptCount"),
+            imgBlock: document.getElementById("imgBlock"),
+            imgInput: document.getElementById("imgInput"),
+            imgPreview: document.getElementById("imgPreview"),
+            error: document.getElementById("error"),
+        };
+
+        function setActive(container, target) {
+            container.querySelectorAll(".chip, .pill").forEach(btn => btn.classList.remove("active"));
+            target.classList.add("active");
+        }
+
+        function sanitizeDuration(value) {
+            const num = Number(value);
+            if (durations.includes(num)) return num;
+            if (!Number.isNaN(num)) return Math.min(Math.max(num, 2), 60);
+            return 8;
+        }
+
+        function sanitizeRatio(value) {
+            return ratios.includes(value) ? value : "16:9";
+        }
+
+        function setError(text) {
+            els.error.textContent = text || "";
+            els.error.style.display = text ? "block" : "none";
+            if (text && tg) tg.showAlert(text);
+        }
+
+        function updateCounts() {
+            state.prompt = els.prompt.value.trim();
+            els.promptCount.textContent = `${state.prompt.length}/2000`;
+            if (tg?.MainButton) {
+                if (state.prompt.length > 0) {
+                    tg.MainButton.show();
+                } else {
+                    tg.MainButton.hide();
+                }
+            }
+        }
+
+        function updatePriceLabel(label) {
+            state.priceLabel = label || "—";
+            if (tg?.MainButton) {
+                const suffix = state.priceLabel === "—" ? "" : ` · ${state.priceLabel}`;
+                tg.MainButton.setText(`Сгенерировать${suffix}`);
+            }
+        }
+
+        function applyQuality(q) {
+            state.quality = q;
+            state.resolution = q === "hd" ? "1080p" : "720p";
+        }
+
+        function getCookie(name) {
+            const matches = document.cookie.match(new RegExp("(?:^|; )" + name.replace(/([.$?*|{}()\\[\\]\\\\\\/\\+^])/g, '\\$1') + "=([^;]*)"));
+            return matches ? decodeURIComponent(matches[1]) : "";
+        }
+
+        function sendData() {
+            els.prompt.blur();
+            setError("");
+
+            if (!state.prompt) {
+                tg?.showAlert("Введите промт");
+                return;
+            }
+            if (state.generationType === "image2video" && !state.imageData) {
+                tg?.showAlert("Загрузите изображение для режима Изображение → Видео.");
+                return;
+            }
+
+            const payload = {
+                kind: "sora2_settings",
+                modelSlug: state.modelSlug,
+                generationType: state.generationType,
+                prompt: state.prompt,
+                aspectRatio: state.aspectRatio,
+                duration: state.duration,
+                quality: state.quality,
+                resolution: state.resolution,
+            };
+
+            if (state.generationType === "image2video") {
+                payload.imageData = state.imageData;
+                payload.imageMime = state.imageMime;
+                payload.imageName = state.imageName;
+            }
+
+            if (!tg) {
+                alert("Откройте страницу через Telegram, чтобы отправить настройки.");
+                return;
+            }
+
+            const userId = tg.initDataUnsafe?.user?.id;
+            if (!userId) {
+                tg.showAlert("Ошибка: Не удалось определить пользователя Telegram.");
+                return;
+            }
+
+            try {
+                tg.MainButton.showProgress();
+            } catch (e) { /* ignore */ }
+
+                fetch("/api/sora2/webapp/submit", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                        "X-CSRFToken": getCookie("csrftoken"),
+                    },
+                    body: JSON.stringify({
+                        user_id: userId,
+                        data: payload,
+                        initData: tg.initData,
+                    }),
+                })
+                .then((response) => {
+                    if (response.ok) {
+                        tg.close();
+                    } else {
+                        tg.MainButton.hideProgress();
+                        tg.showAlert("Ошибка сервера. Попробуйте позже.");
+                        console.error("Server Error:", response);
+                    }
+                })
+                .catch((error) => {
+                    tg.MainButton.hideProgress();
+                    tg.showAlert("Ошибка сети: " + error.message);
+                    console.error("Network Error:", error);
+                });
+        }
+
+        els.prompt.addEventListener("input", updateCounts);
+
+        els.modeToggle.addEventListener("click", (e) => {
+            const btn = e.target.closest(".chip");
+            if (!btn) return;
+            setActive(els.modeToggle, btn);
+            state.generationType = btn.dataset.mode;
+            els.imgBlock.style.display = state.generationType === "image2video" ? "block" : "none";
+        });
+
+        els.ratioGrid.addEventListener("click", (e) => {
+            const btn = e.target.closest(".pill");
+            if (!btn) return;
+            setActive(els.ratioGrid, btn);
+            state.aspectRatio = sanitizeRatio(btn.dataset.ratio);
+        });
+
+        els.durationGrid.addEventListener("click", (e) => {
+            const btn = e.target.closest(".pill");
+            if (!btn) return;
+            setActive(els.durationGrid, btn);
+            state.duration = sanitizeDuration(btn.dataset.duration);
+        });
+
+        els.qualityToggle.addEventListener("click", (e) => {
+            const btn = e.target.closest(".chip");
+            if (!btn) return;
+            setActive(els.qualityToggle, btn);
+            applyQuality(btn.dataset.quality);
+            updatePriceLabel(state.priceLabel);
+        });
+
+        const MAX_IMAGE_SIZE = 10 * 1024 * 1024; // 10 MB
+        function resetImage() {
+            state.imageData = null;
+            state.imageMime = null;
+            state.imageName = null;
+            els.imgInput.value = "";
+            els.imgPreview.textContent = "Файл не выбран";
+        }
+
+        els.imgInput.addEventListener("change", (e) => {
+            const file = e.target.files?.[0];
+            if (!file) {
+                resetImage();
+                return;
+            }
+            if (!["image/png", "image/jpeg", "image/webp"].includes(file.type)) {
+                setError("Поддерживаются JPG, PNG или WebP.");
+                resetImage();
+                return;
+            }
+            if (file.size > MAX_IMAGE_SIZE) {
+                setError("Изображение слишком большое (макс 10 МБ).");
+                resetImage();
+                return;
+            }
+            const reader = new FileReader();
+            reader.onload = () => {
+                const result = reader.result;
+                if (typeof result === "string") {
+                    const base64 = result.split(",")[1] || result;
+                    state.imageData = base64;
+                    state.imageMime = file.type;
+                    state.imageName = file.name;
+                    const sizeKb = (file.size / 1024).toFixed(1);
+                    els.imgPreview.textContent = `${file.name} · ${sizeKb} КБ`;
+                    setError("");
+                }
+            };
+            reader.onerror = () => {
+                setError("Не удалось прочитать файл.");
+                resetImage();
+            };
+            reader.readAsDataURL(file);
+        });
+
+        const priceFromQuery = params.get("price");
+        if (priceFromQuery) {
+            updatePriceLabel(priceFromQuery);
+        }
+        try {
+            const init = tg?.initDataUnsafe?.start_param;
+            if (init && init.startsWith("price=")) {
+                updatePriceLabel(init.replace("price=", ""));
+            }
+        } catch (e) { /* ignore */ }
+
+        updateCounts();
+
+        if (tg) {
+            try {
+                tg.ready();
+                tg.expand();
+                tg.MainButton.setText("Сгенерировать");
+                tg.MainButton.hide();
+                tg.onEvent("mainButtonClicked", sendData);
+            } catch (e) { /* ignore */ }
+        } else {
+            alert("Откройте страницу через Telegram, чтобы отправить настройки.");
+        }
+    </script>
+</body>
+</html>
