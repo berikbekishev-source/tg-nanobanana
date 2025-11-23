@@ -430,6 +430,215 @@ async def handle_gpt_image_webapp_data(message: Message, state: FSMContext):
         await state.clear()
 
 
+@router.message(
+    StateFilter("*"),
+    F.web_app_data.data.contains("nano_banana_settings"),
+)
+async def handle_nanobanana_webapp_data(message: Message, state: FSMContext):
+    """
+    Принимаем данные Nano Banana WebApp (Gemini 3 Pro) и запускаем генерацию.
+    """
+    user_id = message.from_user.id
+    raw_data = message.web_app_data.data or "{}"
+
+    try:
+        payload = json.loads(raw_data)
+        if isinstance(payload, str):
+            payload = json.loads(payload)
+    except Exception:
+        await message.answer(
+            "❌ Не удалось прочитать данные из окна настроек. Откройте его и попробуйте ещё раз.",
+            reply_markup=get_cancel_keyboard(),
+        )
+        await state.clear()
+        return
+
+    if payload.get("kind") != "nano_banana_settings":
+        return
+
+    data = await state.get_data()
+    model_slug = (
+        payload.get("modelSlug")
+        or data.get("model_slug")
+        or data.get("selected_model")
+        or "nano-banana-pro"
+    )
+
+    try:
+        model = await sync_to_async(AIModel.objects.get)(slug=model_slug, is_active=True)
+    except AIModel.DoesNotExist:
+        await message.answer(
+            "Модель Nano Banana недоступна. Выберите её заново из списка моделей.",
+            reply_markup=get_main_menu_inline_keyboard(),
+        )
+        await state.clear()
+        return
+
+    if model.provider not in {"gemini_vertex", "gemini"}:
+        await message.answer(
+            "Эта WebApp работает только с Nano Banana (Gemini).",
+            reply_markup=get_main_menu_inline_keyboard(),
+        )
+        await state.clear()
+        return
+
+    prompt = (payload.get("prompt") or "").strip()
+    if not prompt:
+        await message.answer("Введите промт в окне настроек и отправьте ещё раз.", reply_markup=get_cancel_keyboard())
+        return
+    if len(prompt) > model.max_prompt_length:
+        await message.answer(
+            f"❌ Промт слишком длинный! Максимум {model.max_prompt_length} символов.",
+            reply_markup=get_cancel_keyboard(),
+        )
+        return
+
+    try:
+        user = await sync_to_async(TgUser.objects.get)(chat_id=user_id)
+    except TgUser.DoesNotExist:
+        await message.answer(
+            "Не удалось найти пользователя. Начните заново.",
+            reply_markup=get_main_menu_inline_keyboard(),
+        )
+        await state.clear()
+        return
+
+    try:
+        cost = await sync_to_async(get_base_price_tokens)(model)
+        balance_service = BalanceService()
+        await sync_to_async(balance_service.check_balance)(user, cost)
+    except InsufficientBalanceError as exc:
+        await message.answer(
+            f"❌ Недостаточно токенов.\n"
+            f"Необходимо: ⚡{cost:.2f}\n"
+            f"Ваш баланс: ⚡{exc.current_balance:.2f}\n",
+            reply_markup=get_main_menu_inline_keyboard(),
+        )
+        await state.clear()
+        return
+    except Exception as exc:
+        await message.answer(
+            "❌ Ошибка при проверке баланса. Попробуйте позже.",
+            reply_markup=get_main_menu_inline_keyboard(),
+        )
+        await ErrorTracker.alog(
+            origin=BotErrorEvent.Origin.TELEGRAM,
+            severity=BotErrorEvent.Severity.ERROR,
+            handler="handle_nanobanana_webapp_data.balance",
+            chat_id=user_id,
+            payload={"model": model.slug},
+            exc=exc,
+        )
+        await state.clear()
+        return
+
+    allowed_aspects = {"1:1", "2:3", "3:2", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9"}
+    aspect_ratio = (
+        payload.get("aspectRatio")
+        or payload.get("aspect_ratio")
+        or (model.default_params or {}).get("aspect_ratio")
+        or "1:1"
+    )
+    if aspect_ratio not in allowed_aspects:
+        aspect_ratio = "1:1"
+
+    raw_quality = (payload.get("imageSize") or payload.get("quality") or "1K").upper()
+    quality_allowed = {"1K", "2K", "4K"} if "pro" in model.slug else {"1K"}
+    image_size = raw_quality if raw_quality in quality_allowed else next(iter(quality_allowed))
+
+    generation_type_raw = (payload.get("generationType") or payload.get("taskType") or "text2image").lower()
+    generation_type = "image2image" if generation_type_raw in {"image2image", "img2img", "nano_img2img"} else "text2image"
+    image_mode = "edit" if generation_type == "image2image" else "text"
+
+    images_payload: List[Dict[str, Any]] = []
+    if generation_type == "image2image":
+        incoming = payload.get("images") or []
+        max_allowed = min(model.max_input_images or len(incoming) or 1, 8)
+        for idx, img in enumerate(incoming[:max_allowed]):
+            data_b64 = img.get("data") or img.get("base64") or img.get("content") or ""
+            if not data_b64:
+                continue
+            if "," in data_b64:
+                data_b64 = data_b64.split(",")[-1]
+            try:
+                raw_bytes = base64.b64decode(data_b64)
+            except Exception:
+                continue
+            if len(raw_bytes) > 10 * 1024 * 1024:
+                continue
+            mime = img.get("mime") or img.get("mime_type") or "image/png"
+            name = img.get("name") or img.get("file_name") or f"image_{idx + 1}.png"
+            images_payload.append(
+                {
+                    "content_base64": base64.b64encode(raw_bytes).decode(),
+                    "mime_type": mime,
+                    "file_name": name,
+                    "size": len(raw_bytes),
+                    "source": "nano_webapp",
+                }
+            )
+
+        if not images_payload:
+            await message.answer(
+                "Загрузите хотя бы одно изображение (до 8 файлов, до 10 МБ каждый).",
+                reply_markup=get_cancel_keyboard(),
+            )
+            return
+
+    params = {
+        "image_mode": image_mode,
+        "aspect_ratio": aspect_ratio,
+        "image_size": image_size,
+    }
+
+    try:
+        gen_request = await sync_to_async(GenerationService.create_generation_request)(
+            user=user,
+            ai_model=model,
+            prompt=prompt,
+            quantity=1,
+            generation_type=generation_type,
+            input_images=images_payload,
+            generation_params=params,
+            aspect_ratio=aspect_ratio,
+        )
+    except InsufficientBalanceError as exc:
+        await message.answer(str(exc), reply_markup=get_main_menu_inline_keyboard())
+        await state.clear()
+        return
+    except Exception as exc:
+        await message.answer(
+            "❌ Не удалось подготовить генерацию. Попробуйте ещё раз.",
+            reply_markup=get_main_menu_inline_keyboard(),
+        )
+        await ErrorTracker.alog(
+            origin=BotErrorEvent.Origin.TELEGRAM,
+            severity=BotErrorEvent.Severity.ERROR,
+            handler="handle_nanobanana_webapp_data.prepare",
+            chat_id=user_id,
+            payload={
+                "generation_type": generation_type,
+                "aspect_ratio": aspect_ratio,
+                "image_size": image_size,
+                "images": len(images_payload),
+            },
+            exc=exc,
+        )
+        await state.clear()
+        return
+
+    await message.answer(
+        "🎨 Генерация началась!\n\n"
+        f"Модель: {model.display_name}\n"
+        f"Режим: {'Текст → Изображение' if generation_type == 'text2image' else 'Изображение → Изображение'}\n"
+        f"Аспект: {aspect_ratio} · Качество: {image_size}\n"
+        f"Промт: {prompt[:120]}{'...' if len(prompt) > 120 else ''}",
+        reply_markup=get_main_menu_inline_keyboard(),
+    )
+
+    generate_image_task.delay(gen_request.id)
+    await state.clear()
+
 
 async def _start_generation(message: Message, state: FSMContext, prompt: str):
     """

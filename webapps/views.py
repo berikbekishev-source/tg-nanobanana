@@ -55,7 +55,6 @@ def sora2_webapp(request):
         html_content = f.read()
     return HttpResponse(html_content, content_type="text/html")
 
-
 @csrf_exempt
 @xframe_options_exempt
 def gpt_image_webapp(request):
@@ -64,6 +63,19 @@ def gpt_image_webapp(request):
     page_path = os.path.join(base_dir, "gpt-image", "index.html")
     if not os.path.exists(page_path):
         raise Http404("GPT Image WebApp not found")
+    with open(page_path, "r", encoding="utf-8") as f:
+        html_content = f.read()
+    return HttpResponse(html_content, content_type="text/html")
+
+
+@csrf_exempt
+@xframe_options_exempt
+def nanobanana_webapp(request):
+    """Отдаёт статический WebApp настроек Nano Banana."""
+    base_dir = os.path.dirname(__file__)
+    page_path = os.path.join(base_dir, "nanobanana", "index.html")
+    if not os.path.exists(page_path):
+        raise Http404("NanoBanana WebApp not found")
     with open(page_path, "r", encoding="utf-8") as f:
         html_content = f.read()
     return HttpResponse(html_content, content_type="text/html")

@@ -954,6 +954,17 @@ def _build_gemini_payload(parts: List[Dict[str, Any]], quantity: int, params: Op
         for key in ("temperature", "top_p", "top_k"):
             if key in params:
                 generation_config[key] = params[key]
+        image_config: Dict[str, Any] = {}
+        aspect_ratio = params.get("aspect_ratio") or params.get("aspectRatio")
+        if aspect_ratio:
+            image_config["aspectRatio"] = str(aspect_ratio)
+        image_size = params.get("image_size") or params.get("imageSize") or params.get("quality")
+        if image_size:
+            image_size_str = str(image_size).upper()
+            if image_size_str in {"1K", "2K", "4K"}:
+                image_config["imageSize"] = image_size_str
+        if image_config:
+            generation_config["imageConfig"] = image_config
     return payload
 
 

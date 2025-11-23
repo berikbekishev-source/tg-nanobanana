@@ -321,6 +321,36 @@ async def global_select_image_model(callback: CallbackQuery, state: FSMContext):
         await state.set_state(BotStates.midjourney_wait_settings)
         return
 
+    if model.provider in {"gemini_vertex", "gemini"} and model.slug.startswith("nano-banana"):
+        price_label = f"⚡{model_cost:.2f} токенов"
+        if not PUBLIC_BASE_URL:
+            await callback.message.answer(
+                "⚙️ Веб-версия настроек временно недоступна. Повторите попытку позже.",
+                reply_markup=get_cancel_keyboard(),
+            )
+            await callback.answer()
+            return
+
+        webapp_url = (
+            f"{PUBLIC_BASE_URL}/nanobanana/?"
+            f"model={quote_plus(model.slug)}&price={quote_plus(price_label)}"
+        )
+        try:
+            await callback.answer(url=webapp_url)
+        except Exception:
+            keyboard = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(
+                    text="⚙️ Открыть настройки Nano Banana",
+                    web_app=WebAppInfo(url=webapp_url)
+                )]
+            ])
+            await callback.message.answer(
+                "Если окно не открылось автоматически, нажмите кнопку ниже.",
+                reply_markup=keyboard,
+            )
+        await state.set_state(BotStates.nano_wait_settings)
+        return
+
     remix_max = model.max_input_images or 4
     info_message = (
         get_model_info_message(model, base_price=model_cost)

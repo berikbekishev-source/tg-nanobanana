@@ -1,0 +1,519 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Nano Banana Pro · INTEGER</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        :root {
+            --bg: #0f1c2d;
+            --pane: #14263c;
+            --pane-2: #1a324f;
+            --text: #f2f4f8;
+            --muted: #9fb4cc;
+            --accent: #f19b28;
+            --accent-2: #f6b24f;
+            --danger: #ff6b6b;
+            --border: #223956;
+            --radius: 18px;
+            --shadow: 0 12px 35px rgba(0, 0, 0, 0.35);
+            --dot: radial-gradient(circle, rgba(255,255,255,0.06) 1px, transparent 0);
+            --font: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        }
+
+        * { box-sizing: border-box; }
+
+        body {
+            margin: 0;
+            padding: 18px 16px 24px;
+            font-family: var(--font);
+            color: var(--text);
+            background: var(--bg);
+            background-image: var(--dot);
+            background-size: 22px 22px;
+        }
+
+        .card {
+            background: linear-gradient(145deg, var(--pane) 0%, #111c2f 60%, #0f1c2d 100%);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            box-shadow: var(--shadow);
+            padding: 16px 16px 10px;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .card::after {
+            content: "";
+            position: absolute;
+            inset: 0;
+            background: radial-gradient(circle at 20% 20%, rgba(241,155,40,0.15), transparent 45%),
+                        radial-gradient(circle at 80% 10%, rgba(246,178,79,0.08), transparent 35%);
+            pointer-events: none;
+        }
+
+        .header {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 10px;
+        }
+
+        .badge {
+            width: 42px;
+            height: 42px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 100%);
+            color: #0f1c2d;
+            font-weight: 800;
+            font-size: 18px;
+            display: grid;
+            place-items: center;
+            box-shadow: 0 10px 24px rgba(241,155,40,0.35);
+        }
+
+        h1 {
+            font-size: 18px;
+            font-weight: 800;
+            margin: 0;
+            letter-spacing: 0.1px;
+        }
+
+        .sub {
+            font-size: 13px;
+            color: var(--muted);
+            margin: 0;
+        }
+
+        .section {
+            background: rgba(20, 38, 60, 0.7);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 14px;
+            margin: 12px 0;
+        }
+
+        .section-title {
+            font-size: 14px;
+            font-weight: 700;
+            margin: 0 0 10px;
+        }
+
+        .chip-toggle {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 8px;
+        }
+
+        .chip {
+            background: #0f1c2d;
+            border: 1px solid var(--border);
+            color: var(--text);
+            border-radius: 14px;
+            padding: 12px;
+            font-size: 14px;
+            font-weight: 600;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.15s ease;
+        }
+
+        .chip.active {
+            background: linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 100%);
+            color: #0f1c2d;
+            box-shadow: 0 10px 24px rgba(241,155,40,0.35);
+        }
+
+        .label {
+            font-size: 13px;
+            color: var(--muted);
+            margin: 10px 0 6px;
+        }
+
+        textarea {
+            width: 100%;
+            min-height: 120px;
+            padding: 12px;
+            background: #0d1a2b;
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            color: var(--text);
+            font-size: 14px;
+            resize: vertical;
+            outline: none;
+            transition: border-color 0.15s ease;
+        }
+
+        textarea:focus {
+            border-color: var(--accent);
+        }
+
+        .count {
+            font-size: 12px;
+            color: var(--muted);
+            text-align: right;
+            margin-top: 4px;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 8px;
+        }
+
+        .pill {
+            background: #0f1c2d;
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 10px;
+            text-align: center;
+            font-weight: 600;
+            font-size: 14px;
+            color: var(--text);
+            cursor: pointer;
+            transition: all 0.12s ease;
+        }
+
+        .pill.active {
+            background: linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 100%);
+            color: #0f1c2d;
+            box-shadow: 0 8px 18px rgba(241,155,40,0.28);
+        }
+
+        .upload {
+            margin-top: 10px;
+            padding: 12px;
+            border: 1px dashed var(--border);
+            border-radius: 12px;
+            background: rgba(15, 28, 45, 0.7);
+        }
+
+        .upload input {
+            width: 100%;
+            color: var(--muted);
+        }
+
+        .upload .preview {
+            margin-top: 8px;
+            font-size: 13px;
+            color: var(--muted);
+            line-height: 1.4;
+        }
+
+        @media (min-width: 640px) {
+            body { padding: 28px; }
+            .card { max-width: 640px; margin: 0 auto; }
+        }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <div class="header">
+            <div class="badge">NB</div>
+            <div>
+                <h1>Nano Banana Pro</h1>
+                <p class="sub">Gemini 3 Pro · Генерация изображений</p>
+            </div>
+        </div>
+
+        <div class="section">
+            <p class="section-title">Параметры</p>
+            <p class="label">Тип генерации</p>
+            <div class="chip-toggle" id="typeToggle">
+                <div class="chip active" data-type="text2image">Текст → Изображение</div>
+                <div class="chip" data-type="image2image">Изображение → Изображение</div>
+            </div>
+
+            <p class="label" style="margin-top: 14px;">Текстовый запрос</p>
+            <textarea id="prompt" placeholder="Опишите, что нужно сгенерировать..." maxlength="2000" enterkeyhint="done" inputmode="text"></textarea>
+            <div class="count" id="promptCount">0/2000</div>
+
+            <div class="upload" id="imgBlock" style="display:none;">
+                <p class="label" style="margin:0 0 6px;">Загрузите до 8 изображений (до 10 МБ каждое)</p>
+                <input type="file" id="imgInput" accept="image/*" multiple>
+                <div class="preview" id="imgPreview">Файлы не выбраны</div>
+            </div>
+        </div>
+
+        <div class="section">
+            <p class="section-title">Соотношение сторон</p>
+            <div class="grid" id="ratioGrid"></div>
+        </div>
+
+        <div class="section">
+            <p class="section-title">Качество</p>
+            <div class="chip-toggle" id="qualityToggle" style="grid-template-columns: repeat(3, 1fr);"></div>
+        </div>
+    </div>
+
+    <script>
+        const tg = window.Telegram?.WebApp;
+        const params = new URLSearchParams(window.location.search);
+
+        const MAX_PROMPT = 2000;
+        const MAX_IMAGES = 8;
+        const MAX_IMAGE_BYTES = 10 * 1024 * 1024; // 10 MB
+        const RATIOS = ["1:1", "2:3", "3:2", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9"];
+        const QUALITIES = ["1K", "2K", "4K"];
+
+        const state = {
+            modelSlug: params.get("model") || "nano-banana-pro",
+            mode: "text2image",
+            prompt: "",
+            aspectRatio: "1:1",
+            quality: "1K",
+            images: [],
+            priceLabel: "—",
+        };
+
+        const els = {
+            typeToggle: document.getElementById("typeToggle"),
+            ratioGrid: document.getElementById("ratioGrid"),
+            qualityToggle: document.getElementById("qualityToggle"),
+            prompt: document.getElementById("prompt"),
+            promptCount: document.getElementById("promptCount"),
+            imgBlock: document.getElementById("imgBlock"),
+            imgInput: document.getElementById("imgInput"),
+            imgPreview: document.getElementById("imgPreview"),
+        };
+
+        function setActive(container, target) {
+            container.querySelectorAll(".chip, .pill").forEach(btn => btn.classList.remove("active"));
+            target.classList.add("active");
+        }
+
+        function updatePrompt() {
+            state.prompt = els.prompt.value.trim();
+            els.promptCount.textContent = `${state.prompt.length}/${MAX_PROMPT}`;
+            if (tg?.MainButton) {
+                if (state.prompt.length > 0) {
+                    tg.MainButton.show();
+                } else {
+                    tg.MainButton.hide();
+                }
+            }
+        }
+
+        function formatSize(bytes) {
+            if (!bytes) return "0 Б";
+            if (bytes < 1024) return `${bytes} Б`;
+            if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} КБ`;
+            return `${(bytes / (1024 * 1024)).toFixed(1)} МБ`;
+        }
+
+        function renderRatioOptions() {
+            RATIOS.forEach((ratio, idx) => {
+                const div = document.createElement("div");
+                div.className = `pill${idx === 0 ? " active" : ""}`;
+                div.dataset.ratio = ratio;
+                div.textContent = ratio;
+                els.ratioGrid.appendChild(div);
+            });
+        }
+
+        function renderQualityOptions() {
+            QUALITIES.forEach((q, idx) => {
+                const div = document.createElement("div");
+                div.className = `chip${idx === 0 ? " active" : ""}`;
+                div.dataset.quality = q;
+                div.textContent = q;
+                els.qualityToggle.appendChild(div);
+            });
+        }
+
+        function renderImagesPreview() {
+            if (!state.images.length) {
+                els.imgPreview.textContent = "Файлы не выбраны";
+                return;
+            }
+            const parts = state.images.map(img => `${img.name} · ${formatSize(img.size)}`);
+            els.imgPreview.textContent = `Выбрано ${state.images.length}: ${parts.join("; ")}`;
+        }
+
+        async function handleFiles(files) {
+            if (!files || !files.length) {
+                state.images = [];
+                renderImagesPreview();
+                return;
+            }
+
+            const list = Array.from(files);
+            if (list.length > MAX_IMAGES) {
+                tg?.showAlert?.(`Максимум ${MAX_IMAGES} изображений. Лишние будут отброшены.`);
+            }
+            const selected = list.slice(0, MAX_IMAGES);
+
+            const prepared = [];
+            for (const file of selected) {
+                if (!file.type.startsWith("image/")) {
+                    tg?.showAlert?.("Нужны файлы изображений.");
+                    continue;
+                }
+                if (file.size > MAX_IMAGE_BYTES) {
+                    tg?.showAlert?.(`Файл ${file.name} слишком большой. Лимит 10 МБ.`);
+                    continue;
+                }
+                const base64 = await new Promise((resolve, reject) => {
+                    const reader = new FileReader();
+                    reader.onload = () => {
+                        const result = reader.result;
+                        if (typeof result === "string") {
+                            const pure = result.includes(",") ? result.split(",")[1] : result;
+                            resolve(pure);
+                        } else {
+                            reject(new Error("Неверный формат файла"));
+                        }
+                    };
+                    reader.onerror = () => reject(new Error("Не удалось прочитать файл"));
+                    reader.readAsDataURL(file);
+                }).catch((err) => {
+                    console.error(err);
+                    tg?.showAlert?.(`Ошибка чтения файла ${file.name}`);
+                    return null;
+                });
+                if (!base64) continue;
+                prepared.push({
+                    name: file.name,
+                    size: file.size,
+                    mime: file.type || "image/png",
+                    data: base64,
+                });
+            }
+
+            state.images = prepared;
+            renderImagesPreview();
+        }
+
+        function setPriceLabel(label) {
+            state.priceLabel = label || "—";
+            if (tg?.MainButton) {
+                const btnText = state.priceLabel === "—" ? "Сгенерировать" : `Сгенерировать · ${state.priceLabel}`;
+                tg.MainButton.setText(btnText);
+                if (!state.prompt) {
+                    tg.MainButton.hide();
+                }
+            }
+        }
+
+        function sendData() {
+            els.prompt.blur();
+            if (!state.prompt) {
+                tg?.showAlert?.("Введите промт, чтобы продолжить.");
+                return;
+            }
+            if (state.mode === "image2image" && state.images.length === 0) {
+                tg?.showAlert?.("Загрузите хотя бы одно изображение.");
+                return;
+            }
+
+            const userId = tg?.initDataUnsafe?.user?.id;
+            if (!userId) {
+                tg?.showAlert?.("Ошибка: не удалось определить пользователя.");
+                return;
+            }
+
+            const payload = {
+                kind: "nano_banana_settings",
+                modelSlug: state.modelSlug,
+                generationType: state.mode,
+                prompt: state.prompt,
+                aspectRatio: state.aspectRatio,
+                imageSize: state.quality,
+                images: state.images.map(img => ({
+                    data: img.data,
+                    mime: img.mime,
+                    name: img.name,
+                    size: img.size,
+                })),
+            };
+
+            tg?.MainButton?.showProgress();
+            fetch("/api/nano-banana/webapp/submit", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    user_id: userId,
+                    data: payload,
+                    initData: tg?.initData || "",
+                }),
+            })
+            .then(response => {
+                if (response.ok) {
+                    tg?.close();
+                } else {
+                    tg?.MainButton?.hideProgress();
+                    tg?.showAlert?.("Ошибка сервера. Попробуйте позже.");
+                    console.error("Server Error:", response.status);
+                }
+            })
+            .catch(error => {
+                tg?.MainButton?.hideProgress();
+                tg?.showAlert?.("Ошибка сети: " + error.message);
+                console.error("Network Error:", error);
+            });
+        }
+
+        els.prompt.addEventListener("input", updatePrompt);
+
+        els.typeToggle.addEventListener("click", (e) => {
+            const btn = e.target.closest(".chip");
+            if (!btn) return;
+            setActive(els.typeToggle, btn);
+            state.mode = btn.dataset.type;
+            els.imgBlock.style.display = state.mode === "image2image" ? "block" : "none";
+        });
+
+        els.ratioGrid.addEventListener("click", (e) => {
+            const btn = e.target.closest(".pill");
+            if (!btn) return;
+            setActive(els.ratioGrid, btn);
+            state.aspectRatio = btn.dataset.ratio;
+        });
+
+        els.qualityToggle.addEventListener("click", (e) => {
+            const btn = e.target.closest(".chip");
+            if (!btn) return;
+            setActive(els.qualityToggle, btn);
+            state.quality = btn.dataset.quality;
+        });
+
+        els.imgInput.addEventListener("change", (e) => {
+            handleFiles(e.target.files);
+        });
+
+        renderRatioOptions();
+        renderQualityOptions();
+        renderImagesPreview();
+        updatePrompt();
+
+        const priceFromQuery = params.get("price");
+        if (priceFromQuery) {
+            setPriceLabel(priceFromQuery);
+        } else {
+            try {
+                const init = tg?.initDataUnsafe?.start_param;
+                if (init && init.startsWith("price=")) {
+                    setPriceLabel(init.replace("price=", ""));
+                }
+            } catch (e) {
+                /* ignore */
+            }
+        }
+
+        if (tg) {
+            try {
+                tg.ready();
+                tg.expand();
+                tg.MainButton.setText("Сгенерировать");
+                tg.MainButton.hide();
+                tg.onEvent("mainButtonClicked", sendData);
+            } catch (e) {
+                console.error(e);
+            }
+        } else {
+            alert("Откройте страницу через Telegram, чтобы отправить настройки.");
+        }
+    </script>
+</body>
+</html>
