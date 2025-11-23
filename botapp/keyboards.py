@@ -92,10 +92,12 @@ def get_image_models_keyboard(
 def get_video_models_keyboard(
     models: List[AIModel],
     kling_webapps: Optional[dict] = None,
+    veo_webapps: Optional[dict] = None,
 ) -> InlineKeyboardMarkup:
     """Шаг 1: Выбор модели для видео"""
     builder = InlineKeyboardBuilder()
     kling_webapps = kling_webapps or {}
+    veo_webapps = veo_webapps or {}
 
     for model in models:
         if model.type == 'video' and model.is_active:
@@ -103,6 +105,11 @@ def get_video_models_keyboard(
                 builder.button(
                     text=model.display_name,
                     web_app=WebAppInfo(url=kling_webapps[model.slug]),
+                )
+            elif model.provider == "veo" and veo_webapps.get(model.slug):
+                builder.button(
+                    text=model.display_name,
+                    web_app=WebAppInfo(url=veo_webapps[model.slug]),
                 )
             else:
                 builder.button(

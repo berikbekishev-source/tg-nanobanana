@@ -154,21 +154,32 @@ async def global_create_video_start(message: Message, state: FSMContext):
         return
 
     kling_webapps = {}
+    veo_webapps = {}
     if PUBLIC_BASE_URL:
         for model in models:
-            if model.provider != "kling":
-                continue
-            cost = await sync_to_async(get_base_price_tokens)(model)
-            price_label = f"⚡{cost:.2f} токенов"
-            kling_webapps[model.slug] = (
-                f"{PUBLIC_BASE_URL}/kling/?"
-                f"model={quote_plus(model.slug)}&price={quote_plus(price_label)}"
-            )
+            if model.provider == "kling":
+                cost = await sync_to_async(get_base_price_tokens)(model)
+                price_label = f"⚡{cost:.2f} токенов"
+                kling_webapps[model.slug] = (
+                    f"{PUBLIC_BASE_URL}/kling/?"
+                    f"model={quote_plus(model.slug)}&price={quote_plus(price_label)}"
+                )
+            if model.provider == "veo":
+                cost = await sync_to_async(get_base_price_tokens)(model)
+                price_label = f"⚡{cost:.2f} токенов"
+                veo_webapps[model.slug] = (
+                    f"{PUBLIC_BASE_URL}/veo/?"
+                    f"model={quote_plus(model.slug)}&price={quote_plus(price_label)}"
+                )
 
     # Отправляем список моделей
     await message.answer(
         "🎬 Выберите модель для генерации видео:",
-        reply_markup=get_video_models_keyboard(models, kling_webapps=kling_webapps)
+        reply_markup=get_video_models_keyboard(
+            models,
+            kling_webapps=kling_webapps,
+            veo_webapps=veo_webapps,
+        )
     )
 
     # Переводим в состояние выбора модели
