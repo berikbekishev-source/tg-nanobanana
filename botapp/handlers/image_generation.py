@@ -49,31 +49,12 @@ async def handle_midjourney_webapp_data(message: Message, state: FSMContext):
 
     # Детальное логирование начала обработки
     logging.info(f"[MIDJOURNEY_WEBAPP] Начало обработки данных от пользователя {user_id}")
-    # print(f"[MIDJOURNEY_WEBAPP] web_app_data received from user={user_id}", flush=True)
+    print(f"[MIDJOURNEY_WEBAPP] web_app_data received from user={user_id}", flush=True)
 
     try:
-        raw_data = message.web_app_data.data or '{}'
-        
-        # Попытка исправить "dirty" JSON (если пришли экранированные кавычки)
-        if raw_data.startswith('{\\"') or raw_data.startswith("{\\'"):
-             try:
-                 # Пытаемся раскодировать, если это строка с экранированием
-                 raw_data = raw_data.encode().decode('unicode_escape')
-             except Exception:
-                 pass
-        
-        # Парсим JSON
-        payload = json.loads(raw_data)
-        
-        # Если результат парсинга - строка (double encoding), парсим еще раз
-        if isinstance(payload, str):
-            try:
-                payload = json.loads(payload)
-            except Exception:
-                pass # Оставляем как есть, если не парсится второй раз
-
+        payload = json.loads(message.web_app_data.data or '{}')
         logging.info(f"[MIDJOURNEY_WEBAPP] Получен payload: {json.dumps(payload, ensure_ascii=False)[:500]}")
-        # print(f"[MIDJOURNEY_WEBAPP] payload raw: {message.web_app_data.data[:200]}", flush=True)
+        print(f"[MIDJOURNEY_WEBAPP] payload raw: {message.web_app_data.data[:200]}", flush=True)
     except Exception as e:
         logging.error(f"[MIDJOURNEY_WEBAPP] Ошибка парсинга данных от {user_id}: {e}")
         await message.answer(
@@ -120,14 +101,17 @@ async def handle_midjourney_webapp_data(message: Message, state: FSMContext):
     # Обновляем FSM данными модели
     from botapp.business.pricing import get_base_price_tokens
     cost = await sync_to_async(get_base_price_tokens)(model)
+    max_images_supported = getattr(model, "max_input_images", 0) or 0
+    if max_images_supported <= 0:
+        max_images_supported = 4
     await state.update_data(
         model_id=model.id,
         model_slug=model.slug,
         selected_model=model.name,
         model_name=model.name,  # Добавляем для совместимости
         model_provider=model.provider,
-        model_price=float(cost),
-        max_images=model.max_input_images,
+        model_price=cost,
+        max_images=max_images_supported,
     )
     logging.info(f"[MIDJOURNEY_WEBAPP] FSM обновлен для модели {model.name}, цена: {cost}")
 
@@ -144,35 +128,19 @@ async def handle_midjourney_webapp_data(message: Message, state: FSMContext):
     try:
         user = await sync_to_async(TgUser.objects.get)(chat_id=user_id)
         balance_service = BalanceService()
-        
-        # Используем правильный метод проверки баланса
-        # check_can_generate возвращает (bool, str)
-        can_generate, error_msg = await sync_to_async(balance_service.check_can_generate)(
-            user, 
-            model, 
-            total_cost_tokens=cost
-        )
-        
-        if not can_generate:
-            logging.warning(f"[MIDJOURNEY_WEBAPP] Недостаточно средств или лимит: {user_id}, ошибка: {error_msg}")
-            # Пытаемся получить текущий баланс для сообщения
-            try:
-                current_balance = await sync_to_async(balance_service.get_balance)(user)
-            except:
-                current_balance = 0.0
-                
-            await message.answer(
-                f"❌ {error_msg}\n\n"
-                f"Необходимо: ⚡{cost:.2f}\n"
-                f"Ваш баланс: ⚡{current_balance:.2f}\n\n"
-                f"Пополните баланс и попробуйте снова.",
-                reply_markup=get_main_menu_inline_keyboard()
-            )
-            await state.clear()
-            return
-
+        await sync_to_async(balance_service.check_balance)(user, cost)
         logging.info(f"[MIDJOURNEY_WEBAPP] Баланс проверен: пользователь {user_id}, стоимость {cost}")
-        
+    except InsufficientBalanceError as e:
+        logging.warning(f"[MIDJOURNEY_WEBAPP] Недостаточно средств: {user_id}, нужно {cost}")
+        await message.answer(
+            f"❌ Недостаточно токенов.\n"
+            f"Необходимо: ⚡{cost:.2f}\n"
+            f"Ваш баланс: ⚡{e.current_balance:.2f}\n\n"
+            f"Пополните баланс и попробуйте снова.",
+            reply_markup=get_main_menu_inline_keyboard()
+        )
+        await state.clear()
+        return
     except Exception as e:
         logging.error(f"[MIDJOURNEY_WEBAPP] Ошибка проверки баланса: {e}")
         await message.answer(
