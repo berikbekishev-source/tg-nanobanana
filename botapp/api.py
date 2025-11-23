@@ -23,6 +23,32 @@ try:
     from aiogram.types import Update
     from botapp.telegram import bot, dp
 
+    async def _feed_webapp_update(user_id: int, data: Dict[str, Any]) -> None:
+        """
+        Формирует mock Update с web_app_data и передаёт его в диспетчер aiogram.
+        Используется REST WebApp сабмитами (tg.sendData недоступен из inline-кнопок).
+        """
+        from aiogram.types import Message, WebAppData, User, Chat
+        from datetime import datetime
+
+        user_obj = User(id=int(user_id), is_bot=False, first_name="User")
+        chat_obj = Chat(id=int(user_id), type="private")
+        web_app_data_obj = WebAppData(data=json.dumps(data), button_text="Generate")
+
+        message = Message(
+            message_id=0,
+            date=datetime.now(),
+            chat=chat_obj,
+            from_user=user_obj,
+            web_app_data=web_app_data_obj,
+            text=None,  # text is Optional
+        )
+
+        update = Update(update_id=0, message=message)
+        await dp.feed_update(bot, update)
+
+
+
     def _extract_chat_id(update: Optional[Update]) -> Optional[int]:
         if not update:
             return None
