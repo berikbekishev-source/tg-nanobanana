@@ -628,6 +628,15 @@ async def handle_veo_webapp_data(message: Message, state: FSMContext):
     if payload.get("kind") != "veo_video_settings":
         return
 
+    logger.warning(
+        "[VEO_WEBAPP] web_app_data received",
+        extra={
+            "chat_id": message.chat.id,
+            "mode": payload.get("mode"),
+            "aspect": (payload.get("params") or {}).get("aspectRatio"),
+        },
+    )
+
     data = await state.get_data()
     model_slug = payload.get("modelSlug") or data.get("model_slug") or data.get("selected_model") or "veo3-fast"
 
