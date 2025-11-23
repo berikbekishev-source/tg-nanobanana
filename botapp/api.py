@@ -32,7 +32,7 @@ try:
 
         user_obj = User(id=int(user_id), is_bot=False, first_name="User")
         chat_obj = Chat(id=int(user_id), type="private")
-        web_app_data_obj = WebAppData(data=json.dumps(data), button_text="Generate")
+        web_app_data_obj = WebAppData(data=json.dumps(data, ensure_ascii=False, default=str), button_text="Generate")
         message = Message(
             message_id=0,
             date=datetime.now(),
