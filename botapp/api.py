@@ -205,7 +205,7 @@ try:
             logger.exception("Kling webapp submit error")
             return JsonResponse({"ok": False, "error": str(exc)}, status=500)
 
-    @api.post("/kling/webapp/submit")
+    
     async def kling_webapp_submit(request):
         """
         Fallback endpoint для Kling WebApp: шлёт mock Update с web_app_data.
