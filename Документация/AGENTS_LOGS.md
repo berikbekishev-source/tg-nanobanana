@@ -1,19 +1,17 @@
-## [2025-11-22] Staging Deployment: Debug WebApp & Fix All Errors
+## [2025-11-22] Staging Deployment: UI Improvements & Security Restore
 
 **Агент:** Agent (Session 9K9rh)
 **Ветка:** chore-debug-telegram-send-9K9rh
-**PR:** #306
+**PR:** #307
 **Коммит:** (Latest HEAD)
 
 ### Выполненные действия:
-1. Синхронизация с staging (pull origin staging).
-2. Реализована диагностика WebApp (showAlert, logs, fallback REST).
-3. Исправлен парсинг JSON в `handle_midjourney_webapp_data` (dirty JSON, double encoding).
-4. Исправлен атрибут модели: `max_images` -> `max_input_images`.
-5. Исправлена сериализация цены: `Decimal` -> `float`.
-6. Исправлена проверка баланса:
-   - `check_balance` -> `check_can_generate`.
-   - Добавлена обработка возвращаемого статуса.
+1. **Security:** Восстановлена проверка `X-Telegram-Bot-Api-Secret-Token` (удалены комментарии).
+2. **Cleanup:** Удалены отладочные `print` из кода (подготовка к проду).
+3. **UI Fix (WebApp):**
+   - Удалена кнопка "Сгенерировать" из HTML (дубликат).
+   - Синяя кнопка Telegram (`MainButton`) теперь динамическая (появляется при вводе текста).
+   - Ошибки валидации показываются через `tg.showAlert()`.
 
 ### Результат:
-Ожидается автоматический деплой на Staging. Требуется финальная проверка генерации.
+Ожидается автоматический деплой на Staging.
