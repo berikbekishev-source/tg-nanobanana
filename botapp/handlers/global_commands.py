@@ -395,35 +395,15 @@ async def global_select_video_model(callback: CallbackQuery, state: FSMContext):
         webapp_url = f"{PUBLIC_BASE_URL}/veo/?price={quote_plus(price_label)}&model={quote_plus(model.slug)}"
         keyboard = InlineKeyboardMarkup(
             inline_keyboard=[
-                [InlineKeyboardButton(text="Открыть WebApp", web_app=WebAppInfo(url=webapp_url))],
-                [InlineKeyboardButton(text="❌ Отмена", callback_data="cancel")],
+                [InlineKeyboardButton(text=model.display_name, web_app=WebAppInfo(url=webapp_url))],
             ]
         )
 
-        info = (
-            f"{get_model_info_message(model, base_price=model_cost)}\n\n"
-            "Режимы:\n"
-            "• Текст → Видео\n"
-            "• Изображение → Видео (начальный кадр обязателен, до 5 МБ; конечный кадр опционален, до 5 МБ)\n\n"
-            "После отправки WebApp закроется, а в чат придёт уведомление о старте генерации."
+        await callback.message.answer(
+            f"⚙️ WebApp для {model.display_name}. Нажмите кнопку ниже и отправьте настройки.",
+            reply_markup=keyboard,
         )
-
-        try:
-            await callback.answer(url=webapp_url)
-        except Exception:
-            keyboard = InlineKeyboardMarkup(
-                inline_keyboard=[
-                    [InlineKeyboardButton(text="Открыть WebApp", web_app=WebAppInfo(url=webapp_url))],
-                    [InlineKeyboardButton(text="❌ Отмена", callback_data="cancel")],
-                ]
-            )
-            await callback.message.answer(
-                "Если окно не открылось автоматически, нажмите кнопку ниже.",
-                reply_markup=keyboard,
-                parse_mode="Markdown",
-            )
-
-        await callback.message.answer(info, reply_markup=keyboard, parse_mode="Markdown")
+        await callback.answer()
         await state.set_state(BotStates.veo_wait_settings)
         return
 
