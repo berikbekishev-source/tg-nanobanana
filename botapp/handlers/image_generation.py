@@ -39,7 +39,10 @@ logger = logging.getLogger(__name__)
 # чтобы работать из любого состояния
 
 
-@router.message(StateFilter("*"), F.web_app_data)
+@router.message(
+    StateFilter("*"),
+    F.web_app_data.data.contains("midjourney_settings"),
+)
 async def handle_midjourney_webapp_data(message: Message, state: FSMContext):
     """
     Принимаем данные из WebApp настроек Midjourney и запускаем/готовим генерацию.
@@ -49,10 +52,12 @@ async def handle_midjourney_webapp_data(message: Message, state: FSMContext):
 
     # Детальное логирование начала обработки
     logging.info(f"[MIDJOURNEY_WEBAPP] Начало обработки данных от пользователя {user_id}")
+    print(f"[MIDJOURNEY_WEBAPP] web_app_data received from user={user_id}", flush=True)
 
     try:
-        payload = json.loads(message.web_app_data.data)
+        payload = json.loads(message.web_app_data.data or '{}')
         logging.info(f"[MIDJOURNEY_WEBAPP] Получен payload: {json.dumps(payload, ensure_ascii=False)[:500]}")
+        print(f"[MIDJOURNEY_WEBAPP] payload raw: {message.web_app_data.data[:200]}", flush=True)
     except Exception as e:
         logging.error(f"[MIDJOURNEY_WEBAPP] Ошибка парсинга данных от {user_id}: {e}")
         await message.answer(
@@ -99,6 +104,9 @@ async def handle_midjourney_webapp_data(message: Message, state: FSMContext):
     # Обновляем FSM данными модели
     from botapp.business.pricing import get_base_price_tokens
     cost = await sync_to_async(get_base_price_tokens)(model)
+    max_images_supported = getattr(model, "max_input_images", 0) or 0
+    if max_images_supported <= 0:
+        max_images_supported = 4
     await state.update_data(
         model_id=model.id,
         model_slug=model.slug,
@@ -106,7 +114,7 @@ async def handle_midjourney_webapp_data(message: Message, state: FSMContext):
         model_name=model.name,  # Добавляем для совместимости
         model_provider=model.provider,
         model_price=cost,
-        max_images=model.max_images or 4,
+        max_images=max_images_supported,
     )
     logging.info(f"[MIDJOURNEY_WEBAPP] FSM обновлен для модели {model.name}, цена: {cost}")
 

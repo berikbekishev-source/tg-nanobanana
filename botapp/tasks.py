@@ -1,6 +1,7 @@
 """
 Celery задачи для асинхронной генерации изображений и видео
 """
+import base64
 import json
 import logging
 import os
@@ -706,23 +707,90 @@ def generate_video_task(self, request_id: int):
 
         input_media: Optional[bytes] = None
         input_mime_type: Optional[str] = None
+        last_frame_media: Optional[bytes] = None
+        last_frame_mime: Optional[str] = None
 
         source_media = req.source_media if isinstance(req.source_media, dict) else {}
         telegram_file_id = params.get("input_image_file_id") or source_media.get("telegram_file_id")
-        if generation_type == 'image2video' and telegram_file_id:
+
+        inline_entry: Optional[Dict[str, Any]] = None
+        if generation_type == "image2video":
+            for entry in req.input_images or []:
+                if not isinstance(entry, dict):
+                    continue
+                raw_b64 = entry.get("content_base64") or entry.get("base64") or entry.get("data")
+                if raw_b64:
+                    inline_entry = entry
+                    break
+
+        if generation_type == "image2video" and inline_entry:
+            raw_b64 = inline_entry.get("content_base64") or inline_entry.get("base64") or inline_entry.get("data")
+            try:
+                input_media = base64.b64decode(raw_b64)
+            except Exception as exc:
+                raise VideoGenerationError("Не удалось прочитать изображение из WebApp.") from exc
+            input_mime_type = (
+                inline_entry.get("mime_type")
+                or inline_entry.get("mime")
+                or inline_entry.get("content_type")
+                or "image/png"
+            )
+        elif generation_type == 'image2video' and telegram_file_id:
             input_media, input_mime_type = download_telegram_file(telegram_file_id)
             preferred_mime = params.get("input_image_mime_type") or source_media.get("mime_type")
             if preferred_mime:
                 input_mime_type = preferred_mime
+        elif generation_type == 'image2video':
+            storage_url = source_media.get("storage_url") or params.get("image_url")
+            base64_data = source_media.get("base64") or params.get("image_base64")
+            if storage_url:
+                try:
+                    input_media = fetch_remote_file(storage_url)
+                    input_mime_type = source_media.get("mime_type") or params.get("input_image_mime_type") or "image/png"
+                except Exception as exc:
+                    logger.warning("Failed to fetch image from storage_url=%s: %s", storage_url, exc, exc_info=exc)
+            elif base64_data:
+                try:
+                    input_media = base64.b64decode(base64_data)
+                    input_mime_type = source_media.get("mime_type") or params.get("input_image_mime_type") or "image/png"
+                except Exception as exc:
+                    logger.warning("Failed to decode base64 image for video generation: %s", exc, exc_info=exc)
 
-        result = provider.generate(
-            prompt=prompt,
-            model_name=model.api_model_name,
-            generation_type=generation_type,
-            params=params,
-            input_media=input_media,
-            input_mime_type=input_mime_type,
-        )
+        final_frame_data = params.pop("final_frame", None)
+        if final_frame_data and isinstance(final_frame_data, dict):
+            raw_b64 = (
+                final_frame_data.get("content_base64")
+                or final_frame_data.get("base64")
+                or final_frame_data.get("data")
+            )
+            if raw_b64:
+                try:
+                    last_frame_media = base64.b64decode(raw_b64)
+                except Exception as exc:
+                    raise VideoGenerationError("Не удалось прочитать конечный кадр из WebApp.") from exc
+                if len(last_frame_media) > 5 * 1024 * 1024:
+                    raise VideoGenerationError("Конечный кадр превышает 5 МБ.")
+                last_frame_mime = (
+                    final_frame_data.get("mime_type")
+                    or final_frame_data.get("mime")
+                    or final_frame_data.get("content_type")
+                    or "image/png"
+                )
+
+        generate_kwargs: Dict[str, Any] = {
+            "prompt": prompt,
+            "model_name": model.api_model_name,
+            "generation_type": generation_type,
+            "params": params,
+            "input_media": input_media,
+            "input_mime_type": input_mime_type,
+        }
+        # Не все провайдеры поддерживают last_frame_* (например, Kling).
+        if last_frame_media is not None and getattr(provider, "slug", "") != "kling":
+            generate_kwargs["last_frame_media"] = last_frame_media
+            generate_kwargs["last_frame_mime_type"] = last_frame_mime
+
+        result = provider.generate(**generate_kwargs)
 
         upload_result = supabase_upload_video(result.content, mime_type=result.mime_type)
         public_url = upload_result.get("public_url") if isinstance(upload_result, dict) else upload_result

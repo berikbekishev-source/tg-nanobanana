@@ -49,6 +49,8 @@ class BotStates(StatesGroup):
     # Midjourney WebApp
     midjourney_wait_settings = State()  # Ожидание настроек Midjourney из WebApp
     kling_wait_settings = State()       # Ожидание настроек Kling из WebApp
+    veo_wait_settings = State()         # Ожидание настроек Veo из WebApp
+    sora_wait_settings = State()        # Ожидание настроек Sora из WebApp
 
     # Помощь и поддержка
     help_menu = State()                 # Меню помощи

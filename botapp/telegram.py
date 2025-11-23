@@ -1,9 +1,13 @@
 import logging
+import asyncio
+import os
+from typing import Optional
 
 from django.conf import settings
 from aiogram import Bot, Dispatcher
 from aiogram.fsm.storage.redis import RedisStorage
 from aiogram.types import Message
+from aiogram.exceptions import TelegramRetryAfter
 import redis.asyncio as aioredis
 
 from botapp.chat_logger import ChatLogger
@@ -71,6 +75,57 @@ dp.errors.register(aiogram_error_handler)
 
 bot = _bot  # re-export
 logger = logging.getLogger(__name__)
+
+
+def setup_webhook_on_start() -> None:
+    """Автоматическая установка вебхука при старте веб-сервиса."""
+    flag = os.getenv("AUTO_SET_WEBHOOK_ON_START", "true").lower()
+    if flag not in {"1", "true", "yes"}:
+        logger.info("Пропускаем установку вебхука: AUTO_SET_WEBHOOK_ON_START=%s", flag)
+        return
+
+    base = (settings.PUBLIC_BASE_URL or "").rstrip("/")
+    secret = settings.TG_WEBHOOK_SECRET
+
+    if not base or not secret:
+        logger.warning("Пропускаем установку вебхука: нет PUBLIC_BASE_URL или TG_WEBHOOK_SECRET")
+        return
+
+    url = f"{base}/api/telegram/webhook"
+    allowed_updates = [
+        "message",
+        "edited_message",
+        "channel_post",
+        "edited_channel_post",
+        "inline_query",
+        "chosen_inline_result",
+        "callback_query",
+        "shipping_query",
+        "pre_checkout_query",
+        "poll",
+        "poll_answer",
+        "my_chat_member",
+        "chat_member",
+        "chat_join_request",
+    ]
+
+    async def _run():
+        try:
+            await bot.set_webhook(url=url, secret_token=secret, allowed_updates=allowed_updates)
+            return True
+        except TelegramRetryAfter as exc:
+            delay: Optional[int] = getattr(exc, "retry_after", None) or 1
+            logger.warning("Telegram вернул Flood control (%s s). Повторим установку вебхука.", delay)
+            await asyncio.sleep(delay)
+            await bot.set_webhook(url=url, secret_token=secret, allowed_updates=allowed_updates)
+            return True
+
+    try:
+        asyncio.run(_run())
+        logger.info("Вебхук установлен при старте: %s", url)
+    except Exception:
+        logger.exception("Не удалось установить вебхук при старте")
+
 
 def setup_telegram():
     """

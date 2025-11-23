@@ -361,16 +361,6 @@
 
         <div id="error" class="error" style="display:none;"></div>
 
-        <div class="footer">
-            <div class="price-row">
-                <div>
-                    <div class="price-label">Стоимость</div>
-                    <div class="price-label" style="margin-top:2px;">Фиксированная цена за генерацию</div>
-                </div>
-                <div class="price-value" id="priceValue">—</div>
-            </div>
-            <button class="main-btn" id="submitBtn" type="button">Сгенерировать</button>
-        </div>
     </div>
 
     <script>
@@ -402,9 +392,7 @@
             cfgScale: document.getElementById("cfgScale"),
             cfgValue: document.getElementById("cfgValue"),
             formatSection: document.getElementById("formatSection"),
-            priceValue: document.getElementById("priceValue"),
             error: document.getElementById("error"),
-            submitBtn: document.getElementById("submitBtn"),
         };
 
         function setActive(container, target) {
@@ -415,16 +403,30 @@
         function updateCounts() {
             state.prompt = els.prompt.value.trim();
             els.promptCount.textContent = `${state.prompt.length}/2500`;
+            if (tg?.MainButton) {
+                if (state.prompt.length > 0) {
+                    tg.MainButton.show();
+                } else {
+                    tg.MainButton.hide();
+                }
+            }
         }
 
         function setError(text) {
-            els.error.textContent = text;
-            els.error.style.display = text ? "block" : "none";
+            if (tg) {
+                tg.showAlert(text);
+            } else {
+                els.error.textContent = text;
+                els.error.style.display = text ? "block" : "none";
+            }
         }
 
         function setPriceLabel(label) {
             state.priceLabel = label || "—";
-            els.priceValue.textContent = state.priceLabel;
+            if (tg?.MainButton) {
+                const btnText = state.priceLabel === "—" ? "Сгенерировать" : `Сгенерировать · ${state.priceLabel}`;
+                tg.MainButton.setText(btnText);
+            }
         }
 
         function switchMode(mode) {
@@ -453,15 +455,18 @@
 
         function sendData() {
             els.prompt.blur();
+            if (!tg) {
+                setError("Откройте страницу через Telegram, чтобы отправить настройки.");
+                return;
+            }
             if (!state.prompt) {
-                setError("Введите промт, чтобы продолжить.");
+                tg.showAlert("Введите промт");
                 return;
             }
             if (state.mode === "image2video" && !state.imageData) {
-                setError("Загрузите изображение для режима Image → Video.");
+                tg.showAlert("Загрузите изображение для режима Image → Video.");
                 return;
             }
-            setError("");
 
             const payload = {
                 kind: "kling_settings",
@@ -479,16 +484,35 @@
                 payload.imageName = state.imageName;
             }
 
-            try {
-                if (tg) {
-                    tg.sendData(JSON.stringify(payload));
-                    tg.close();
-                } else {
-                    setError("Откройте страницу через Telegram, чтобы отправить настройки.");
-                }
-            } catch (e) {
-                setError("Не удалось отправить данные. Попробуйте ещё раз.");
+            const userId = tg.initDataUnsafe?.user?.id;
+            if (!userId) {
+                tg.showAlert("Ошибка: Не удалось определить пользователя Telegram.");
+                return;
             }
+
+            try {
+                tg.MainButton.showProgress();
+            } catch (_) {}
+
+            fetch('/api/kling/webapp/submit', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ user_id: userId, data: payload, initData: tg.initData })
+            })
+                .then((response) => {
+                    if (response.ok) {
+                        tg.close();
+                    } else {
+                        try { tg.MainButton.hideProgress(); } catch (_) {}
+                        tg.showAlert("Ошибка сервера. Попробуйте позже.");
+                        console.error("[Kling WebApp] Server error", response.status);
+                    }
+                })
+                .catch((error) => {
+                    try { tg.MainButton.hideProgress(); } catch (_) {}
+                    tg.showAlert("Ошибка сети: " + error.message);
+                    console.error("[Kling WebApp] Network error", error);
+                });
         }
 
         els.prompt.addEventListener("input", updateCounts);
@@ -563,24 +587,13 @@
             reader.readAsDataURL(file);
         });
 
-        els.submitBtn.addEventListener("click", sendData);
-
         const priceFromQuery = new URLSearchParams(window.location.search).get("price");
-        if (priceFromQuery) {
-            setPriceLabel(priceFromQuery);
-        }
+        if (priceFromQuery) setPriceLabel(priceFromQuery);
         try {
             const init = tg?.initDataUnsafe?.start_param;
-            if (init && init.startsWith("price=")) {
-                const price = init.replace("price=", "");
-                setPriceLabel(price);
-            }
-        } catch (e) {
-            /* ignore */
-        }
-        if (state.priceLabel === "—" && !priceFromQuery) {
-            setPriceLabel("—");
-        }
+            if (init && init.startsWith("price=")) setPriceLabel(init.replace("price=", ""));
+        } catch (e) {/* ignore */}
+        if (state.priceLabel === "—" && !priceFromQuery) setPriceLabel("—");
 
         updateCounts();
         switchMode("text2video");
@@ -589,6 +602,7 @@
             try {
                 tg.ready();
                 tg.expand();
+                tg.onEvent("mainButtonClicked", sendData);
             } catch (e) {
                 /* ignore */
             }
