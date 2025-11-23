@@ -400,12 +400,13 @@
         function syncMainButton() {
             if (!tg?.MainButton) return;
             const text = state.priceLabel === "—" ? "Сгенерировать" : `Сгенерировать · ${state.priceLabel}`;
-            tg.MainButton.setText(text);
-            if (state.prompt.length > 0) {
-                tg.MainButton.show();
-            } else {
-                tg.MainButton.hide();
-            }
+            const hasPrompt = state.prompt.length > 0;
+            tg.MainButton.setParams({
+                text,
+                is_active: hasPrompt,
+                is_visible: hasPrompt,
+            });
+            hasPrompt ? tg.MainButton.show() : tg.MainButton.hide();
         }
 
         function updateCounts() {
