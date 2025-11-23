@@ -740,6 +740,21 @@ def generate_video_task(self, request_id: int):
             preferred_mime = params.get("input_image_mime_type") or source_media.get("mime_type")
             if preferred_mime:
                 input_mime_type = preferred_mime
+        elif generation_type == 'image2video':
+            storage_url = source_media.get("storage_url") or params.get("image_url")
+            base64_data = source_media.get("base64") or params.get("image_base64")
+            if storage_url:
+                try:
+                    input_media = fetch_remote_file(storage_url)
+                    input_mime_type = source_media.get("mime_type") or params.get("input_image_mime_type") or "image/png"
+                except Exception as exc:
+                    logger.warning("Failed to fetch image from storage_url=%s: %s", storage_url, exc, exc_info=exc)
+            elif base64_data:
+                try:
+                    input_media = base64.b64decode(base64_data)
+                    input_mime_type = source_media.get("mime_type") or params.get("input_image_mime_type") or "image/png"
+                except Exception as exc:
+                    logger.warning("Failed to decode base64 image for video generation: %s", exc, exc_info=exc)
 
         final_frame_data = params.pop("final_frame", None)
         if final_frame_data and isinstance(final_frame_data, dict):

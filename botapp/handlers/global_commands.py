@@ -164,13 +164,26 @@ async def global_create_video_start(message: Message, state: FSMContext):
                     f"{PUBLIC_BASE_URL}/kling/?"
                     f"model={quote_plus(model.slug)}&price={quote_plus(price_label)}"
                 )
-            if model.provider == "veo":
+            if model.provider == "veo" or model.slug.startswith("veo"):
                 cost = await sync_to_async(get_base_price_tokens)(model)
                 price_label = f"⚡{cost:.2f} токенов"
                 veo_webapps[model.slug] = (
                     f"{PUBLIC_BASE_URL}/veo/?"
                     f"model={quote_plus(model.slug)}&price={quote_plus(price_label)}"
                 )
+
+
+    sora_webapps = {}
+    if PUBLIC_BASE_URL:
+        for model in models:
+            if model.provider != "openai" or not model.slug.startswith("sora"):
+                continue
+            cost = await sync_to_async(get_base_price_tokens)(model)
+            price_label = f"⚡{cost:.2f} токенов"
+            sora_webapps[model.slug] = (
+                f"{PUBLIC_BASE_URL}/sora2/?"
+                f"model={quote_plus(model.slug)}&price={quote_plus(price_label)}"
+            )
 
     # Отправляем список моделей
     await message.answer(
@@ -179,6 +192,7 @@ async def global_create_video_start(message: Message, state: FSMContext):
             models,
             kling_webapps=kling_webapps,
             veo_webapps=veo_webapps,
+            sora_webapps=sora_webapps,
         )
     )
 
@@ -368,15 +382,12 @@ async def global_select_video_model(callback: CallbackQuery, state: FSMContext):
         model_price=float(model_cost),
         supports_images=model.supports_image_input,
         generation_type='text2video',
-        default_duration=(model.default_params or {}).get("duration"),
-        default_resolution=(model.default_params or {}).get("resolution"),
-        default_aspect_ratio=(model.default_params or {}).get("aspect_ratio"),
     )
 
     if model.provider == "kling":
         price_label = f"⚡{model_cost:.2f} токенов"
         base = PUBLIC_BASE_URL or "https://example.com"
-        webapp_url = f"{base}/kling/?price={quote_plus(price_label)}&model={quote_plus(model.slug)}"
+        webapp_url = f"{base}/kling/?price={quote_plus(price_label)}"
         try:
             await callback.answer(url=webapp_url)
         except Exception:
@@ -393,29 +404,27 @@ async def global_select_video_model(callback: CallbackQuery, state: FSMContext):
         await state.set_state(BotStates.kling_wait_settings)
         return
 
-    if model.slug == "veo3-fast":
-        if not PUBLIC_BASE_URL:
-            await callback.message.answer(
-                "Не удалось открыть WebApp: не указан PUBLIC_BASE_URL.",
-                reply_markup=get_main_menu_inline_keyboard(),
-            )
-            await state.clear()
-            return
-
+    if model.provider == "openai" and model.slug.startswith("sora"):
         price_label = f"⚡{model_cost:.2f} токенов"
-        webapp_url = f"{PUBLIC_BASE_URL}/veo/?price={quote_plus(price_label)}&model={quote_plus(model.slug)}"
-        keyboard = InlineKeyboardMarkup(
-            inline_keyboard=[
-                [InlineKeyboardButton(text=model.display_name, web_app=WebAppInfo(url=webapp_url))],
-            ]
+        base = PUBLIC_BASE_URL or "https://example.com"
+        webapp_url = (
+            f"{base}/sora2/?"
+            f"model={quote_plus(model.slug)}&price={quote_plus(price_label)}"
         )
-
-        await callback.message.answer(
-            f"⚙️ WebApp для {model.display_name}. Нажмите кнопку ниже и отправьте настройки.",
-            reply_markup=keyboard,
-        )
-        await callback.answer()
-        await state.set_state(BotStates.veo_wait_settings)
+        try:
+            await callback.answer(url=webapp_url)
+        except Exception:
+            keyboard = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(
+                    text="⚙️ Открыть настройки Sora 2",
+                    web_app=WebAppInfo(url=webapp_url)
+                )]
+            ])
+            await callback.message.answer(
+                "Если окно не открылось автоматически, нажмите кнопку ниже.",
+                reply_markup=keyboard,
+            )
+        await state.set_state(BotStates.sora_wait_settings)
         return
 
     info_message = get_model_info_message(model, base_price=model_cost)
