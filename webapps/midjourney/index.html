@@ -542,17 +542,19 @@
                 console.log("[Midjourney WebApp] Sending payload:", JSON.stringify(payload));
                 tg.MainButton.showProgress();
 
-                // Fetch with keepalive
+                // keepalive ломается с крупными файлами (>64 КБ), отключаем для img2img
+                const canUseKeepalive = state.taskType !== "mj_img2img" || !state.imageData;
+
                 const fetchPromise = fetch('/api/midjourney/webapp/submit', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ user_id: userId, data: payload }),
-                    keepalive: true  // Critical for WebApp closing
+                    keepalive: canUseKeepalive
                 });
 
-                // 15 second timeout
+                // 30 second timeout для загрузки изображений
                 const timeoutPromise = new Promise((_, reject) =>
-                    setTimeout(() => reject(new Error("Время ожидания истекло")), 15000)
+                    setTimeout(() => reject(new Error("Время ожидания истекло")), 30000)
                 );
 
                 Promise.race([fetchPromise, timeoutPromise])
