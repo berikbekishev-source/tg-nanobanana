@@ -537,7 +537,7 @@ async def handle_nanobanana_webapp_data(message: Message, state: FSMContext):
             await message.answer(
                 f"❌ {error_msg}\n"
                 f"Необходимо: ⚡{cost:.2f}\n"
-                f"Ваш баланс: ⚡{current_balance:.2f}\n"
+                f"Ваш баланс: ⚡{current_balance:.2f}\n",
                 reply_markup=get_main_menu_inline_keyboard(),
             )
             await state.clear()
