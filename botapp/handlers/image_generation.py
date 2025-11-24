@@ -114,7 +114,7 @@ async def handle_midjourney_webapp_data(message: Message, state: FSMContext):
         selected_model=model.name,
         model_name=model.name,  # Добавляем для совместимости
         model_provider=model.provider,
-        model_price=cost,
+        model_price=float(cost),
         max_images=max_images_supported,
     )
     logging.info(f"[MIDJOURNEY_WEBAPP] FSM обновлен для модели {model.name}, цена: {cost}")
@@ -327,7 +327,7 @@ async def handle_gpt_image_webapp_data(message: Message, state: FSMContext):
         selected_model=model.slug,
         model_name=model.display_name,
         model_provider=model.provider,
-        model_price=cost,
+        model_price=float(cost),
         max_images=max_images_supported,
         supports_images=model.supports_image_input,
     )
