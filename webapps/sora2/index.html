@@ -440,17 +440,19 @@
                 console.log("[Sora2 WebApp] Sending payload:", JSON.stringify(payload));
                 tg.MainButton.showProgress();
 
-                // Fetch with keepalive
+                // keepalive ломается с крупными файлами (>64 КБ), отключаем для image2video
+                const canUseKeepalive = state.generationType !== "image2video" || !state.imageData;
+
                 const fetchPromise = fetch("/api/sora2/webapp/submit", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({ user_id: userId, data: payload }),
-                    keepalive: true
+                    keepalive: canUseKeepalive
                 });
 
-                // 15 second timeout
+                // 30 second timeout для загрузки изображений
                 const timeoutPromise = new Promise((_, reject) =>
-                    setTimeout(() => reject(new Error("Время ожидания истекло")), 15000)
+                    setTimeout(() => reject(new Error("Время ожидания истекло")), 30000)
                 );
 
                 Promise.race([fetchPromise, timeoutPromise])
