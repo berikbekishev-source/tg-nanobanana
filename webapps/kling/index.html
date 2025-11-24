@@ -612,16 +612,14 @@
                 const reader = new FileReader();
                 reader.onload = () => {
                     try {
-                        const result = reader.result;
-                        if (typeof result === "string") {
-                            const base64 = result.split(",")[1] || result;
-                            state.imageData = base64;
-                            state.imageMime = file.type;
-                            state.imageName = file.name;
-                            const sizeKb = (file.size / 1024).toFixed(1);
-                            els.imgPreview.textContent = `${file.name} · ${sizeKb} КБ`;
-                            setError("");
-                        }
+                        const base64 = toBase64(reader.result);
+                        if (!base64) throw new Error("Empty file data");
+                        state.imageData = base64;
+                        state.imageMime = file.type;
+                        state.imageName = file.name;
+                        const sizeKb = (file.size / 1024).toFixed(1);
+                        els.imgPreview.textContent = `${file.name} · ${sizeKb} КБ`;
+                        setError("");
                     } catch (err) {
                         console.error("[Kling WebApp] File parse error:", err);
                         setError("Не удалось обработать файл.");
