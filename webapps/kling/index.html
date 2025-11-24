@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="ru">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
@@ -18,11 +19,13 @@
             --border: #223956;
             --radius: 18px;
             --shadow: 0 14px 40px rgba(0, 0, 0, 0.4);
-            --dot: radial-gradient(circle, rgba(255,255,255,0.06) 1px, transparent 0);
+            --dot: radial-gradient(circle, rgba(255, 255, 255, 0.06) 1px, transparent 0);
             --font: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
         }
 
-        * { box-sizing: border-box; }
+        * {
+            box-sizing: border-box;
+        }
 
         body {
             margin: 0;
@@ -48,8 +51,8 @@
             content: "";
             position: absolute;
             inset: 0;
-            background: radial-gradient(circle at 20% 20%, rgba(241,155,40,0.15), transparent 45%),
-                        radial-gradient(circle at 80% 10%, rgba(246,178,79,0.08), transparent 35%);
+            background: radial-gradient(circle at 20% 20%, rgba(241, 155, 40, 0.15), transparent 45%),
+                radial-gradient(circle at 80% 10%, rgba(246, 178, 79, 0.08), transparent 35%);
             pointer-events: none;
         }
 
@@ -70,7 +73,7 @@
             font-size: 17px;
             display: grid;
             place-items: center;
-            box-shadow: 0 10px 28px rgba(241,155,40,0.35);
+            box-shadow: 0 10px 28px rgba(241, 155, 40, 0.35);
         }
 
         h1 {
@@ -122,7 +125,7 @@
         .chip.active {
             background: linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 100%);
             color: #04101f;
-            box-shadow: 0 10px 24px rgba(55,215,255,0.35);
+            box-shadow: 0 10px 24px rgba(55, 215, 255, 0.35);
         }
 
         .label {
@@ -178,7 +181,7 @@
         .pill.active {
             background: linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 100%);
             color: #0f1c2d;
-            box-shadow: 0 8px 20px rgba(241,155,40,0.28);
+            box-shadow: 0 8px 20px rgba(241, 155, 40, 0.28);
         }
 
         .slider-block {
@@ -258,16 +261,18 @@
             font-weight: 800;
             font-size: 16px;
             cursor: pointer;
-            box-shadow: 0 12px 30px rgba(241,155,40,0.35);
+            box-shadow: 0 12px 30px rgba(241, 155, 40, 0.35);
             transition: transform 0.12s ease, box-shadow 0.12s ease;
         }
 
         .main-btn:hover {
             transform: translateY(-1px);
-            box-shadow: 0 14px 32px rgba(241,155,40,0.4);
+            box-shadow: 0 14px 32px rgba(241, 155, 40, 0.4);
         }
 
-        .main-btn:active { transform: translateY(0); }
+        .main-btn:active {
+            transform: translateY(0);
+        }
 
         .error {
             color: var(--danger);
@@ -283,11 +288,18 @@
         }
 
         @media (min-width: 640px) {
-            body { padding: 28px; }
-            .card { max-width: 640px; margin: 0 auto; }
+            body {
+                padding: 28px;
+            }
+
+            .card {
+                max-width: 640px;
+                margin: 0 auto;
+            }
         }
     </style>
 </head>
+
 <body>
     <div class="card">
         <div class="header">
@@ -304,13 +316,15 @@
                 <div class="chip active" data-mode="text2video">Текст → Видео</div>
                 <div class="chip" data-mode="image2video">Изображение → Видео</div>
             </div>
-            <p class="muted">Длительность ролика 5–10 секунд. Кадровка и формат подбираются автоматом, за исключением текстового режима с выбором формата.</p>
+            <p class="muted">Длительность ролика 5–10 секунд. Кадровка и формат подбираются автоматом, за исключением
+                текстового режима с выбором формата.</p>
         </div>
 
         <div class="section">
             <p class="section-title">Промт</p>
             <p class="label">Текстовый запрос</p>
-            <textarea id="prompt" placeholder="Опишите сюжет или сцену..." maxlength="2500" enterkeyhint="done" inputmode="text"></textarea>
+            <textarea id="prompt" placeholder="Опишите сюжет или сцену..." maxlength="2500" enterkeyhint="done"
+                inputmode="text"></textarea>
             <div class="count" id="promptCount">0/2500</div>
 
             <div class="upload" id="uploadBlock" style="display:none;">
@@ -365,6 +379,12 @@
 
     <script>
         const tg = window.Telegram?.WebApp;
+
+        // Global error handler for debugging
+        window.onerror = function (msg, url, line, col, error) {
+            if (tg) tg.showAlert(`Error: ${msg}\nLine: ${line}`);
+            return false;
+        };
         const params = new URLSearchParams(window.location.search);
         const MAX_IMAGE_SIZE = 10 * 1024 * 1024; // 10 MB
         const state = {
@@ -454,84 +474,83 @@
         }
 
         function sendData() {
-            els.prompt.blur();
-            if (!tg) {
-                setError("Откройте страницу через Telegram, чтобы отправить настройки.");
-                return;
-            }
-            if (!state.prompt) {
-                tg.showAlert("Введите промт");
-                return;
-            }
-            if (state.mode === "image2video" && !state.imageData) {
-                tg.showAlert("Загрузите изображение для режима Image → Video.");
-                return;
-            }
-
-            const payload = {
-                kind: "kling_settings",
-                modelSlug: state.modelSlug,
-                generationType: state.mode,
-                prompt: state.prompt,
-                duration: state.duration,
-                cfgScale: state.cfgScale,
-            };
-            if (state.mode === "text2video") {
-                payload.aspectRatio = state.aspectRatio;
-            } else {
-                payload.imageData = state.imageData;
-                payload.imageMime = state.imageMime;
-                payload.imageName = state.imageName;
-            }
-
-            const userId = tg.initDataUnsafe?.user?.id;
-            if (!userId) {
-                tg.showAlert("Ошибка: Не удалось определить пользователя Telegram.");
-                return;
-            }
-
             try {
-                tg.MainButton.showProgress();
-            } catch (_) {}
+                els.prompt.blur();
+                if (!tg) {
+                    setError("Откройте страницу через Telegram, чтобы отправить настройки.");
+                    return;
+                }
+                if (!state.prompt) {
+                    tg.showAlert("Введите промт");
+                    return;
+                }
+                if (state.mode === "image2video" && !state.imageData) {
+                    tg.showAlert("Загрузите изображение для режима Image → Video.");
+                    return;
+                }
 
-            // Robust fetch with timeout and keepalive
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 15000); // 15s timeout
+                const payload = {
+                    kind: "kling_settings",
+                    modelSlug: state.modelSlug,
+                    generationType: state.mode,
+                    prompt: state.prompt,
+                    duration: state.duration,
+                    cfgScale: state.cfgScale,
+                };
+                if (state.mode === "text2video") {
+                    payload.aspectRatio = state.aspectRatio;
+                } else {
+                    payload.imageData = state.imageData;
+                    payload.imageMime = state.imageMime;
+                    payload.imageName = state.imageName;
+                }
 
-            console.log("[Kling WebApp] Sending payload:", payload);
+                const userId = tg.initDataUnsafe?.user?.id;
+                if (!userId) {
+                    tg.showAlert("Ошибка: Не удалось определить пользователя Telegram.");
+                    return;
+                }
 
-            fetch('/api/kling/webapp/submit', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ 
-                    user_id: userId, 
-                    data: payload, 
-                    // initData removed to avoid serialization issues
-                }),
-                keepalive: true,
-                signal: controller.signal
-            })
-                .then((response) => {
-                    clearTimeout(timeoutId);
-                    if (response.ok) {
-                        console.log("[Kling WebApp] Success, closing...");
-                        tg.close();
-                    } else {
-                        try { tg.MainButton.hideProgress(); } catch (_) {}
-                        tg.showAlert("Ошибка сервера. Попробуйте позже.");
-                        console.error("[Kling WebApp] Server error", response.status);
-                    }
-                })
-                .catch((error) => {
-                    clearTimeout(timeoutId);
-                    try { tg.MainButton.hideProgress(); } catch (_) {}
-                    if (error.name === 'AbortError') {
-                         tg.showAlert("Время ожидания истекло. Попробуйте еще раз.");
-                    } else {
-                         tg.showAlert("Ошибка сети: " + error.message);
-                    }
-                    console.error("[Kling WebApp] Network error", error);
+                try {
+                    tg.MainButton.showProgress();
+                } catch (_) { }
+
+                console.log("[Kling WebApp] Sending payload:", payload);
+
+                // Safer fetch with simple timeout race
+                const fetchPromise = fetch('/api/kling/webapp/submit', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        user_id: userId,
+                        data: payload,
+                    }),
+                    keepalive: true
                 });
+
+                const timeoutPromise = new Promise((_, reject) =>
+                    setTimeout(() => reject(new Error("Timeout")), 15000)
+                );
+
+                Promise.race([fetchPromise, timeoutPromise])
+                    .then((response) => {
+                        if (response.ok) {
+                            console.log("[Kling WebApp] Success, closing...");
+                            tg.close();
+                        } else {
+                            try { tg.MainButton.hideProgress(); } catch (_) { }
+                            tg.showAlert("Ошибка сервера. Попробуйте позже.");
+                            console.error("[Kling WebApp] Server error", response.status);
+                        }
+                    })
+                    .catch((error) => {
+                        try { tg.MainButton.hideProgress(); } catch (_) { }
+                        tg.showAlert("Ошибка сети: " + error.message);
+                        console.error("[Kling WebApp] Network error", error);
+                    });
+            } catch (e) {
+                if (tg) tg.showAlert("Critical Error: " + e.message);
+            }
         }
 
         els.prompt.addEventListener("input", updateCounts);
@@ -611,7 +630,7 @@
         try {
             const init = tg?.initDataUnsafe?.start_param;
             if (init && init.startsWith("price=")) setPriceLabel(init.replace("price=", ""));
-        } catch (e) {/* ignore */}
+        } catch (e) {/* ignore */ }
         if (state.priceLabel === "—" && !priceFromQuery) setPriceLabel("—");
 
         updateCounts();
@@ -630,4 +649,5 @@
         }
     </script>
 </body>
+
 </html>
