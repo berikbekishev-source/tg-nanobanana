@@ -206,7 +206,7 @@ async def handle_sora_webapp_data(message: Message, state: FSMContext):
         await state.clear()
         return
 
-    await state.update_data(model_id=model.id, model_slug=model.slug, model_provider=model.provider)
+    await state.update_data(model_id=int(model.id), model_slug=str(model.slug), model_provider=str(model.provider))
 
     prompt = (payload.get("prompt") or "").strip()
     if not prompt:
@@ -421,10 +421,10 @@ async def handle_kling_webapp_data(message: Message, state: FSMContext):
         await state.clear()
         return
     await state.update_data(
-        model_id=model.id,
-        model_slug=model.slug,
-        model_provider=model.provider,
-        selected_model=model.slug,
+        model_id=int(model.id),
+        model_slug=str(model.slug),
+        model_provider=str(model.provider),
+        selected_model=str(model.slug),
     )
 
     prompt = (payload.get("prompt") or "").strip()
@@ -649,7 +649,7 @@ async def handle_veo_webapp_data(message: Message, state: FSMContext):
         await state.clear()
         return
 
-    await state.update_data(model_id=model.id, model_slug=model.slug, model_provider=model.provider)
+    await state.update_data(model_id=int(model.id), model_slug=str(model.slug), model_provider=str(model.provider))
 
     params_payload = payload.get("params") if isinstance(payload.get("params"), dict) else {}
 
