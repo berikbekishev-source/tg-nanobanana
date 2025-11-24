@@ -33,3 +33,6 @@ build/
 tg-nanobanana/
 # Railway Staging Deployment Trigger
 # Timestamp: 2025-11-18 17:30:01
+
+# Worktrees
+.worktrees/
