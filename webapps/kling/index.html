@@ -494,13 +494,27 @@
                 tg.MainButton.showProgress();
             } catch (_) {}
 
+            // Robust fetch with timeout and keepalive
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 15000); // 15s timeout
+
+            console.log("[Kling WebApp] Sending payload:", payload);
+
             fetch('/api/kling/webapp/submit', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ user_id: userId, data: payload, initData: tg.initData })
+                body: JSON.stringify({ 
+                    user_id: userId, 
+                    data: payload, 
+                    // initData removed to avoid serialization issues
+                }),
+                keepalive: true,
+                signal: controller.signal
             })
                 .then((response) => {
+                    clearTimeout(timeoutId);
                     if (response.ok) {
+                        console.log("[Kling WebApp] Success, closing...");
                         tg.close();
                     } else {
                         try { tg.MainButton.hideProgress(); } catch (_) {}
@@ -509,8 +523,13 @@
                     }
                 })
                 .catch((error) => {
+                    clearTimeout(timeoutId);
                     try { tg.MainButton.hideProgress(); } catch (_) {}
-                    tg.showAlert("Ошибка сети: " + error.message);
+                    if (error.name === 'AbortError') {
+                         tg.showAlert("Время ожидания истекло. Попробуйте еще раз.");
+                    } else {
+                         tg.showAlert("Ошибка сети: " + error.message);
+                    }
                     console.error("[Kling WebApp] Network error", error);
                 });
         }
