@@ -6,6 +6,7 @@ import json
 import logging
 from typing import List, Dict, Any, Optional
 import base64
+from decimal import Decimal
 
 from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery
