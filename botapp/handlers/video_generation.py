@@ -159,10 +159,13 @@ def _parse_webapp_payload(raw: str) -> Optional[Dict[str, Any]]:
 
 
 @router.message(StateFilter("*"), F.web_app_data)
-async def handle_sora_webapp_data(message: Message, state: FSMContext):
-    """Принимаем данные Sora 2 WebApp и запускаем генерацию."""
+async def handle_webapp_data_dispatcher(message: Message, state: FSMContext):
+    """Dispatcher for all WebApp data - routes to specific handler based on 'kind' field."""
+    # Parse the payload once
     try:
         raw_data = message.web_app_data.data or "{}"
+        if isinstance(raw_data, bytes):
+            raw_data = raw_data.decode("utf-8", errors="ignore")
         if raw_data.startswith('{\\"') or raw_data.startswith("{\\'"):
             try:
                 raw_data = raw_data.encode().decode("unicode_escape")
@@ -182,9 +185,19 @@ async def handle_sora_webapp_data(message: Message, state: FSMContext):
         await state.clear()
         return
 
-    if payload.get("kind") != "sora2_settings":
-        return
+    # Route based on kind
+    kind = payload.get("kind") if isinstance(payload, dict) else None
+    if kind == "sora2_settings":
+        await _handle_sora_webapp_data_impl(message, state, payload)
+    elif kind == "kling_settings":
+        await _handle_kling_webapp_data_impl(message, state, payload)
+    elif kind == "veo_video_settings":
+        await _handle_veo_webapp_data_impl(message, state, payload)
+    # If kind doesn't match, silently ignore (other handlers may process it)
 
+
+async def _handle_sora_webapp_data_impl(message: Message, state: FSMContext, payload: dict):
+    """Принимаем данные Sora 2 WebApp и запускаем генерацию."""
     data = await state.get_data()
     model_slug = payload.get("modelSlug") or data.get("model_slug") or data.get("selected_model") or "sora2"
 
@@ -387,21 +400,8 @@ async def handle_sora_webapp_data(message: Message, state: FSMContext):
     await state.clear()
 
 
-@router.message(StateFilter("*"), F.web_app_data)
-async def handle_kling_webapp_data(message: Message, state: FSMContext):
+async def _handle_kling_webapp_data_impl(message: Message, state: FSMContext, payload: dict):
     """Принимаем данные Kling WebApp и запускаем генерацию."""
-    payload = _parse_webapp_payload(message.web_app_data.data or "{}")
-    if not payload:
-        await message.answer(
-            "❌ Не удалось прочитать данные из окна настроек. Откройте его и попробуйте ещё раз.",
-            reply_markup=get_cancel_keyboard(),
-        )
-        await state.clear()
-        return
-
-    if payload.get("kind") != "kling_settings":
-        return
-
     data = await state.get_data()
     model_slug = payload.get("modelSlug") or data.get("model_slug") or data.get("selected_model") or "kling-v1"
     try:
@@ -613,21 +613,8 @@ async def handle_kling_webapp_data(message: Message, state: FSMContext):
     await state.clear()
 
 
-@router.message(StateFilter("*"), F.web_app_data)
-async def handle_veo_webapp_data(message: Message, state: FSMContext):
+async def _handle_veo_webapp_data_impl(message: Message, state: FSMContext, payload: dict):
     """Принимаем данные Veo WebApp и запускаем генерацию."""
-    payload = _parse_webapp_payload(message.web_app_data.data or "{}")
-    if not payload:
-        await message.answer(
-            "❌ Не удалось прочитать данные из окна настроек. Откройте его и попробуйте ещё раз.",
-            reply_markup=get_cancel_keyboard(),
-        )
-        await state.clear()
-        return
-
-    if payload.get("kind") != "veo_video_settings":
-        return
-
     data = await state.get_data()
     model_slug = payload.get("modelSlug") or data.get("model_slug") or data.get("selected_model") or "veo3-fast"
 
