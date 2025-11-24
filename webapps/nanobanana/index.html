@@ -453,6 +453,9 @@
 
                 tg?.MainButton?.showProgress();
 
+                // keepalive нельзя использовать с большим телом (>64 КБ) в WebApp
+                const canUseKeepalive = state.mode === "text2image" && state.images.length === 0;
+
                 const fetchPromise = fetch("/api/nano-banana/webapp/submit", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
@@ -461,11 +464,11 @@
                         data: payload,
                         initData: tg?.initData || "",
                     }),
-                    keepalive: true,
+                    keepalive: canUseKeepalive,
                 });
 
                 const timeoutPromise = new Promise((_, reject) =>
-                    setTimeout(() => reject(new Error("Время ожидания истекло")), 15000)
+                    setTimeout(() => reject(new Error("Время ожидания истекло")), 30000)
                 );
 
                 Promise.race([fetchPromise, timeoutPromise])
