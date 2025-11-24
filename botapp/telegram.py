@@ -1,7 +1,11 @@
-import logging
 import asyncio
+import json
+import logging
 import os
+from datetime import date, datetime
+from decimal import Decimal
 from typing import Optional
+from uuid import UUID
 
 from django.conf import settings
 from aiogram import Bot, Dispatcher
@@ -69,7 +73,24 @@ Message.answer = _answer_with_logging
 
 
 _bot = LoggingBot(token=settings.TELEGRAM_BOT_TOKEN)
-_storage = RedisStorage(redis=aioredis.from_url(settings.CELERY_BROKER_URL))  # тот же Redis
+def _encode_for_json(value):
+    """Приводим несериализуемые типы к строкам, чтобы FSM не падал на Decimal/UUID/datetime."""
+    if isinstance(value, Decimal):
+        return str(value)
+    if isinstance(value, (UUID, datetime, date)):
+        return value.isoformat()
+    return str(value)
+
+
+def _json_dumps(data):
+    return json.dumps(data, ensure_ascii=False, default=_encode_for_json)
+
+
+_storage = RedisStorage(
+    redis=aioredis.from_url(settings.CELERY_BROKER_URL),  # тот же Redis
+    json_dumps=_json_dumps,
+    json_loads=json.loads,
+)  # safe JSON (Decimal/UUID/datetime → str)
 dp = Dispatcher(storage=_storage)
 dp.errors.register(aiogram_error_handler)
 
