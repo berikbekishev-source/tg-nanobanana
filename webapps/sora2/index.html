@@ -1,10 +1,21 @@
 <!DOCTYPE html>
 <html lang="ru">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Sora 2 · INTEGER</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <script>
+        // Global error handler for client-side debugging
+        window.onerror = function (msg, url, line, col, error) {
+            const tg = window.Telegram?.WebApp;
+            if (tg) {
+                tg.showAlert(`JS Error: ${msg}\nLine: ${line}`);
+            }
+            return false;
+        };
+    </script>
     <style>
         :root {
             --bg: #0f1c2d;
@@ -18,11 +29,13 @@
             --border: #223956;
             --radius: 18px;
             --shadow: 0 12px 35px rgba(0, 0, 0, 0.35);
-            --dot: radial-gradient(circle, rgba(255,255,255,0.06) 1px, transparent 0);
+            --dot: radial-gradient(circle, rgba(255, 255, 255, 0.06) 1px, transparent 0);
             --font: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
         }
 
-        * { box-sizing: border-box; }
+        * {
+            box-sizing: border-box;
+        }
 
         body {
             margin: 0;
@@ -48,8 +61,8 @@
             content: "";
             position: absolute;
             inset: 0;
-            background: radial-gradient(circle at 20% 20%, rgba(241,155,40,0.15), transparent 45%),
-                        radial-gradient(circle at 80% 10%, rgba(246,178,79,0.08), transparent 35%);
+            background: radial-gradient(circle at 20% 20%, rgba(241, 155, 40, 0.15), transparent 45%),
+                radial-gradient(circle at 80% 10%, rgba(246, 178, 79, 0.08), transparent 35%);
             pointer-events: none;
         }
 
@@ -76,7 +89,7 @@
             font-size: 18px;
             display: grid;
             place-items: center;
-            box-shadow: 0 12px 30px rgba(241,155,40,0.35);
+            box-shadow: 0 12px 30px rgba(241, 155, 40, 0.35);
         }
 
         h1 {
@@ -128,7 +141,7 @@
         .chip.active {
             background: linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 100%);
             color: #04101f;
-            box-shadow: 0 10px 26px rgba(241,155,40,0.35);
+            box-shadow: 0 10px 26px rgba(241, 155, 40, 0.35);
         }
 
         .label {
@@ -151,7 +164,9 @@
             transition: border-color 0.14s ease;
         }
 
-        textarea:focus { border-color: var(--accent); }
+        textarea:focus {
+            border-color: var(--accent);
+        }
 
         .count {
             font-size: 12px;
@@ -182,7 +197,7 @@
         .pill.active {
             background: linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 100%);
             color: #04101f;
-            box-shadow: 0 8px 20px rgba(241,155,40,0.28);
+            box-shadow: 0 8px 20px rgba(241, 155, 40, 0.28);
         }
 
         .upload {
@@ -224,6 +239,7 @@
         }
     </style>
 </head>
+
 <body>
     <div class="card">
         <div class="header">
@@ -245,7 +261,8 @@
 
         <div class="section">
             <div class="section-title">Промт</div>
-            <textarea id="prompt" maxlength="2000" placeholder="Опишите сюжет, движение камеры, свет и звук..."></textarea>
+            <textarea id="prompt" maxlength="2000"
+                placeholder="Опишите сюжет, движение камеры, свет и звук..."></textarea>
             <div class="count" id="promptCount">0/2000</div>
         </div>
 
@@ -275,7 +292,8 @@
         <div id="imgBlock" class="section" style="display:none;">
             <div class="section-title">Изображение-референс</div>
             <div class="upload">
-                <div class="label" style="margin:0 0 6px;">PNG/JPG/WebP до 10 МБ. Подготовим к нужному размеру автоматически.</div>
+                <div class="label" style="margin:0 0 6px;">PNG/JPG/WebP до 10 МБ. Подготовим к нужному размеру
+                    автоматически.</div>
                 <input type="file" id="imgInput" accept="image/png,image/jpeg,image/webp">
                 <div class="hint" id="imgPreview">Файл не выбран</div>
             </div>
@@ -375,71 +393,92 @@
 
 
         function sendData() {
-            els.prompt.blur();
-            setError("");
-
-            if (!state.prompt) {
-                tg?.showAlert("Введите промт, чтобы продолжить.");
-                if (!tg) alert("Введите промт и откройте страницу через Telegram.");
-                return;
-            }
-            if (state.generationType === "image2video" && !state.imageData) {
-                tg?.showAlert("Загрузите изображение для режима Изображение → Видео.");
-                if (!tg) alert("Загрузите изображение для режима Изображение → Видео.");
-                return;
-            }
-
-            const payload = {
-                kind: "sora2_settings",
-                modelSlug: state.modelSlug,
-                model: state.modelName,
-                generationType: state.generationType,
-                prompt: state.prompt,
-                aspectRatio: state.aspectRatio,
-                duration: state.duration,
-                quality: state.quality,
-                resolution: state.resolution,
-            };
-
-            if (state.generationType === "image2video") {
-                payload.imageData = state.imageData;
-                payload.imageMime = state.imageMime;
-                payload.imageName = state.imageName;
-            }
-
-            if (!tg) {
-                alert("Откройте страницу через Telegram, чтобы отправить настройки.");
-                return;
-            }
-
             try {
-                const userId = tg.initDataUnsafe?.user?.id;
-                if (userId) {
-                    fetch("/api/sora2/webapp/submit", {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({
-                            user_id: userId,
-                            data: payload,
-                        }),
-                    })
-                    .then((response) => {
-                        console.log("[Sora2 WebApp] REST response:", response.status);
-                    })
-                    .catch((error) => {
-                        console.error("[Sora2 WebApp] REST error:", error);
-                        tg.showAlert("REST Error: " + error.message);
-                    });
+                els.prompt.blur();
+                setError("");
+
+                if (!state.prompt) {
+                    tg?.showAlert("Введите промт, чтобы продолжить.");
+                    if (!tg) alert("Введите промт и откройте страницу через Telegram.");
+                    return;
+                }
+                if (state.generationType === "image2video" && !state.imageData) {
+                    tg?.showAlert("Загрузите изображение для режима Изображение → Видео.");
+                    if (!tg) alert("Загрузите изображение для режима Изображение → Видео.");
+                    return;
                 }
 
-                tg.showAlert("Отправка данных...");
-                setTimeout(() => {
-                    tg.sendData(JSON.stringify(payload));
-                    tg.close();
-                }, 600);
+                const payload = {
+                    kind: "sora2_settings",
+                    modelSlug: state.modelSlug,
+                    model: state.modelName,
+                    generationType: state.generationType,
+                    prompt: state.prompt,
+                    aspectRatio: state.aspectRatio,
+                    duration: state.duration,
+                    quality: state.quality,
+                    resolution: state.resolution,
+                };
+
+                if (state.generationType === "image2video") {
+                    payload.imageData = state.imageData;
+                    payload.imageMime = state.imageMime;
+                    payload.imageName = state.imageName;
+                }
+
+                if (!tg) {
+                    alert("Откройте страницу через Telegram, чтобы отправить настройки.");
+                    return;
+                }
+
+                const userId = tg.initDataUnsafe?.user?.id;
+                if (!userId) {
+                    tg.showAlert("Не удалось получить ID пользователя. Откройте WebApp из Telegram.");
+                    return;
+                }
+
+                console.log("[Sora2 WebApp] Sending payload:", JSON.stringify(payload));
+                tg.MainButton.showProgress();
+
+                // Fetch with keepalive
+                const fetchPromise = fetch("/api/sora2/webapp/submit", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ user_id: userId, data: payload }),
+                    keepalive: true
+                });
+
+                // 15 second timeout
+                const timeoutPromise = new Promise((_, reject) =>
+                    setTimeout(() => reject(new Error("Время ожидания истекло")), 15000)
+                );
+
+                Promise.race([fetchPromise, timeoutPromise])
+                    .then((response) => {
+                        if (response.ok) {
+                            console.log("[Sora2 WebApp] Success, closing...");
+                            tg.close();
+                        } else {
+                            tg.MainButton.hideProgress();
+                            tg.showAlert("Ошибка сервера. Попробуйте позже.");
+                            console.error("[Sora2 WebApp] Server error", response.status);
+                        }
+                    })
+                    .catch((error) => {
+                        tg.MainButton.hideProgress();
+                        if (error.message.includes("Время ожидания")) {
+                            tg.showAlert("Время ожидания истекло. Попробуйте еще раз.");
+                        } else {
+                            tg.showAlert("Ошибка сети: " + error.message);
+                        }
+                        console.error("[Sora2 WebApp] Network error", error);
+                    });
             } catch (error) {
                 console.error("[Sora2 WebApp] Exception:", error);
-                if (tg) tg.showAlert("Ошибка: " + error.message);
+                if (tg) {
+                    tg.MainButton.hideProgress();
+                    tg.showAlert("Критическая ошибка: " + error.message);
+                }
             }
         }
 
@@ -555,4 +594,5 @@
 
     </script>
 </body>
+
 </html>
