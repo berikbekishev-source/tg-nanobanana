@@ -1,10 +1,21 @@
 <!DOCTYPE html>
 <html lang="ru">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Midjourney · INTEGER</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <script>
+        // Global error handler for client-side debugging
+        window.onerror = function (msg, url, line, col, error) {
+            const tg = window.Telegram?.WebApp;
+            if (tg) {
+                tg.showAlert(`JS Error: ${msg}\nLine: ${line}`);
+            }
+            return false;
+        };
+    </script>
     <style>
         :root {
             --bg: #0f1c2d;
@@ -18,11 +29,13 @@
             --border: #223956;
             --radius: 18px;
             --shadow: 0 12px 35px rgba(0, 0, 0, 0.35);
-            --dot: radial-gradient(circle, rgba(255,255,255,0.06) 1px, transparent 0);
+            --dot: radial-gradient(circle, rgba(255, 255, 255, 0.06) 1px, transparent 0);
             --font: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
         }
 
-        * { box-sizing: border-box; }
+        * {
+            box-sizing: border-box;
+        }
 
         body {
             margin: 0;
@@ -48,8 +61,8 @@
             content: "";
             position: absolute;
             inset: 0;
-            background: radial-gradient(circle at 20% 20%, rgba(241,155,40,0.15), transparent 45%),
-                        radial-gradient(circle at 80% 10%, rgba(246,178,79,0.08), transparent 35%);
+            background: radial-gradient(circle at 20% 20%, rgba(241, 155, 40, 0.15), transparent 45%),
+                radial-gradient(circle at 80% 10%, rgba(246, 178, 79, 0.08), transparent 35%);
             pointer-events: none;
         }
 
@@ -70,7 +83,7 @@
             font-size: 18px;
             display: grid;
             place-items: center;
-            box-shadow: 0 10px 24px rgba(241,155,40,0.35);
+            box-shadow: 0 10px 24px rgba(241, 155, 40, 0.35);
         }
 
         h1 {
@@ -122,7 +135,7 @@
         .chip.active {
             background: linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 100%);
             color: #0f1c2d;
-            box-shadow: 0 10px 24px rgba(241,155,40,0.35);
+            box-shadow: 0 10px 24px rgba(241, 155, 40, 0.35);
         }
 
         .label {
@@ -178,7 +191,7 @@
         .pill.active {
             background: linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 100%);
             color: #0f1c2d;
-            box-shadow: 0 8px 18px rgba(241,155,40,0.28);
+            box-shadow: 0 8px 18px rgba(241, 155, 40, 0.28);
         }
 
         .select-row {
@@ -257,13 +270,13 @@
             font-weight: 800;
             font-size: 16px;
             cursor: pointer;
-            box-shadow: 0 12px 30px rgba(241,155,40,0.35);
+            box-shadow: 0 12px 30px rgba(241, 155, 40, 0.35);
             transition: transform 0.12s ease, box-shadow 0.12s ease;
         }
 
         .main-btn:hover {
             transform: translateY(-1px);
-            box-shadow: 0 14px 32px rgba(241,155,40,0.4);
+            box-shadow: 0 14px 32px rgba(241, 155, 40, 0.4);
         }
 
         .main-btn:active {
@@ -297,11 +310,18 @@
         }
 
         @media (min-width: 640px) {
-            body { padding: 28px; }
-            .card { max-width: 640px; margin: 0 auto; }
+            body {
+                padding: 28px;
+            }
+
+            .card {
+                max-width: 640px;
+                margin: 0 auto;
+            }
         }
     </style>
 </head>
+
 <body>
     <div class="card">
         <div class="header">
@@ -328,7 +348,8 @@
             </div>
 
             <p class="label" style="margin-top: 14px;">Текстовый запрос</p>
-            <textarea id="prompt" placeholder="Опишите, что нужно сгенерировать..." maxlength="2000" enterkeyhint="done" inputmode="text"></textarea>
+            <textarea id="prompt" placeholder="Опишите, что нужно сгенерировать..." maxlength="2000" enterkeyhint="done"
+                inputmode="text"></textarea>
             <div class="count" id="promptCount">0/2000</div>
 
             <div class="upload" id="imgBlock">
@@ -456,7 +477,7 @@
         function updateCounts() {
             state.prompt = els.prompt.value.trim();
             els.promptCount.textContent = `${state.prompt.length}/2000`;
-            
+
             if (tg?.MainButton) {
                 if (state.prompt.length > 0) {
                     tg.MainButton.show();
@@ -483,68 +504,83 @@
         }
 
         function sendData() {
-            // Скрываем клавиатуру перед отправкой
-            els.prompt.blur();
-            if (!state.prompt) {
-                tg.showAlert("Введите промт, чтобы продолжить.");
-                return;
-            }
-            if (state.taskType === "mj_img2img" && !state.imageData) {
-                tg.showAlert("Загрузите изображение для режима Изображение → Изображение.");
-                return;
-            }
-            
-            const payload = {
-                kind: "midjourney_settings",
-                taskType: state.taskType,
-                prompt: state.prompt,
-                speed: state.speed,
-                aspectRatio: state.aspectRatio,
-                version: state.version,
-                stylization: state.stylization,
-                weirdness: state.weirdness,
-                variety: state.variety,
-                modelSlug: state.modelSlug,
-                imageData: state.imageData,
-                imageMime: state.imageMime,
-                imageName: state.imageName,
-            };
             try {
-                if (tg) {
-                    console.log("[Midjourney WebApp] User:", tg.initDataUnsafe?.user);
-                    console.log("[Midjourney WebApp] Sending payload via sendData:", JSON.stringify(payload));
-                    
-                    // Explicit alert to confirm execution on client side
-                    tg.showAlert("Отправка данных...");
-                    
-                    // Backup HTTP request (REST fallback)
-                    const userId = tg.initDataUnsafe?.user?.id;
-                    if (userId) {
-                        console.log("[Midjourney WebApp] Sending backup REST request...");
-                        fetch('/api/midjourney/webapp/submit', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ user_id: userId, data: payload })
-                        })
-                        .then(r => console.log("[Midjourney WebApp] REST response:", r.status))
-                        .catch(e => {
-                            console.error("[Midjourney WebApp] REST error:", e);
-                            tg.showAlert("REST Error: " + e.message);
-                        });
-                    }
+                // Hide keyboard before sending
+                els.prompt.blur();
 
-                    // Small delay to ensure network request is dispatched before closing
-                    setTimeout(() => {
-                        tg.sendData(JSON.stringify(payload));
-                        console.log("[Midjourney WebApp] sendData executed");
-                        tg.close();
-                    }, 800);
-                } else {
-                    alert("Откройте страницу через Telegram, чтобы отправить настройки.");
+                if (!state.prompt) {
+                    tg.showAlert("Введите промт, чтобы продолжить.");
+                    return;
                 }
+                if (state.taskType === "mj_img2img" && !state.imageData) {
+                    tg.showAlert("Загрузите изображение для режима Изображение → Изображение.");
+                    return;
+                }
+
+                const payload = {
+                    kind: "midjourney_settings",
+                    taskType: state.taskType,
+                    prompt: state.prompt,
+                    speed: state.speed,
+                    aspectRatio: state.aspectRatio,
+                    version: state.version,
+                    stylization: state.stylization,
+                    weirdness: state.weirdness,
+                    variety: state.variety,
+                    modelSlug: state.modelSlug,
+                    imageData: state.imageData,
+                    imageMime: state.imageMime,
+                    imageName: state.imageName,
+                };
+
+                const userId = tg?.initDataUnsafe?.user?.id;
+                if (!userId) {
+                    tg.showAlert("Не удалось получить ID пользователя. Откройте WebApp из Telegram.");
+                    return;
+                }
+
+                console.log("[Midjourney WebApp] Sending payload:", JSON.stringify(payload));
+                tg.MainButton.showProgress();
+
+                // Fetch with keepalive
+                const fetchPromise = fetch('/api/midjourney/webapp/submit', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ user_id: userId, data: payload }),
+                    keepalive: true  // Critical for WebApp closing
+                });
+
+                // 15 second timeout
+                const timeoutPromise = new Promise((_, reject) =>
+                    setTimeout(() => reject(new Error("Время ожидания истекло")), 15000)
+                );
+
+                Promise.race([fetchPromise, timeoutPromise])
+                    .then((response) => {
+                        if (response.ok) {
+                            console.log("[Midjourney WebApp] Success, closing...");
+                            tg.close();
+                        } else {
+                            tg.MainButton.hideProgress();
+                            tg.showAlert("Ошибка сервера. Попробуйте позже.");
+                            console.error("[Midjourney WebApp] Server error", response.status);
+                        }
+                    })
+                    .catch((error) => {
+                        tg.MainButton.hideProgress();
+                        if (error.message.includes("Время ожидания")) {
+                            tg.showAlert("Время ожидания истекло. Попробуйте еще раз.");
+                        } else {
+                            tg.showAlert("Ошибка сети: " + error.message);
+                        }
+                        console.error("[Midjourney WebApp] Network error", error);
+                    });
             } catch (e) {
                 console.error("[Midjourney WebApp] Exception:", e);
-                if (tg) tg.showAlert("Ошибка: " + e.message);
+                if (tg) {
+                    tg.MainButton.hideProgress();
+                    tg.showAlert("Критическая ошибка: " + e.message);
+                }
             }
         }
 
@@ -676,4 +712,5 @@
         }
     </script>
 </body>
+
 </html>
