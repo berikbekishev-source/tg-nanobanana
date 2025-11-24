@@ -64,11 +64,13 @@ def get_image_models_keyboard(
     models: List[AIModel],
     midjourney_webapps: Optional[dict] = None,
     gpt_image_webapps: Optional[dict] = None,
+    nano_banana_webapps: Optional[dict] = None,
 ) -> InlineKeyboardMarkup:
     """Шаг 1: Выбор модели для изображений"""
     builder = InlineKeyboardBuilder()
     midjourney_webapps = midjourney_webapps or {}
     gpt_image_webapps = gpt_image_webapps or {}
+    nano_banana_webapps = nano_banana_webapps or {}
 
     for model in models:
         if model.type == 'image' and model.is_active:
@@ -82,6 +84,15 @@ def get_image_models_keyboard(
                 builder.button(
                     text=model.display_name,
                     web_app=WebAppInfo(url=gpt_image_webapps[model.slug]),
+                )
+            elif (
+                model.provider in {"gemini_vertex", "gemini"}
+                and model.slug.startswith("nano-banana")
+                and nano_banana_webapps.get(model.slug)
+            ):
+                builder.button(
+                    text=model.display_name,
+                    web_app=WebAppInfo(url=nano_banana_webapps[model.slug]),
                 )
             else:
                 builder.button(

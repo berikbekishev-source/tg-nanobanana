@@ -111,6 +111,7 @@ async def global_create_image_start(message: Message, state: FSMContext):
 
     midjourney_webapps = {}
     gpt_image_webapps = {}
+    nano_banana_webapps = {}
     if PUBLIC_BASE_URL:
         for model in models:
             if model.provider == "midjourney":
@@ -127,14 +128,22 @@ async def global_create_image_start(message: Message, state: FSMContext):
                     f"{PUBLIC_BASE_URL}/gpt-image/?"
                     f"model={quote_plus(model.slug)}&price={quote_plus(price_label)}"
                 )
+            if model.provider in {"gemini_vertex", "gemini"} and model.slug.startswith("nano-banana"):
+                cost = await sync_to_async(get_base_price_tokens)(model)
+                price_label = f"⚡{cost:.2f} токенов"
+                nano_banana_webapps[model.slug] = (
+                    f"{PUBLIC_BASE_URL}/nanobanana/?"
+                    f"model={quote_plus(model.slug)}&price={quote_plus(price_label)}"
+                )
 
-    # Отправляем список моделей (Midjourney/GPT Image открываются сразу через WebApp)
+    # Отправляем список моделей (Midjourney/GPT Image/Nano Banana открываются сразу через WebApp)
     await message.answer(
         "🎨 Выберите модель для генерации изображений:",
         reply_markup=get_image_models_keyboard(
             models,
             midjourney_webapps=midjourney_webapps,
             gpt_image_webapps=gpt_image_webapps,
+            nano_banana_webapps=nano_banana_webapps,
         )
     )
 

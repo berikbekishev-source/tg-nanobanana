@@ -5,6 +5,16 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Nano Banana Pro · INTEGER</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <script>
+        // Глобальный обработчик ошибок в WebApp
+        window.onerror = function (msg, url, line, col, error) {
+            const tg = window.Telegram?.WebApp;
+            if (tg) {
+                tg.showAlert(`JS Error: ${msg}\nLine: ${line}`);
+            }
+            return false;
+        };
+    </script>
     <style>
         :root {
             --bg: #0f1c2d;
@@ -278,6 +288,14 @@
             imgPreview: document.getElementById("imgPreview"),
         };
 
+        function showError(text) {
+            if (tg) {
+                tg.showAlert(text);
+            } else {
+                alert(text);
+            }
+        }
+
         function setActive(container, target) {
             container.querySelectorAll(".chip, .pill").forEach(btn => btn.classList.remove("active"));
             target.classList.add("active");
@@ -397,61 +415,84 @@
         }
 
         function sendData() {
-            els.prompt.blur();
-            if (!state.prompt) {
-                tg?.showAlert?.("Введите промт, чтобы продолжить.");
-                return;
-            }
-            if (state.mode === "image2image" && state.images.length === 0) {
-                tg?.showAlert?.("Загрузите хотя бы одно изображение.");
-                return;
-            }
-
-            const userId = tg?.initDataUnsafe?.user?.id;
-            if (!userId) {
-                tg?.showAlert?.("Ошибка: не удалось определить пользователя.");
-                return;
-            }
-
-            const payload = {
-                kind: "nano_banana_settings",
-                modelSlug: state.modelSlug,
-                generationType: state.mode,
-                prompt: state.prompt,
-                aspectRatio: state.aspectRatio,
-                imageSize: state.quality,
-                images: state.images.map(img => ({
-                    data: img.data,
-                    mime: img.mime,
-                    name: img.name,
-                    size: img.size,
-                })),
-            };
-
-            tg?.MainButton?.showProgress();
-            fetch("/api/nano-banana/webapp/submit", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    user_id: userId,
-                    data: payload,
-                    initData: tg?.initData || "",
-                }),
-            })
-            .then(response => {
-                if (response.ok) {
-                    tg?.close();
-                } else {
-                    tg?.MainButton?.hideProgress();
-                    tg?.showAlert?.("Ошибка сервера. Попробуйте позже.");
-                    console.error("Server Error:", response.status);
+            try {
+                els.prompt.blur();
+                if (!tg) {
+                    showError("Откройте страницу через Telegram, чтобы отправить настройки.");
+                    return;
                 }
-            })
-            .catch(error => {
+                if (!state.prompt) {
+                    showError("Введите промт, чтобы продолжить.");
+                    return;
+                }
+                if (state.mode === "image2image" && state.images.length === 0) {
+                    showError("Загрузите хотя бы одно изображение.");
+                    return;
+                }
+
+                const userId = tg?.initDataUnsafe?.user?.id;
+                if (!userId) {
+                    showError("Ошибка: не удалось определить пользователя.");
+                    return;
+                }
+
+                const payload = {
+                    kind: "nano_banana_settings",
+                    modelSlug: state.modelSlug,
+                    generationType: state.mode,
+                    prompt: state.prompt,
+                    aspectRatio: state.aspectRatio,
+                    imageSize: state.quality,
+                    images: state.images.map(img => ({
+                        data: img.data,
+                        mime: img.mime,
+                        name: img.name,
+                        size: img.size,
+                    })),
+                };
+
+                tg?.MainButton?.showProgress();
+
+                const fetchPromise = fetch("/api/nano-banana/webapp/submit", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        user_id: userId,
+                        data: payload,
+                        initData: tg?.initData || "",
+                    }),
+                    keepalive: true,
+                });
+
+                const timeoutPromise = new Promise((_, reject) =>
+                    setTimeout(() => reject(new Error("Время ожидания истекло")), 15000)
+                );
+
+                Promise.race([fetchPromise, timeoutPromise])
+                    .then(response => {
+                        if (response.ok) {
+                            console.log("[Nano Banana WebApp] Success, closing...");
+                            tg.close();
+                        } else {
+                            tg?.MainButton?.hideProgress();
+                            showError("Ошибка сервера. Попробуйте позже.");
+                            console.error("Server Error:", response.status);
+                        }
+                    })
+                    .catch(error => {
+                        tg?.MainButton?.hideProgress();
+                        if (error.message.includes("Время ожидания")) {
+                            showError("Время ожидания истекло. Попробуйте еще раз.");
+                        } else {
+                            showError("Ошибка сети: " + error.message);
+                        }
+                        console.error("Network Error:", error);
+                    });
+            } catch (error) {
                 tg?.MainButton?.hideProgress();
-                tg?.showAlert?.("Ошибка сети: " + error.message);
-                console.error("Network Error:", error);
-            });
+                showError("Критическая ошибка: " + error.message);
+                console.error("[Nano Banana WebApp] Exception:", error);
+            }
         }
 
         els.prompt.addEventListener("input", updatePrompt);
