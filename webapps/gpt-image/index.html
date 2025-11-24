@@ -450,6 +450,9 @@
 
                 tg.MainButton?.showProgress();
 
+                // keepalive ограничен телом до ~64 КБ, поэтому выключаем его при передаче изображений
+                const canUseKeepalive = state.taskType !== "gpt_img2img" || state.images.length === 0;
+
                 const fetchPromise = fetch("/api/gpt-image/webapp/submit", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
@@ -458,11 +461,11 @@
                         data: payload,
                         initData: tg?.initData,
                     }),
-                    keepalive: true,
+                    keepalive: canUseKeepalive,
                 });
 
                 const timeoutPromise = new Promise((_, reject) =>
-                    setTimeout(() => reject(new Error("Время ожидания истекло")), 15000)
+                    setTimeout(() => reject(new Error("Время ожидания истекло")), 30000)
                 );
 
                 Promise.race([fetchPromise, timeoutPromise])
