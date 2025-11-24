@@ -6,6 +6,7 @@ import json
 import logging
 from typing import List, Dict, Any, Optional
 import base64
+from decimal import Decimal
 
 from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery
@@ -131,19 +132,28 @@ async def handle_midjourney_webapp_data(message: Message, state: FSMContext):
     try:
         user = await sync_to_async(TgUser.objects.get)(chat_id=user_id)
         balance_service = BalanceService()
-        await sync_to_async(balance_service.check_balance)(user, cost)
-        logging.info(f"[MIDJOURNEY_WEBAPP] Баланс проверен: пользователь {user_id}, стоимость {cost}")
-    except InsufficientBalanceError as e:
-        logging.warning(f"[MIDJOURNEY_WEBAPP] Недостаточно средств: {user_id}, нужно {cost}")
-        await message.answer(
-            f"❌ Недостаточно токенов.\n"
-            f"Необходимо: ⚡{cost:.2f}\n"
-            f"Ваш баланс: ⚡{e.current_balance:.2f}\n\n"
-            f"Пополните баланс и попробуйте снова.",
-            reply_markup=get_main_menu_inline_keyboard()
+        can_generate, error_msg = await sync_to_async(balance_service.check_can_generate)(
+            user,
+            model,
+            total_cost_tokens=cost,
         )
-        await state.clear()
-        return
+        if not can_generate:
+            logging.warning(f"[MIDJOURNEY_WEBAPP] Недостаточно средств или лимит: {user_id}, ошибка: {error_msg}")
+            try:
+                current_balance = await sync_to_async(balance_service.get_balance)(user)
+            except Exception:
+                current_balance = Decimal("0.00")
+
+            await message.answer(
+                f"❌ {error_msg}\n\n"
+                f"Необходимо: ⚡{cost:.2f}\n"
+                f"Ваш баланс: ⚡{current_balance:.2f}\n\n"
+                f"Пополните баланс и попробуйте снова.",
+                reply_markup=get_main_menu_inline_keyboard()
+            )
+            await state.clear()
+            return
+        logging.info(f"[MIDJOURNEY_WEBAPP] Баланс проверен: пользователь {user_id}, стоимость {cost}")
     except Exception as e:
         logging.error(f"[MIDJOURNEY_WEBAPP] Ошибка проверки баланса: {e}")
         await message.answer(
@@ -334,17 +344,26 @@ async def handle_gpt_image_webapp_data(message: Message, state: FSMContext):
     try:
         user = await sync_to_async(TgUser.objects.get)(chat_id=user_id)
         balance_service = BalanceService()
-        await sync_to_async(balance_service.check_balance)(user, cost)
-    except InsufficientBalanceError as exc:
-        await message.answer(
-            f"❌ Недостаточно токенов.\n"
-            f"Необходимо: ⚡{cost:.2f}\n"
-            f"Ваш баланс: ⚡{exc.current_balance:.2f}\n\n"
-            f"Пополните баланс и попробуйте снова.",
-            reply_markup=get_main_menu_inline_keyboard(),
+        can_generate, error_msg = await sync_to_async(balance_service.check_can_generate)(
+            user,
+            model,
+            total_cost_tokens=cost,
         )
-        await state.clear()
-        return
+        if not can_generate:
+            try:
+                current_balance = await sync_to_async(balance_service.get_balance)(user)
+            except Exception:
+                current_balance = Decimal("0.00")
+
+            await message.answer(
+                f"❌ {error_msg}\n"
+                f"Необходимо: ⚡{cost:.2f}\n"
+                f"Ваш баланс: ⚡{current_balance:.2f}\n\n"
+                f"Пополните баланс и попробуйте снова.",
+                reply_markup=get_main_menu_inline_keyboard(),
+            )
+            await state.clear()
+            return
     except Exception as exc:
         logger.error(f"[GPT_IMAGE_WEBAPP] Ошибка проверки баланса: {exc}")
         await message.answer(
@@ -506,16 +525,24 @@ async def handle_nanobanana_webapp_data(message: Message, state: FSMContext):
     try:
         cost = await sync_to_async(get_base_price_tokens)(model)
         balance_service = BalanceService()
-        await sync_to_async(balance_service.check_balance)(user, cost)
-    except InsufficientBalanceError as exc:
-        await message.answer(
-            f"❌ Недостаточно токенов.\n"
-            f"Необходимо: ⚡{cost:.2f}\n"
-            f"Ваш баланс: ⚡{exc.current_balance:.2f}\n",
-            reply_markup=get_main_menu_inline_keyboard(),
+        can_generate, error_msg = await sync_to_async(balance_service.check_can_generate)(
+            user,
+            model,
+            total_cost_tokens=cost,
         )
-        await state.clear()
-        return
+        if not can_generate:
+            try:
+                current_balance = await sync_to_async(balance_service.get_balance)(user)
+            except Exception:
+                current_balance = Decimal("0.00")
+            await message.answer(
+                f"❌ {error_msg}\n"
+                f"Необходимо: ⚡{cost:.2f}\n"
+                f"Ваш баланс: ⚡{current_balance:.2f}\n",
+                reply_markup=get_main_menu_inline_keyboard(),
+            )
+            await state.clear()
+            return
     except Exception as exc:
         await message.answer(
             "❌ Ошибка при проверке баланса. Попробуйте позже.",
