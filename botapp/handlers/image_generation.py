@@ -236,16 +236,9 @@ async def handle_midjourney_webapp_data(message: Message, state: FSMContext):
         return
 
     # image_mode == edit (image->image)
-    logging.info(f"[MIDJOURNEY_WEBAPP] Режим img2img, ожидаем загрузку изображения")
-    await message.answer(
-        "🖼 Отправьте изображение, я применю настройки и промт из окна Midjourney.",
-        reply_markup=get_cancel_keyboard(),
-    )
-    await state.set_state(BotStates.image_wait_prompt)
-    logging.info(f"[MIDJOURNEY_WEBAPP] FSM обновлен, готов к запуску генерации")
-
-    if image_mode == "text":
-        logging.info(f"[MIDJOURNEY_WEBAPP] Запуск text2image генерации для {user_id}")
+    # Если изображение уже загружено через WebApp, сразу запускаем генерацию
+    if inline_images:
+        logging.info(f"[MIDJOURNEY_WEBAPP] Запуск img2img генерации с изображением из WebApp для {user_id}")
         try:
             await _start_generation(message, state, prompt)
             logging.info(f"[MIDJOURNEY_WEBAPP] Генерация успешно запущена для {user_id}")
@@ -258,8 +251,8 @@ async def handle_midjourney_webapp_data(message: Message, state: FSMContext):
             await state.clear()
         return
 
-    # image_mode == edit (image->image)
-    logging.info(f"[MIDJOURNEY_WEBAPP] Режим img2img, ожидаем загрузку изображения")
+    # Если изображение не было загружено через WebApp, просим загрузить через чат
+    logging.info(f"[MIDJOURNEY_WEBAPP] Режим img2img, ожидаем загрузку изображения через чат")
     await message.answer(
         "🖼 Отправьте изображение, я применю настройки и промт из окна Midjourney.",
         reply_markup=get_cancel_keyboard(),
