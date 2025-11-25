@@ -16,6 +16,11 @@ from botapp.business.pricing import (
     get_pricing_settings,
     usd_to_retail_tokens,
 )
+from botapp.generation_text import (
+    format_image_result_message,
+    resolve_format_and_quality,
+    resolve_image_mode_label,
+)
 
 
 # === ГЛАВНОЕ МЕНЮ ===
@@ -74,6 +79,8 @@ def get_image_models_keyboard(
 
     for model in models:
         if model.type == 'image' and model.is_active:
+            if model.slug == "nano-banana":
+                continue
             # Для Midjourney и GPT Image сразу открываем WebApp, остальные — через callback
             if model.provider == "midjourney" and midjourney_webapps.get(model.slug):
                 builder.button(
@@ -389,9 +396,39 @@ def get_generation_complete_message(
         model_display_name: Выводимое имя модели (если нужно отличать от хэштега)
         **kwargs: Дополнительные параметры (duration, resolution, aspect_ratio и т.д.)
     """
+    if "image" in generation_type:
+        params = kwargs.get("generation_params") or kwargs.get("params") or kwargs
+        aspect_ratio = kwargs.get("aspect_ratio")
+        if aspect_ratio is None and isinstance(params, dict):
+            aspect_ratio = params.get("aspect_ratio") or params.get("aspectRatio")
+
+        format_value, quality_value = resolve_format_and_quality(
+            kwargs.get("model_provider") or "",
+            params,
+            aspect_ratio=aspect_ratio,
+        )
+        mode_label = resolve_image_mode_label(
+            generation_type,
+            kwargs.get("image_mode") or (params or {}).get("image_mode"),
+        )
+        charged_amount = kwargs.get("charged_amount")
+        balance_after = kwargs.get("balance_after")
+        if charged_amount is None:
+            charged_amount = Decimal("0.00")
+        if balance_after is None:
+            balance_after = Decimal("0.00")
+
+        return format_image_result_message(
+            model_display_name or model_name,
+            mode_label,
+            format_value,
+            quality_value,
+            prompt,
+            Decimal(charged_amount),
+            Decimal(balance_after),
+        )
+
     tool_names = {
-        'text2image': 'text2image',
-        'image2image': 'image2image',
         'text2video': 'text2video',
         'image2video': 'image2video'
     }
@@ -399,23 +436,15 @@ def get_generation_complete_message(
     segments = [f"Ваш запрос: {prompt}"]
     segments.append(f"Режим генерации: {tool_names.get(generation_type, generation_type)}")
 
-    if 'video' in generation_type:
-        duration = kwargs.get('duration')
-        if duration:
-            segments.append(f"Продолжительность: {duration} сек.")
-        aspect_ratio = kwargs.get('aspect_ratio')
-        if aspect_ratio:
-            segments.append(f"Соотношение сторон: {aspect_ratio}")
-        resolution = kwargs.get('resolution')
-        if resolution:
-            segments.append(f"Разрешение: {resolution}")
-    else:
-        quantity = kwargs.get('quantity')
-        if quantity and quantity > 1:
-            segments.append(f"Количество: {quantity}")
-        aspect_ratio = kwargs.get('aspect_ratio')
-        if aspect_ratio:
-            segments.append(f"Соотношение сторон: {aspect_ratio}")
+    duration = kwargs.get('duration')
+    if duration:
+        segments.append(f"Продолжительность: {duration} сек.")
+    aspect_ratio = kwargs.get('aspect_ratio')
+    if aspect_ratio:
+        segments.append(f"Соотношение сторон: {aspect_ratio}")
+    resolution = kwargs.get('resolution')
+    if resolution:
+        segments.append(f"Разрешение: {resolution}")
 
     segments.append(f"Модель: {model_display_name or model_name}")
 
