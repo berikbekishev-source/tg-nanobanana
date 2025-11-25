@@ -394,12 +394,15 @@
             mode: "text2video",
             prompt: "",
             aspectRatio: "16:9",
-            duration: 5,
+            duration: Number(params.get("duration")) || 5,
             cfgScale: 0.5,
             imageData: null,
             imageMime: null,
             imageName: null,
             priceLabel: "—",
+            tokensPerSecond: null,
+            // Базовая длительность, для которой посчитан прайс в query/start_param; если нет — считаем 10 сек.
+            priceBaseDuration: Number(params.get("price_base_duration")) || Number(params.get("duration")) || 10,
         };
 
         const els = {
@@ -416,6 +419,11 @@
             formatSection: document.getElementById("formatSection"),
             error: document.getElementById("error"),
         };
+
+        state.duration = sanitizeDuration(state.duration);
+        if (!Number.isFinite(state.priceBaseDuration) || state.priceBaseDuration <= 0) {
+            state.priceBaseDuration = 10;
+        }
 
         function setActive(container, target) {
             container.querySelectorAll(".chip, .pill").forEach(btn => btn.classList.remove("active"));
@@ -443,12 +451,34 @@
             }
         }
 
+        function parseTokens(label) {
+            if (!label) return null;
+            const match = String(label).replace(",", ".").match(/([0-9]+(?:\.[0-9]+)?)/);
+            if (!match) return null;
+            const value = Number(match[1]);
+            return Number.isFinite(value) ? value : null;
+        }
+
+        function formatPrice(tokens) {
+            if (!Number.isFinite(tokens)) return "—";
+            return `⚡${tokens.toFixed(2)} токенов`;
+        }
+
         function setPriceLabel(label) {
             state.priceLabel = label || "—";
             if (tg?.MainButton) {
                 const btnText = state.priceLabel === "—" ? "Сгенерировать" : `Сгенерировать · ${state.priceLabel}`;
                 tg.MainButton.setText(btnText);
             }
+        }
+
+        function updatePriceForDuration() {
+            if (!Number.isFinite(state.tokensPerSecond)) {
+                setPriceLabel(state.priceLabel || "—");
+                return;
+            }
+            const total = state.tokensPerSecond * state.duration;
+            setPriceLabel(formatPrice(total));
         }
 
         function switchMode(mode) {
@@ -580,6 +610,7 @@
             if (!btn) return;
             setActive(els.durationToggle, btn);
             state.duration = sanitizeDuration(btn.dataset.duration);
+            updatePriceForDuration();
         });
 
         els.cfgScale.addEventListener("input", () => {
@@ -639,12 +670,21 @@
         });
 
         const priceFromQuery = new URLSearchParams(window.location.search).get("price");
-        if (priceFromQuery) setPriceLabel(priceFromQuery);
-        try {
-            const init = tg?.initDataUnsafe?.start_param;
-            if (init && init.startsWith("price=")) setPriceLabel(init.replace("price=", ""));
-        } catch (e) {/* ignore */ }
-        if (state.priceLabel === "—" && !priceFromQuery) setPriceLabel("—");
+        const startParamRaw = tg?.initDataUnsafe?.start_param;
+        let rawPrice = priceFromQuery;
+        if (!rawPrice && startParamRaw && startParamRaw.startsWith("price=")) {
+            rawPrice = startParamRaw.replace("price=", "");
+        }
+        const baseTokens = parseTokens(rawPrice);
+        if (baseTokens !== null) {
+            const baseDuration = Number.isFinite(state.priceBaseDuration) && state.priceBaseDuration > 0
+                ? state.priceBaseDuration
+                : state.duration;
+            state.tokensPerSecond = baseTokens / baseDuration;
+            updatePriceForDuration();
+        } else {
+            setPriceLabel("—");
+        }
 
         updateCounts();
         switchMode("text2video");

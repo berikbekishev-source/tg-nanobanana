@@ -342,6 +342,9 @@
             aspectRatio: "9:16",
             start: { data: null, mime: null, name: null },
             end: { data: null, mime: null, name: null },
+            priceLabel: "—",
+            tokensPerSecond: null,
+            priceBaseDuration: 8,
         };
 
         const els = {
@@ -375,12 +378,33 @@
             }
         }
 
+        function parseTokens(label) {
+            if (!label) return null;
+            const match = String(label).replace(",", ".").match(/([0-9]+(?:\.[0-9]+)?)/);
+            if (!match) return null;
+            const value = Number(match[1]);
+            return Number.isFinite(value) ? value : null;
+        }
+
+        function formatPrice(tokens) {
+            if (!Number.isFinite(tokens)) return "—";
+            return `⚡${tokens.toFixed(2)} токенов`;
+        }
+
+        function setPriceLabel(label) {
+            state.priceLabel = label || "—";
+            if (tg?.MainButton) {
+                const btnText = state.priceLabel === "—" ? "Сгенерировать" : `Сгенерировать · ${state.priceLabel}`;
+                tg.MainButton.setText(btnText);
+            }
+        }
+
         function updateCounts() {
             state.prompt = els.prompt.value.trim();
             els.promptCount.textContent = `${state.prompt.length}/${MAX_PROMPT}`;
             if (tg?.MainButton) {
                 if (state.prompt.length > 0) {
-                    tg.MainButton.setText("Сгенерировать");
+                    setPriceLabel(state.priceLabel || "—");
                     tg.MainButton.show();
                 } else {
                     tg.MainButton.hide();
@@ -579,6 +603,21 @@
         els.endInput.addEventListener("change", () =>
             handleFile(els.endInput, "end", els.endPreview, els.endThumb, els.endInfo)
         );
+
+        const priceFromQuery = params.get("price");
+        const startParamRaw = tg?.initDataUnsafe?.start_param;
+        let rawPrice = priceFromQuery;
+        if (!rawPrice && startParamRaw && startParamRaw.startsWith("price=")) {
+            rawPrice = startParamRaw.replace("price=", "");
+        }
+        const baseTokens = parseTokens(rawPrice);
+        if (baseTokens !== null) {
+            state.priceBaseDuration = state.priceBaseDuration || 8;
+            state.tokensPerSecond = baseTokens / state.priceBaseDuration;
+            setPriceLabel(formatPrice(baseTokens));
+        } else {
+            setPriceLabel("—");
+        }
 
         updateCounts();
         toggleUploads(false);
