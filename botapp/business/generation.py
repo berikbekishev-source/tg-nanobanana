@@ -77,9 +77,15 @@ class GenerationService:
             params.setdefault("resolution", video_resolution)
 
         if aspect_ratio is None:
-            aspect_ratio = params.get("aspect_ratio") or model_defaults.get("aspect_ratio")
-        else:
-            params.setdefault("aspect_ratio", aspect_ratio)
+            aspect_ratio = params.get("aspect_ratio")
+        if aspect_ratio is None and params.get("aspectRatio"):
+            aspect_ratio = params.get("aspectRatio")
+        if aspect_ratio is None:
+            aspect_ratio = model_defaults.get("aspect_ratio")
+
+        if aspect_ratio is not None:
+            # Храним аспект в snake_case, чтобы перекрывать дефолты модели
+            params["aspect_ratio"] = aspect_ratio
 
         if input_image_file_id:
             params.setdefault("input_image_file_id", input_image_file_id)
