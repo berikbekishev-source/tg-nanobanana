@@ -197,11 +197,17 @@ async def handle_midjourney_webapp_data(message: Message, state: FSMContext):
     if task_type == "mj_img2img":
         if image_data:
             try:
+                # Не декодируем base64 - передаем как есть для _prepare_input_images
+                inline_images.append({
+                    "content_base64": image_data,  # Уже в base64 формате
+                    "mime_type": image_mime,
+                    "file_name": image_name
+                })
+                # Декодируем только для проверки размера
                 raw = base64.b64decode(image_data)
-                inline_images.append({"content": raw, "mime": image_mime, "name": image_name})
-                logging.info(f"[MIDJOURNEY_WEBAPP] Изображение декодировано: {len(raw)} байт")
+                logging.info(f"[MIDJOURNEY_WEBAPP] Изображение подготовлено: {len(raw)} байт")
             except Exception as e:
-                logging.error(f"[MIDJOURNEY_WEBAPP] Ошибка декодирования изображения: {e}")
+                logging.error(f"[MIDJOURNEY_WEBAPP] Ошибка обработки изображения: {e}")
                 await message.answer("Не удалось прочитать изображение из WebApp. Загрузите файл ещё раз.", reply_markup=get_cancel_keyboard())
                 return
         else:
