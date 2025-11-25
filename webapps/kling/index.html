@@ -401,6 +401,7 @@
             imageName: null,
             priceLabel: "—",
             tokensPerSecond: null,
+            // Базовая длительность, для которой посчитан прайс в query/start_param; если нет — считаем 10 сек.
             priceBaseDuration: Number(params.get("price_base_duration")) || Number(params.get("duration")) || 10,
         };
 
@@ -418,6 +419,11 @@
             formatSection: document.getElementById("formatSection"),
             error: document.getElementById("error"),
         };
+
+        state.duration = sanitizeDuration(state.duration);
+        if (!Number.isFinite(state.priceBaseDuration) || state.priceBaseDuration <= 0) {
+            state.priceBaseDuration = 10;
+        }
 
         function setActive(container, target) {
             container.querySelectorAll(".chip, .pill").forEach(btn => btn.classList.remove("active"));
@@ -671,8 +677,10 @@
         }
         const baseTokens = parseTokens(rawPrice);
         if (baseTokens !== null) {
-            state.priceBaseDuration = state.duration;
-            state.tokensPerSecond = baseTokens / state.priceBaseDuration;
+            const baseDuration = Number.isFinite(state.priceBaseDuration) && state.priceBaseDuration > 0
+                ? state.priceBaseDuration
+                : state.duration;
+            state.tokensPerSecond = baseTokens / baseDuration;
             updatePriceForDuration();
         } else {
             setPriceLabel("—");
