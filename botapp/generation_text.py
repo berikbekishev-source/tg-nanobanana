@@ -72,12 +72,10 @@ def format_image_start_message(
         f"Модель: {model_name}",
         f"Режим: {mode_label}",
         f"Формат: {format_value}",
-        f"*Качество: {quality_value}",
+        f"Качество: {quality_value}",
         f"Промт: {prompt_value}",
         "",
         "Я отправлю вам результат, как только он будет готов!",
-        "",
-        "*Только у NanoBanana Pro и GPT Image",
     ]
     return "\n".join(lines)
 
@@ -98,7 +96,7 @@ def format_image_result_message(
         f"Модель: {model_name}",
         f"Режим: {mode_label}",
         f"Формат: {format_value}",
-        f"*Качество: {quality_value}",
+        f"Качество: {quality_value}",
         f"Промт: {prompt_value}",
         "",
         f"Списано: ⚡{charged_amount:.2f}",
