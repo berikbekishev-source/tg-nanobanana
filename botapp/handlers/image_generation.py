@@ -201,11 +201,17 @@ async def handle_midjourney_webapp_data(message: Message, state: FSMContext):
     if task_type == "mj_img2img":
         if image_data:
             try:
+                # Не декодируем base64 - передаем как есть для _prepare_input_images
+                inline_images.append({
+                    "content_base64": image_data,  # Уже в base64 формате
+                    "mime_type": image_mime,
+                    "file_name": image_name
+                })
+                # Декодируем только для проверки размера
                 raw = base64.b64decode(image_data)
-                inline_images.append({"content": raw, "mime": image_mime, "name": image_name})
-                logging.info(f"[MIDJOURNEY_WEBAPP] Изображение декодировано: {len(raw)} байт")
+                logging.info(f"[MIDJOURNEY_WEBAPP] Изображение подготовлено: {len(raw)} байт")
             except Exception as e:
-                logging.error(f"[MIDJOURNEY_WEBAPP] Ошибка декодирования изображения: {e}")
+                logging.error(f"[MIDJOURNEY_WEBAPP] Ошибка обработки изображения: {e}")
                 await message.answer("Не удалось прочитать изображение из WebApp. Загрузите файл ещё раз.", reply_markup=get_cancel_keyboard())
                 return
         else:
@@ -240,16 +246,9 @@ async def handle_midjourney_webapp_data(message: Message, state: FSMContext):
         return
 
     # image_mode == edit (image->image)
-    logging.info(f"[MIDJOURNEY_WEBAPP] Режим img2img, ожидаем загрузку изображения")
-    await message.answer(
-        "🖼 Отправьте изображение, я применю настройки и промт из окна Midjourney.",
-        reply_markup=get_cancel_keyboard(),
-    )
-    await state.set_state(BotStates.image_wait_prompt)
-    logging.info(f"[MIDJOURNEY_WEBAPP] FSM обновлен, готов к запуску генерации")
-
-    if image_mode == "text":
-        logging.info(f"[MIDJOURNEY_WEBAPP] Запуск text2image генерации для {user_id}")
+    # Если изображение уже загружено через WebApp, сразу запускаем генерацию
+    if inline_images:
+        logging.info(f"[MIDJOURNEY_WEBAPP] Запуск img2img генерации с изображением из WebApp для {user_id}")
         try:
             await _start_generation(message, state, prompt)
             logging.info(f"[MIDJOURNEY_WEBAPP] Генерация успешно запущена для {user_id}")
@@ -262,8 +261,8 @@ async def handle_midjourney_webapp_data(message: Message, state: FSMContext):
             await state.clear()
         return
 
-    # image_mode == edit (image->image)
-    logging.info(f"[MIDJOURNEY_WEBAPP] Режим img2img, ожидаем загрузку изображения")
+    # Если изображение не было загружено через WebApp, просим загрузить через чат
+    logging.info(f"[MIDJOURNEY_WEBAPP] Режим img2img, ожидаем загрузку изображения через чат")
     await message.answer(
         "🖼 Отправьте изображение, я применю настройки и промт из окна Midjourney.",
         reply_markup=get_cancel_keyboard(),
@@ -710,10 +709,14 @@ async def _start_generation(message: Message, state: FSMContext, prompt: str):
     # Создаем запрос на генерацию через сервис
     generation_type = 'text2image'
     input_entries: List[Dict[str, Any]] = []
+    
+    logging.info(f"[_START_GENERATION] Определение generation_type: mode={mode}, inline_images count={len(inline_images)}, edit_base_id={edit_base_id}")
+    
     if mode == "edit":
         if inline_images:
             generation_type = 'image2image'
             input_entries = inline_images
+            logging.info(f"[_START_GENERATION] Установлен generation_type=image2image из inline_images, input_entries count={len(input_entries)}")
         elif not edit_base_id:
             await message.answer(
                 "Отправьте изображение для редактирования, затем текстовый промт.",

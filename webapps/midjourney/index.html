@@ -467,6 +467,9 @@
             varietyValue: document.getElementById("varietyValue"),
             version: document.getElementById("version"),
             error: document.getElementById("error"),
+            imgBlock: document.getElementById("imgBlock"),
+            imgInput: document.getElementById("imgInput"),
+            imgPreview: document.getElementById("imgPreview"),
         };
 
         function setActive(container, target) {
@@ -488,7 +491,6 @@
         }
 
         function setError(text) {
-            // Deprecated: now using tg.showAlert
             if (text && tg) {
                 tg.showAlert(text);
             }
@@ -499,13 +501,11 @@
             if (tg?.MainButton) {
                 const btnText = state.priceLabel === "—" ? "Сгенерировать" : `Сгенерировать · ${state.priceLabel}`;
                 tg.MainButton.setText(btnText);
-                // Visibility is controlled by prompt input now
             }
         }
 
         function sendData() {
             try {
-                // Hide keyboard before sending
                 els.prompt.blur();
 
                 if (!state.prompt) {
@@ -542,17 +542,22 @@
                 console.log("[Midjourney WebApp] Sending payload:", JSON.stringify(payload));
                 tg.MainButton.showProgress();
 
-                // Fetch with keepalive
+                // keepalive ломается с крупными файлами (>64 КБ), отключаем для img2img
+                const canUseKeepalive = state.taskType !== "mj_img2img" || !state.imageData;
+
                 const fetchPromise = fetch('/api/midjourney/webapp/submit', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ user_id: userId, data: payload }),
-                    keepalive: true  // Critical for WebApp closing
+                    body: JSON.stringify({
+                        user_id: userId,
+                        data: payload,
+                        initData: tg?.initData || ""
+                    }),
+                    keepalive: canUseKeepalive
                 });
 
-                // 15 second timeout
                 const timeoutPromise = new Promise((_, reject) =>
-                    setTimeout(() => reject(new Error("Время ожидания истекло")), 15000)
+                    setTimeout(() => reject(new Error("Время ожидания истекло")), 30000)
                 );
 
                 Promise.race([fetchPromise, timeoutPromise])
@@ -592,8 +597,7 @@
             if (!btn) return;
             setActive(els.typeToggle, btn);
             state.taskType = btn.dataset.type;
-            const imageBlock = document.getElementById("imgBlock");
-            imageBlock.style.display = state.taskType === "mj_img2img" ? "block" : "none";
+            els.imgBlock.style.display = state.taskType === "mj_img2img" ? "block" : "none";
         });
 
         els.speedToggle.addEventListener("click", (e) => {
@@ -627,19 +631,17 @@
         });
 
         // Загрузка изображения
-        const imgInput = document.getElementById("imgInput");
-        const imgPreview = document.getElementById("imgPreview");
         const MAX_SIZE = 3 * 1024 * 1024; // 3 MB
 
         function resetImage() {
             state.imageData = null;
             state.imageMime = null;
             state.imageName = null;
-            imgInput.value = "";
-            imgPreview.textContent = "Файл не выбран";
+            els.imgInput.value = "";
+            els.imgPreview.textContent = "Файл не выбран";
         }
 
-        imgInput.addEventListener("change", (e) => {
+        els.imgInput.addEventListener("change", (e) => {
             const file = e.target.files?.[0];
             if (!file) {
                 resetImage();
@@ -663,7 +665,7 @@
                     state.imageData = base64;
                     state.imageMime = file.type;
                     state.imageName = file.name;
-                    imgPreview.textContent = `${file.name} · ${(file.size / 1024).toFixed(1)} КБ`;
+                    els.imgPreview.textContent = `${file.name} · ${(file.size / 1024).toFixed(1)} КБ`;
                     setError("");
                 }
             };
@@ -695,7 +697,7 @@
         }
 
         updateCounts();
-        document.getElementById("imgBlock").style.display = "none";
+        els.imgBlock.style.display = "none";
 
         if (tg) {
             try {

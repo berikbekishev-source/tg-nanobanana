@@ -440,17 +440,19 @@
                 console.log("[Sora2 WebApp] Sending payload:", JSON.stringify(payload));
                 tg.MainButton.showProgress();
 
-                // Fetch with keepalive
+                // keepalive ломается с крупными файлами (>64 КБ), отключаем для image2video
+                const canUseKeepalive = state.generationType !== "image2video" || !state.imageData;
+
                 const fetchPromise = fetch("/api/sora2/webapp/submit", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({ user_id: userId, data: payload }),
-                    keepalive: true
+                    keepalive: canUseKeepalive
                 });
 
-                // 15 second timeout
+                // 30 second timeout для загрузки изображений
                 const timeoutPromise = new Promise((_, reject) =>
-                    setTimeout(() => reject(new Error("Время ожидания истекло")), 15000)
+                    setTimeout(() => reject(new Error("Время ожидания истекло")), 30000)
                 );
 
                 Promise.race([fetchPromise, timeoutPromise])
@@ -528,39 +530,51 @@
         }
 
         els.imgInput.addEventListener("change", (e) => {
-            const file = e.target.files?.[0];
-            if (!file) {
-                resetImage();
-                return;
-            }
-            if (!["image/png", "image/jpeg", "image/webp"].includes(file.type)) {
-                setError("Поддерживаются JPG, PNG или WebP.");
-                resetImage();
-                return;
-            }
-            if (file.size > MAX_IMAGE_SIZE) {
-                setError("Изображение слишком большое (макс 10 МБ).");
-                resetImage();
-                return;
-            }
-            const reader = new FileReader();
-            reader.onload = () => {
-                const result = reader.result;
-                if (typeof result === "string") {
-                    const base64 = result.split(",")[1] || result;
-                    state.imageData = base64;
-                    state.imageMime = file.type;
-                    state.imageName = file.name;
-                    const sizeKb = (file.size / 1024).toFixed(1);
-                    els.imgPreview.textContent = `${file.name} · ${sizeKb} КБ`;
-                    setError("");
+            try {
+                const file = e.target.files?.[0];
+                if (!file) {
+                    resetImage();
+                    return;
                 }
-            };
-            reader.onerror = () => {
-                setError("Не удалось прочитать файл.");
+                if (!["image/png", "image/jpeg", "image/webp"].includes(file.type)) {
+                    setError("Поддерживаются JPG, PNG или WebP.");
+                    resetImage();
+                    return;
+                }
+                if (file.size > MAX_IMAGE_SIZE) {
+                    setError("Изображение слишком большое (макс 10 МБ).");
+                    resetImage();
+                    return;
+                }
+                const reader = new FileReader();
+                reader.onload = () => {
+                    try {
+                        const result = reader.result;
+                        if (typeof result === "string") {
+                            const base64 = result.split(",")[1] || result;
+                            state.imageData = base64;
+                            state.imageMime = file.type;
+                            state.imageName = file.name;
+                            const sizeKb = (file.size / 1024).toFixed(1);
+                            els.imgPreview.textContent = `${file.name} · ${sizeKb} КБ`;
+                            setError("");
+                        }
+                    } catch (err) {
+                        console.error("[Sora2 WebApp] File parse error:", err);
+                        setError("Не удалось обработать файл.");
+                        resetImage();
+                    }
+                };
+                reader.onerror = () => {
+                    setError("Не удалось прочитать файл.");
+                    resetImage();
+                };
+                reader.readAsDataURL(file);
+            } catch (err) {
+                console.error("[Sora2 WebApp] File load error:", err);
+                setError("Не удалось загрузить файл. Попробуйте другой.");
                 resetImage();
-            };
-            reader.readAsDataURL(file);
+            }
         });
 
         const priceFromQuery = params.get("price");
