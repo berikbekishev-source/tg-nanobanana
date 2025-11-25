@@ -448,7 +448,9 @@
             weirdness: 0,
             variety: 10,
             priceLabel: "—",
-            images: [],
+            imageData: null,
+            imageMime: null,
+            imageName: null,
         };
 
         const els = {
@@ -510,7 +512,7 @@
                     tg.showAlert("Введите промт, чтобы продолжить.");
                     return;
                 }
-                if (state.taskType === "mj_img2img" && state.images.length === 0) {
+                if (state.taskType === "mj_img2img" && !state.imageData) {
                     tg.showAlert("Загрузите изображение для режима Изображение → Изображение.");
                     return;
                 }
@@ -526,12 +528,9 @@
                     weirdness: state.weirdness,
                     variety: state.variety,
                     modelSlug: state.modelSlug,
-                    images: state.images.map(img => ({
-                        data: img.data,
-                        mime: img.mime,
-                        name: img.name,
-                        size: img.size
-                    })),
+                    imageData: state.imageData,
+                    imageMime: state.imageMime,
+                    imageName: state.imageName,
                 };
 
                 const userId = tg?.initDataUnsafe?.user?.id;
@@ -544,7 +543,7 @@
                 tg.MainButton.showProgress();
 
                 // keepalive ломается с крупными файлами (>64 КБ), отключаем для img2img
-                const canUseKeepalive = state.taskType !== "mj_img2img" || state.images.length === 0;
+                const canUseKeepalive = state.taskType !== "mj_img2img" || !state.imageData;
 
                 const fetchPromise = fetch('/api/midjourney/webapp/submit', {
                     method: 'POST',
@@ -635,7 +634,9 @@
         const MAX_SIZE = 3 * 1024 * 1024; // 3 MB
 
         function resetImage() {
-            state.images = [];
+            state.imageData = null;
+            state.imageMime = null;
+            state.imageName = null;
             els.imgInput.value = "";
             els.imgPreview.textContent = "Файл не выбран";
         }
@@ -661,12 +662,9 @@
                 const result = reader.result;
                 if (typeof result === "string") {
                     const base64 = result.split(",")[1] || result;
-                    state.images = [{
-                        data: base64,
-                        mime: file.type,
-                        name: file.name,
-                        size: file.size
-                    }];
+                    state.imageData = base64;
+                    state.imageMime = file.type;
+                    state.imageName = file.name;
                     els.imgPreview.textContent = `${file.name} · ${(file.size / 1024).toFixed(1)} КБ`;
                     setError("");
                 }
