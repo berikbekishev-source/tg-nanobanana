@@ -117,39 +117,19 @@ class OpenAISoraProvider(BaseVideoProvider):
             input_mime_type=input_mime_type,
         )
 
-        max_attempts = 3  # 1 основной запрос + 2 ретрая для transient video_generation_failed
-        attempt = 0
-        last_error: Optional[Exception] = None
-        while attempt < max_attempts:
-            attempt += 1
-            initial_response = self._request_json(
-                "POST",
-                "/videos",
-                json_payload=json_payload,
-                data=form_payload,
-                files=files,
-            )
-            job_id = initial_response.get("id")
-            if not job_id:
-                raise VideoGenerationError("OpenAI Sora не вернул идентификатор задания.")
+        initial_response = self._request_json(
+            "POST",
+            "/videos",
+            json_payload=json_payload,
+            data=form_payload,
+            files=files,
+        )
+        job_id = initial_response.get("id")
+        if not job_id:
+            raise VideoGenerationError("OpenAI Sora не вернул идентификатор задания.")
 
-            job_status = initial_response.get("status")
-
-            try:
-                job_details = initial_response if job_status == "succeeded" else self._poll_job(job_id)
-                # если дошли сюда без исключения — успех
-                break
-            except VideoGenerationError as exc:
-                message = str(exc).lower()
-                if "video_generation_failed" in message and attempt < max_attempts:
-                    # transient сбой на стороне Sora — небольшой backoff и повтор
-                    time.sleep(3 * attempt)
-                    last_error = exc
-                    continue
-                raise
-        else:
-            # Если по какой-то причине цикл не вышел через break
-            raise last_error or VideoGenerationError("Sora не смогла завершить генерацию после нескольких попыток.")
+        job_status = initial_response.get("status")
+        job_details = initial_response if job_status == "succeeded" else self._poll_job(job_id)
 
         video_bytes, mime_type = self._download_video(job_details)
 
