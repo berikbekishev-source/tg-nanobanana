@@ -77,7 +77,8 @@ def format_image_start_message(
         "",
         "Я отправлю вам результат, как только он будет готов!",
     ]
-    return "\n".join(lines)
+    return "
+".join(lines)
 
 
 def format_image_result_message(
@@ -102,4 +103,5 @@ def format_image_result_message(
         f"Списано: ⚡{charged_amount:.2f}",
         f"Баланс: ⚡{balance_after:.2f}",
     ]
-    return "\n".join(lines)
+    return "
+".join(lines)
