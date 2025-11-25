@@ -144,8 +144,6 @@ def format_video_start_message(
         f"Промт: {prompt_value}",
         "",
         "Я отправлю вам результат, как только он будет готов!",
-        "",
-        "*Только у NanoBanana Pro и GPT Image",
     ]
     return "\n".join(lines)
 
