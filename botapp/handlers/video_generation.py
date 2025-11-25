@@ -389,8 +389,12 @@ async def _handle_sora_webapp_data_impl(message: Message, state: FSMContext, pay
         return
 
     await message.answer(
-        get_generation_start_message().format(
+        get_generation_start_message(
             model=model.display_name,
+            mode=generation_type,
+            aspect_ratio=aspect_ratio,
+            resolution=resolution,
+            duration=duration_value,
             prompt=prompt,
         ),
         reply_markup=get_main_menu_inline_keyboard()
@@ -610,8 +614,12 @@ async def _handle_kling_webapp_data_impl(message: Message, state: FSMContext, pa
         return
 
     await message.answer(
-        get_generation_start_message().format(
+        get_generation_start_message(
             model=model.display_name,
+            mode=generation_type,
+            aspect_ratio=aspect_ratio,
+            resolution=None,
+            duration=duration_value,
             prompt=prompt,
         ),
         reply_markup=get_main_menu_inline_keyboard()
@@ -866,8 +874,12 @@ async def _handle_veo_webapp_data_impl(message: Message, state: FSMContext, payl
         return
 
     await message.answer(
-        get_generation_start_message().format(
+        get_generation_start_message(
             model=model.display_name,
+            mode=generation_type,
+            aspect_ratio=aspect_ratio,
+            resolution=resolution,
+            duration=duration,
             prompt=prompt,
         ),
         reply_markup=get_main_menu_inline_keyboard()
@@ -1349,8 +1361,12 @@ async def handle_video_prompt(message: Message, state: FSMContext):
         return
 
     await message.answer(
-        get_generation_start_message().format(
+        get_generation_start_message(
             model=model.display_name,
+            mode=generation_type,
+            aspect_ratio=selected_aspect_ratio,
+            resolution=selected_resolution,
+            duration=selected_duration,
             prompt=prompt,
         ),
         reply_markup=get_main_menu_inline_keyboard()
@@ -1564,8 +1580,12 @@ async def handle_video_extension_prompt(message: Message, state: FSMContext):
         return
 
     await message.answer(
-        get_generation_start_message().format(
+        get_generation_start_message(
             model=model.display_name if model else "—",
+            mode="image2video",
+            aspect_ratio=aspect_ratio,
+            resolution=resolution,
+            duration=8,
             prompt=text,
         ),
         reply_markup=get_main_menu_inline_keyboard()

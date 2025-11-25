@@ -258,36 +258,6 @@
             margin-top: 8px;
         }
 
-        .footer {
-            position: sticky;
-            bottom: 0;
-            margin-top: 16px;
-            background: linear-gradient(180deg, transparent, #0f1c2d 45%);
-            padding-top: 12px;
-        }
-
-        .price-row {
-            display: flex;
-            justify-content: space-between;
-            align-items: baseline;
-            margin-bottom: 10px;
-            background: rgba(20, 38, 60, 0.7);
-            border: 1px solid var(--border);
-            border-radius: 12px;
-            padding: 12px;
-        }
-
-        .price-label {
-            font-size: 13px;
-            color: var(--muted);
-        }
-
-        .price-value {
-            font-size: 20px;
-            font-weight: 800;
-            color: var(--accent-2);
-        }
-
         @media (min-width: 640px) {
             body {
                 padding: 28px;
@@ -324,15 +294,6 @@
             <div class="count" id="promptCount">0/1000</div>
         </div>
 
-        <div class="section">
-            <p class="section-title">Соотношение сторон</p>
-            <div class="grid" id="ratioGrid">
-                <div class="pill active" data-ratio="9:16">9:16</div>
-                <div class="pill" data-ratio="16:9">16:9</div>
-                <div class="pill" data-ratio="1:1">1:1</div>
-            </div>
-        </div>
-
         <div class="section" id="uploadsSection" style="display:none;">
             <p class="section-title">Кадры для Image → Video</p>
             <div class="uploads">
@@ -357,17 +318,15 @@
             </div>
         </div>
 
-        <div id="error" class="error" style="display:none;"></div>
-
-        <div class="footer">
-            <div class="price-row">
-                <div>
-                    <div class="price-label">Стоимость</div>
-                    <div class="price-label" style="margin-top:2px;">Фиксированная цена за генерацию</div>
-                </div>
-                <div class="price-value" id="priceValue">—</div>
+        <div class="section">
+            <p class="section-title">Соотношение сторон</p>
+            <div class="grid" id="ratioGrid">
+                <div class="pill active" data-ratio="9:16">9:16</div>
+                <div class="pill" data-ratio="16:9">16:9</div>
             </div>
         </div>
+
+        <div id="error" class="error" style="display:none;"></div>
     </div>
 
     <script>
@@ -381,7 +340,6 @@
             mode: "text2video",
             prompt: "",
             aspectRatio: "9:16",
-            priceLabel: "—",
             start: { data: null, mime: null, name: null },
             end: { data: null, mime: null, name: null },
         };
@@ -400,7 +358,6 @@
             endPreview: document.getElementById("endPreview"),
             endThumb: document.getElementById("endThumb"),
             endInfo: document.getElementById("endInfo"),
-            priceValue: document.getElementById("priceValue"),
             error: document.getElementById("error"),
         };
 
@@ -423,6 +380,7 @@
             els.promptCount.textContent = `${state.prompt.length}/${MAX_PROMPT}`;
             if (tg?.MainButton) {
                 if (state.prompt.length > 0) {
+                    tg.MainButton.setText("Сгенерировать");
                     tg.MainButton.show();
                 } else {
                     tg.MainButton.hide();
@@ -439,15 +397,6 @@
                 els.endInput.value = "";
                 els.startPreview.style.display = "none";
                 els.endPreview.style.display = "none";
-            }
-        }
-
-        function setPriceLabel(label) {
-            state.priceLabel = label || "—";
-            els.priceValue.textContent = state.priceLabel;
-            if (tg?.MainButton) {
-                const btnText = state.priceLabel === "—" ? "Сгенерировать" : `Сгенерировать · ${state.priceLabel}`;
-                tg.MainButton.setText(btnText);
             }
         }
 
@@ -630,23 +579,6 @@
         els.endInput.addEventListener("change", () =>
             handleFile(els.endInput, "end", els.endPreview, els.endThumb, els.endInfo)
         );
-
-        const priceFromQuery = params.get("price");
-        if (priceFromQuery) {
-            setPriceLabel(priceFromQuery);
-        }
-        try {
-            const init = tg?.initDataUnsafe?.start_param;
-            if (init && init.startsWith("price=")) {
-                const price = init.replace("price=", "");
-                setPriceLabel(price);
-            }
-        } catch (e) {
-            /* ignore */
-        }
-        if (state.priceLabel === "—" && !priceFromQuery) {
-            setPriceLabel("—");
-        }
 
         updateCounts();
         toggleUploads(false);

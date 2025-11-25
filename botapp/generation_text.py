@@ -103,3 +103,75 @@ def format_image_result_message(
         f"Баланс: ⚡{balance_after:.2f}",
     ]
     return "\n".join(lines)
+
+
+def resolve_video_mode_label(generation_type: str) -> str:
+    mode = (generation_type or "").lower()
+    if mode == "image2video":
+        return "Изображение → Видео"
+    return "Текст → Видео"
+
+
+def _format_duration(value: Optional[Any]) -> str:
+    if value is None:
+        return "—"
+    try:
+        numeric = float(value)
+        if numeric.is_integer():
+            numeric = int(numeric)
+        return f"{numeric} сек."
+    except (TypeError, ValueError):
+        return str(value)
+
+
+def format_video_start_message(
+    model_name: str,
+    mode_label: str,
+    aspect_ratio: Optional[str],
+    resolution: Optional[str],
+    duration: Optional[Any],
+    prompt: str,
+) -> str:
+    prompt_value = _trim_prompt(prompt, limit=400) or "—"
+    lines = [
+        "🎨 Генерация началась! Ожидайте ⏳",
+        "",
+        f"Модель: {model_name or '—'}",
+        f"Режим: {mode_label or '—'}",
+        f"Формат: {aspect_ratio or '—'}",
+        f"Разрешение: {resolution or '—'}",
+        f"Продолжительность: {_format_duration(duration)}",
+        f"Промт: {prompt_value}",
+        "",
+        "Я отправлю вам результат, как только он будет готов!",
+        "",
+        "*Только у NanoBanana Pro и GPT Image",
+    ]
+    return "\n".join(lines)
+
+
+def format_video_result_message(
+    model_name: str,
+    mode_label: str,
+    aspect_ratio: Optional[str],
+    resolution: Optional[str],
+    duration: Optional[Any],
+    prompt: str,
+    charged_amount: Decimal,
+    balance_after: Decimal,
+) -> str:
+    prompt_value = _trim_prompt(prompt, limit=500) or "—"
+    lines = [
+        "✅Готово!",
+        "",
+        f"Модель: {model_name or '—'}",
+        f"Режим: {mode_label or '—'}",
+        f"Формат: {aspect_ratio or '—'}",
+        f"Разрешение: {resolution or '—'}",
+        f"Продолжительность: {_format_duration(duration)}",
+        f"Промт: {prompt_value}",
+        "",
+        f"Списано: ⚡{Decimal(charged_amount):.2f}",
+        f"Баланс: ⚡{Decimal(balance_after):.2f}",
+    ]
+    return "\n".join(lines)
