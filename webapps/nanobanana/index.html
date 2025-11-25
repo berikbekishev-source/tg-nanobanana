@@ -1,13 +1,12 @@
 <!DOCTYPE html>
 <html lang="ru">
-
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Nano Banana Pro · INTEGER</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <script>
-        // Global error handler for client-side debugging
+        // Глобальный обработчик ошибок в WebApp
         window.onerror = function (msg, url, line, col, error) {
             const tg = window.Telegram?.WebApp;
             if (tg) {
@@ -15,7 +14,7 @@
             }
             return false;
         };
-    </script>>
+    </script>
     <style>
         :root {
             --bg: #0f1c2d;
@@ -29,13 +28,11 @@
             --border: #223956;
             --radius: 18px;
             --shadow: 0 12px 35px rgba(0, 0, 0, 0.35);
-            --dot: radial-gradient(circle, rgba(255, 255, 255, 0.06) 1px, transparent 0);
+            --dot: radial-gradient(circle, rgba(255,255,255,0.06) 1px, transparent 0);
             --font: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
         }
 
-        * {
-            box-sizing: border-box;
-        }
+        * { box-sizing: border-box; }
 
         body {
             margin: 0;
@@ -61,8 +58,8 @@
             content: "";
             position: absolute;
             inset: 0;
-            background: radial-gradient(circle at 20% 20%, rgba(241, 155, 40, 0.15), transparent 45%),
-                radial-gradient(circle at 80% 10%, rgba(246, 178, 79, 0.08), transparent 35%);
+            background: radial-gradient(circle at 20% 20%, rgba(241,155,40,0.15), transparent 45%),
+                        radial-gradient(circle at 80% 10%, rgba(246,178,79,0.08), transparent 35%);
             pointer-events: none;
         }
 
@@ -83,7 +80,7 @@
             font-size: 18px;
             display: grid;
             place-items: center;
-            box-shadow: 0 10px 24px rgba(241, 155, 40, 0.35);
+            box-shadow: 0 10px 24px rgba(241,155,40,0.35);
         }
 
         h1 {
@@ -135,7 +132,7 @@
         .chip.active {
             background: linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 100%);
             color: #0f1c2d;
-            box-shadow: 0 10px 24px rgba(241, 155, 40, 0.35);
+            box-shadow: 0 10px 24px rgba(241,155,40,0.35);
         }
 
         .label {
@@ -191,7 +188,7 @@
         .pill.active {
             background: linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 100%);
             color: #0f1c2d;
-            box-shadow: 0 8px 18px rgba(241, 155, 40, 0.28);
+            box-shadow: 0 8px 18px rgba(241,155,40,0.28);
         }
 
         .upload {
@@ -215,18 +212,11 @@
         }
 
         @media (min-width: 640px) {
-            body {
-                padding: 28px;
-            }
-
-            .card {
-                max-width: 640px;
-                margin: 0 auto;
-            }
+            body { padding: 28px; }
+            .card { max-width: 640px; margin: 0 auto; }
         }
     </style>
 </head>
-
 <body>
     <div class="card">
         <div class="header">
@@ -246,8 +236,7 @@
             </div>
 
             <p class="label" style="margin-top: 14px;">Текстовый запрос</p>
-            <textarea id="prompt" placeholder="Опишите, что нужно сгенерировать..." maxlength="2000" enterkeyhint="done"
-                inputmode="text"></textarea>
+            <textarea id="prompt" placeholder="Опишите, что нужно сгенерировать..." maxlength="2000" enterkeyhint="done" inputmode="text"></textarea>
             <div class="count" id="promptCount">0/2000</div>
 
             <div class="upload" id="imgBlock" style="display:none;">
@@ -298,6 +287,14 @@
             imgInput: document.getElementById("imgInput"),
             imgPreview: document.getElementById("imgPreview"),
         };
+
+        function showError(text) {
+            if (tg) {
+                tg.showAlert(text);
+            } else {
+                alert(text);
+            }
+        }
 
         function setActive(container, target) {
             container.querySelectorAll(".chip, .pill").forEach(btn => btn.classList.remove("active"));
@@ -419,22 +416,23 @@
 
         function sendData() {
             try {
+                els.prompt.blur();
                 if (!tg) {
-                    alert("Откройте страницу через Telegram, чтобы отправить настройки.");
+                    showError("Откройте страницу через Telegram, чтобы отправить настройки.");
                     return;
                 }
                 if (!state.prompt) {
-                    tg.showAlert("Введите промт, чтобы продолжить.");
+                    showError("Введите промт, чтобы продолжить.");
                     return;
                 }
                 if (state.mode === "image2image" && state.images.length === 0) {
-                    tg.showAlert("Загрузите минимум одно изображение для режима Изображение → Изображение.");
+                    showError("Загрузите хотя бы одно изображение.");
                     return;
                 }
 
-                const userId = tg.initDataUnsafe?.user?.id;
+                const userId = tg?.initDataUnsafe?.user?.id;
                 if (!userId) {
-                    tg.showAlert("Ошибка: не удалось определить пользователя Telegram.");
+                    showError("Ошибка: не удалось определить пользователя.");
                     return;
                 }
 
@@ -445,11 +443,18 @@
                     prompt: state.prompt,
                     aspectRatio: state.aspectRatio,
                     imageSize: state.quality,
-                    images: state.images.map(({ data, mime, name }) => ({ data, mime, name })),
+                    images: state.images.map(img => ({
+                        data: img.data,
+                        mime: img.mime,
+                        name: img.name,
+                        size: img.size,
+                    })),
                 };
 
-                console.log("[Nano Banana WebApp] Sending payload:", JSON.stringify(payload));
-                tg.MainButton?.showProgress();
+                tg?.MainButton?.showProgress();
+
+                // keepalive нельзя использовать с большим телом (>64 КБ) в WebApp
+                const canUseKeepalive = state.mode === "text2image" && state.images.length === 0;
 
                 const fetchPromise = fetch("/api/nano-banana/webapp/submit", {
                     method: "POST",
@@ -457,43 +462,39 @@
                     body: JSON.stringify({
                         user_id: userId,
                         data: payload,
-                        initData: tg?.initData,
+                        initData: tg?.initData || "",
                     }),
-                    keepalive: true,
+                    keepalive: canUseKeepalive,
                 });
 
                 const timeoutPromise = new Promise((_, reject) =>
-                    setTimeout(() => reject(new Error("Время ожидания истекло")), 15000)
+                    setTimeout(() => reject(new Error("Время ожидания истекло")), 30000)
                 );
 
                 Promise.race([fetchPromise, timeoutPromise])
-                    .then((resp) => {
-                        if (resp.ok) {
+                    .then(response => {
+                        if (response.ok) {
                             console.log("[Nano Banana WebApp] Success, closing...");
                             tg.close();
                         } else {
-                            tg.MainButton?.hideProgress?.();
-                            tg.showAlert("Ошибка сервера. Попробуйте позже.");
-                            console.error("[Nano Banana WebApp] Server error", resp.status);
+                            tg?.MainButton?.hideProgress();
+                            showError("Ошибка сервера. Попробуйте позже.");
+                            console.error("Server Error:", response.status);
                         }
                     })
-                    .catch((err) => {
-                        tg.MainButton?.hideProgress?.();
-                        if (err.message.includes("Время ожидания")) {
-                            tg.showAlert("Время ожидания истекло. Попробуйте еще раз.");
+                    .catch(error => {
+                        tg?.MainButton?.hideProgress();
+                        if (error.message.includes("Время ожидания")) {
+                            showError("Время ожидания истекло. Попробуйте еще раз.");
                         } else {
-                            tg.showAlert("Ошибка сети: " + err.message);
+                            showError("Ошибка сети: " + error.message);
                         }
-                        console.error("[Nano Banana WebApp] Network error:", err);
+                        console.error("Network Error:", error);
                     });
-            } catch (e) {
-                console.error("[Nano Banana WebApp] Exception:", e);
-                if (tg) {
-                    tg.MainButton?.hideProgress?.();
-                    tg.showAlert("Критическая ошибка: " + e.message);
-                } else {
-                    alert("Не удалось отправить данные. Попробуйте ещё раз.");
-                }
+            } catch (error) {
+                tg?.MainButton?.hideProgress();
+                showError("Критическая ошибка: " + error.message);
+                console.error("[Nano Banana WebApp] Exception:", error);
             }
         }
 
@@ -559,5 +560,4 @@
         }
     </script>
 </body>
-
 </html>

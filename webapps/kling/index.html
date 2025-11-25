@@ -517,6 +517,9 @@
 
                 console.log("[Kling WebApp] Sending payload:", payload);
 
+                // keepalive ломается с крупными файлами (>64 КБ), отключаем для image2video с картинкой
+                const canUseKeepalive = state.mode !== "image2video" || !state.imageData;
+
                 // Safer fetch with simple timeout race
                 const fetchPromise = fetch('/api/kling/webapp/submit', {
                     method: 'POST',
@@ -525,11 +528,11 @@
                         user_id: userId,
                         data: payload,
                     }),
-                    keepalive: true
+                    keepalive: canUseKeepalive
                 });
 
                 const timeoutPromise = new Promise((_, reject) =>
-                    setTimeout(() => reject(new Error("Timeout")), 15000)
+                    setTimeout(() => reject(new Error("Timeout")), 30000)
                 );
 
                 Promise.race([fetchPromise, timeoutPromise])
