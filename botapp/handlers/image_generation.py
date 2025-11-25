@@ -699,10 +699,14 @@ async def _start_generation(message: Message, state: FSMContext, prompt: str):
     # Создаем запрос на генерацию через сервис
     generation_type = 'text2image'
     input_entries: List[Dict[str, Any]] = []
+    
+    logging.info(f"[_START_GENERATION] Определение generation_type: mode={mode}, inline_images count={len(inline_images)}, edit_base_id={edit_base_id}")
+    
     if mode == "edit":
         if inline_images:
             generation_type = 'image2image'
             input_entries = inline_images
+            logging.info(f"[_START_GENERATION] Установлен generation_type=image2image из inline_images, input_entries count={len(input_entries)}")
         elif not edit_base_id:
             await message.answer(
                 "Отправьте изображение для редактирования, затем текстовый промт.",
