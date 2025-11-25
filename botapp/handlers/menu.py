@@ -197,24 +197,17 @@ async def cmd_help(message: Message):
 @router.message(
     StateFilter("*"),
     ~StateFilter(BotStates.payment_enter_promocode),
+    ~StateFilter(BotStates.reference_prompt_select_model),
+    ~StateFilter(BotStates.reference_prompt_wait_reference),
+    ~StateFilter(BotStates.reference_prompt_confirm_mods),
+    ~StateFilter(BotStates.reference_prompt_wait_mods),
+    ~StateFilter(BotStates.reference_prompt_processing),
     F.text,
     ~F.text.in_(MAIN_MENU_ACTIONS),
     ~F.text.startswith("/"),
 )
 async def handle_free_text_any_state(message: Message, state: FSMContext):
     """Ответ на произвольный текст в любом состоянии, кроме ввода промокода и референс-флоу."""
-    current_state = await state.get_state()
-    skip_states = {
-        BotStates.payment_enter_promocode.state,
-        BotStates.reference_prompt_select_model.state,
-        BotStates.reference_prompt_wait_reference.state,
-        BotStates.reference_prompt_confirm_mods.state,
-        BotStates.reference_prompt_wait_mods.state,
-        BotStates.reference_prompt_processing.state,
-    }
-    if current_state in skip_states:
-        return
-
     await message.answer(
         "Пожалуйста выберите нужное действие нажав на кнопку в меню 👇",
         reply_markup=get_main_menu_keyboard(PAYMENT_URL)
