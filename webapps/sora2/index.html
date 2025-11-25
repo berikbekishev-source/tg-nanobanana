@@ -310,12 +310,14 @@
             generationType: "text2video",
             prompt: "",
             aspectRatio: "16:9",
-            duration: 8,
+            duration: Number(params.get("duration")) || 8,
             quality: "standard",
             resolution: "720p",
             imageData: null,
             imageMime: null,
             imageName: null,
+            priceLabel: "—",
+            pricePerSec: Number(params.get("price_per_sec")) || NaN,
         };
 
         const els = {
@@ -358,7 +360,8 @@
             els.promptCount.textContent = `${state.prompt.length}/2000`;
             if (tg?.MainButton) {
                 if (state.prompt.length > 0) {
-                    tg.MainButton.setText("Сгенерировать");
+                    const btnText = state.priceLabel === "—" ? "Сгенерировать" : `Сгенерировать · ${state.priceLabel}`;
+                    tg.MainButton.setText(btnText);
                     tg.MainButton.show();
                 } else {
                     tg.MainButton.hide();
@@ -555,6 +558,19 @@
                 resetImage();
             }
         });
+
+        const priceFromQuery = params.get("price");
+        if (priceFromQuery) setPriceLabel(priceFromQuery);
+        try {
+            const init = tg?.initDataUnsafe?.start_param;
+            if (init && init.startsWith("price=")) {
+                setPriceLabel(init.replace("price=", ""));
+            }
+        } catch (e) { /* ignore */ }
+        updatePrice();
+        if (state.priceLabel === "—" && !priceFromQuery) setPriceLabel("—");
+        const durationChip = els.durationGrid.querySelector(`[data-duration="${state.duration}"]`);
+        if (durationChip) setActive(els.durationGrid, durationChip);
 
         updateCounts();
         els.imgBlock.style.display = "none";

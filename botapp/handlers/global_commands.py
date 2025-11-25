@@ -4,6 +4,7 @@
 """
 from typing import List, Tuple
 from urllib.parse import quote_plus
+from decimal import Decimal
 
 from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
@@ -27,7 +28,7 @@ from botapp.keyboards import (
 )
 from botapp.models import TgUser, AIModel
 from botapp.business.balance import BalanceService
-from botapp.business.pricing import get_base_price_tokens
+from botapp.business.pricing import get_base_price_tokens, usd_to_retail_tokens
 from botapp.reference_prompt import REFERENCE_PROMPT_MODELS
 
 router = Router()
@@ -35,6 +36,25 @@ router = Router()
 # URL для Mini App
 PAYMENT_URL = getattr(settings, 'PAYMENT_MINI_APP_URL', 'https://example.com/payment')
 PUBLIC_BASE_URL = (getattr(settings, "PUBLIC_BASE_URL", None) or "").rstrip("/")
+
+
+def _format_price_label(tokens: Decimal) -> str:
+    return f"⚡{tokens.quantize(Decimal('0.01')):.2f} токенов"
+
+
+def _get_price_per_second(ai_model: AIModel) -> Decimal:
+    base = ai_model.base_cost_usd or ai_model.unit_cost_usd or Decimal("0")
+    return usd_to_retail_tokens(base)
+
+
+def _get_default_duration(ai_model: AIModel, *, fallback: int) -> int:
+    defaults = ai_model.default_params or {}
+    try:
+        return int(defaults.get("duration", fallback))
+    except (TypeError, ValueError, AttributeError):
+        return fallback
+
+
 
 
 @router.message(StateFilter("*"), F.text.in_({"🏠 Главное меню", "🏠Главное меню"}))
@@ -67,10 +87,26 @@ async def global_show_balance(message: Message, state: FSMContext):
     # Формируем сообщение с балансом и ценами
     balance_message = await sync_to_async(get_prices_info)(balance)
 
+    # Собираем ссылку на оплату сразу для кнопки WebApp
+    user_id = message.from_user.id
+    username = message.from_user.username or ""
+    public_base = getattr(settings, "PUBLIC_BASE_URL", "")
+    payment_base = getattr(settings, "PAYMENT_MINI_APP_URL", None)
+    if payment_base:
+        payment_url = payment_base
+    elif public_base:
+        payment_url = f"{public_base.rstrip('/')}/miniapp/"
+    else:
+        payment_url = "https://example.com/miniapp/"
+    payment_url_with_params = f"{payment_url}?user_id={user_id}&username={username}"
+
     # Отправляем сообщение с балансом + inline кнопка "Пополнить баланс"
     await message.answer(
         balance_message,
-        reply_markup=get_balance_keyboard(),
+        reply_markup=get_balance_keyboard(
+            payment_url_with_params,
+            fallback_url=payment_url_with_params,
+        ),
         parse_mode=None
     )
 
@@ -184,18 +220,28 @@ async def global_create_video_start(message: Message, state: FSMContext):
     if PUBLIC_BASE_URL:
         for model in models:
             if model.provider == "kling":
-                cost = await sync_to_async(get_base_price_tokens)(model)
-                price_label = f"⚡{cost:.2f} токенов"
+                price_per_sec = await sync_to_async(_get_price_per_second)(model)
+                duration_default = await sync_to_async(_get_default_duration)(model, fallback=5)
+                total_price = price_per_sec * Decimal(duration_default)
+                price_label = _format_price_label(total_price)
                 kling_webapps[model.slug] = (
                     f"{PUBLIC_BASE_URL}/kling/?"
-                    f"model={quote_plus(model.slug)}&price={quote_plus(price_label)}"
+                    f"model={quote_plus(model.slug)}"
+                    f"&price={quote_plus(price_label)}"
+                    f"&price_per_sec={price_per_sec.quantize(Decimal('0.01'))}"
+                    f"&duration={duration_default}"
                 )
             if model.provider == "veo" or model.slug.startswith("veo"):
-                cost = await sync_to_async(get_base_price_tokens)(model)
-                price_label = f"⚡{cost:.2f} токенов"
+                price_per_sec = await sync_to_async(_get_price_per_second)(model)
+                duration_default = await sync_to_async(_get_default_duration)(model, fallback=8)
+                total_price = price_per_sec * Decimal(duration_default)
+                price_label = _format_price_label(total_price)
                 veo_webapps[model.slug] = (
                     f"{PUBLIC_BASE_URL}/veo/?"
-                    f"model={quote_plus(model.slug)}&price={quote_plus(price_label)}"
+                    f"model={quote_plus(model.slug)}"
+                    f"&price={quote_plus(price_label)}"
+                    f"&price_per_sec={price_per_sec.quantize(Decimal('0.01'))}"
+                    f"&duration={duration_default}"
                 )
 
 
@@ -204,11 +250,16 @@ async def global_create_video_start(message: Message, state: FSMContext):
         for model in models:
             if model.provider != "openai" or not model.slug.startswith("sora"):
                 continue
-            cost = await sync_to_async(get_base_price_tokens)(model)
-            price_label = f"⚡{cost:.2f} токенов"
+            price_per_sec = await sync_to_async(_get_price_per_second)(model)
+            duration_default = await sync_to_async(_get_default_duration)(model, fallback=8)
+            total_price = price_per_sec * Decimal(duration_default)
+            price_label = _format_price_label(total_price)
             sora_webapps[model.slug] = (
                 f"{PUBLIC_BASE_URL}/sora2/?"
-                f"model={quote_plus(model.slug)}&price={quote_plus(price_label)}"
+                f"model={quote_plus(model.slug)}"
+                f"&price={quote_plus(price_label)}"
+                f"&price_per_sec={price_per_sec.quantize(Decimal('0.01'))}"
+                f"&duration={duration_default}"
             )
 
     # Отправляем список моделей
@@ -441,9 +492,17 @@ async def global_select_video_model(callback: CallbackQuery, state: FSMContext):
     )
 
     if model.provider == "kling":
-        price_label = f"⚡{model_cost:.2f} токенов"
+        price_per_sec = _get_price_per_second(model)
+        duration_default = _get_default_duration(model, fallback=5)
+        total_price = price_per_sec * Decimal(duration_default)
+        price_label = _format_price_label(total_price)
         base = PUBLIC_BASE_URL or "https://example.com"
-        webapp_url = f"{base}/kling/?price={quote_plus(price_label)}"
+        webapp_url = (
+            f"{base}/kling/?"
+            f"price={quote_plus(price_label)}"
+            f"&price_per_sec={price_per_sec.quantize(Decimal('0.01'))}"
+            f"&duration={duration_default}"
+        )
         try:
             await callback.answer(url=webapp_url)
         except Exception:
@@ -461,11 +520,17 @@ async def global_select_video_model(callback: CallbackQuery, state: FSMContext):
         return
 
     if model.provider == "openai" and model.slug.startswith("sora"):
-        price_label = f"⚡{model_cost:.2f} токенов"
+        price_per_sec = _get_price_per_second(model)
+        duration_default = _get_default_duration(model, fallback=8)
+        total_price = price_per_sec * Decimal(duration_default)
+        price_label = _format_price_label(total_price)
         base = PUBLIC_BASE_URL or "https://example.com"
         webapp_url = (
             f"{base}/sora2/?"
-            f"model={quote_plus(model.slug)}&price={quote_plus(price_label)}"
+            f"model={quote_plus(model.slug)}"
+            f"&price={quote_plus(price_label)}"
+            f"&price_per_sec={price_per_sec.quantize(Decimal('0.01'))}"
+            f"&duration={duration_default}"
         )
         try:
             await callback.answer(url=webapp_url)
