@@ -67,10 +67,16 @@ async def global_show_balance(message: Message, state: FSMContext):
     # Формируем сообщение с балансом и ценами
     balance_message = await sync_to_async(get_prices_info)(balance)
 
-    # Отправляем сообщение с балансом + inline кнопка "Пополнить баланс"
+    # Строим ссылку на оплату с параметрами пользователя
+    user_id = message.from_user.id
+    username = message.from_user.username or ""
+    payment_url = PAYMENT_URL if PAYMENT_URL else (f"{PUBLIC_BASE_URL}/miniapp/" if PUBLIC_BASE_URL else "https://example.com/miniapp/")
+    payment_url_with_params = f"{payment_url}?user_id={user_id}&username={username}"
+
+    # Отправляем сообщение с балансом + inline кнопка "Пополнить баланс" (WebApp)
     await message.answer(
         balance_message,
-        reply_markup=get_balance_keyboard(),
+        reply_markup=get_balance_keyboard(payment_url_with_params),
         parse_mode=None
     )
 

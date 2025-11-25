@@ -414,7 +414,7 @@ def midjourney_generate_images(
     api_key = getattr(settings, "MIDJOURNEY_KIE_API_KEY", None)
     if not api_key:
         logger.error("[MIDJOURNEY_KIE] MIDJOURNEY_KIE_API_KEY не задан")
-        raise ValueError("MIDJOURNEY_KIE_API_KEY не задан.")
+        raise ValueError("API-ключ Midjourney не задан.")
 
     base_url = getattr(settings, "MIDJOURNEY_KIE_BASE_URL", KIE_DEFAULT_BASE_URL) or KIE_DEFAULT_BASE_URL
     base_url = base_url.rstrip("/")
@@ -430,7 +430,7 @@ def midjourney_generate_images(
 
     model_name = text_model if generation_type != "image2image" else image_model
     if not model_name:
-        raise ValueError("Не задана модель Midjourney (MIDJOURNEY_KIE_TEXT_MODEL/MIDJOURNEY_KIE_IMAGE_MODEL).")
+        raise ValueError("Не задана модель Midjourney.")
 
     results: List[bytes] = []
     for _ in range(quantity):
@@ -464,12 +464,12 @@ def midjourney_generate_images(
 
         if create_resp.get("code") != 200:
             logger.error(f"[MIDJOURNEY_KIE] Ошибка создания задачи: {create_resp}")
-            raise ValueError(f"Midjourney (KIE) createTask error: {create_resp}")
+            raise ValueError(f"Midjourney: ошибка создания задачи: {create_resp}")
         data = create_resp.get("data") or {}
         task_id = data.get("taskId")
         if not task_id:
             logger.error("[MIDJOURNEY_KIE] API не вернул идентификатор задачи")
-            raise ValueError("Midjourney (KIE) не вернул идентификатор задачи.")
+            raise ValueError("Midjourney не вернул идентификатор задачи.")
 
         logger.info(f"[MIDJOURNEY_KIE] Задача создана: task_id={task_id}")
 
@@ -484,7 +484,7 @@ def midjourney_generate_images(
         )
         urls = _kie_extract_result_urls(job_data)
         if not urls:
-            raise ValueError("Midjourney (KIE) не вернул ссылки на изображения.")
+            raise ValueError("Midjourney не вернул ссылки на изображения.")
 
         added = False
         for url in urls:
@@ -496,7 +496,7 @@ def midjourney_generate_images(
             added = True
 
         if not added:
-            raise ValueError("Midjourney (KIE) не удалось загрузить изображения по ссылкам.")
+            raise ValueError("Midjourney не удалось загрузить изображения по ссылкам.")
 
     return results
 
@@ -698,14 +698,14 @@ def _kie_api_request(
             response.raise_for_status()
     except httpx.HTTPStatusError as exc:  # type: ignore[attr-defined]
         detail = _format_kie_error(exc.response)
-        raise ValueError(f"KIE.AI error: {detail}") from exc
+        raise ValueError(f"Сервис Midjourney вернул ошибку: {detail}") from exc
     except httpx.HTTPError as exc:  # type: ignore[attr-defined]
-        raise ValueError(f"Ошибка обращения к KIE.AI: {exc}") from exc
+        raise ValueError(f"Ошибка обращения к сервису Midjourney: {exc}") from exc
 
     try:
         return response.json()
     except ValueError as exc:  # pragma: no cover
-        raise ValueError(f"KIE.AI вернул некорректный JSON: {response.text}") from exc
+        raise ValueError(f"Сервис Midjourney вернул некорректный ответ: {response.text}") from exc
 
 
 def _kie_poll_task(
@@ -729,24 +729,24 @@ def _kie_poll_task(
             timeout=timeout,
         )
         if response.get("code") != 200:
-            raise ValueError(f"KIE.AI recordInfo error: {response}")
+            raise ValueError(f"Midjourney: ошибка статуса задачи: {response}")
         data = response.get("data") or {}
         if "state" in data:
             state = (data.get("state") or "").lower()
             if state == "success":
                 return data
             if state == "fail":
-                fail_msg = data.get("failMsg") or data.get("msg") or "KIE.AI task failed."
-                raise ValueError(f"Задача KIE.AI завершилась с ошибкой: {fail_msg}")
+                fail_msg = data.get("failMsg") or data.get("msg") or "Задача Midjourney завершилась с ошибкой."
+                raise ValueError(f"Задача Midjourney завершилась с ошибкой: {fail_msg}")
         elif "successFlag" in data:
             flag = data.get("successFlag")
             if flag == 1:
                 return data
             if flag in (2, 3):
-                fail_msg = data.get("errorMessage") or data.get("msg") or "KIE.AI task failed."
-                raise ValueError(f"Задача KIE.AI завершилась с ошибкой: {fail_msg}")
+                fail_msg = data.get("errorMessage") or data.get("msg") or "Задача Midjourney завершилась с ошибкой."
+                raise ValueError(f"Задача Midjourney завершилась с ошибкой: {fail_msg}")
         if time.monotonic() - started > poll_timeout:
-            raise ValueError("Ожидание результата KIE.AI превысило установленный таймаут.")
+            raise ValueError("Ожидание результата Midjourney превысило установленный таймаут.")
         time.sleep(max(1, poll_interval))
 
 
