@@ -128,7 +128,7 @@ def _collect_reference_payload(message: Message) -> Optional[ReferenceInputPaylo
     return None
 
 
-# Обработчик кнопки "Промт по рефференсу" перенесен в global_commands.py
+# Обработчик кнопки "Промт по референсу" перенесен в global_commands.py
 # чтобы работать из любого состояния
 
 
@@ -154,7 +154,7 @@ async def prompt_by_reference_select_model(callback: CallbackQuery, state: FSMCo
     await state.update_data(reference_prompt_model=model.slug)
 
     await callback.message.answer(
-        "Отправьте ссылку на рефференс или загрузите в чат видео/изображение и я создам промт для генерации точно такого же видео",
+        "Отправьте ссылку на референс или загрузите в чат видео/изображение и я создам промт для генерации точно такого же видео",
         reply_markup=get_cancel_keyboard(),
     )
 
@@ -222,7 +222,7 @@ async def _start_prompt_generation(message: Message, state: FSMContext, modifica
     reference_payload = ReferenceInputPayload.from_state(payload_data)
 
     await message.answer(
-        "Создаю промт для генерация видео по указанному рефференсу, ожидайте пару минут ⏳",
+        "Создаю промт для генерация видео по указанному референсу, ожидайте пару минут ⏳",
         reply_markup=get_cancel_keyboard(),
     )
     await state.set_state(BotStates.reference_prompt_processing)

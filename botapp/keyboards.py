@@ -48,7 +48,7 @@ def get_main_menu_keyboard(payment_url: str) -> ReplyKeyboardMarkup:
                 )
             ],
             [
-                KeyboardButton(text="📲Промт по рефференсу"),
+                KeyboardButton(text="📲 Промт по референсу"),
             ],
             [
                 KeyboardButton(text="🏠Главное меню"),
