@@ -178,9 +178,13 @@ async def handle_midjourney_webapp_data(message: Message, state: FSMContext):
             num = int(round(num / step) * step)
         return num
 
+    aspect_ratio_value = payload.get("aspectRatio") or "1:1"
+
     midjourney_params = {
         "speed": payload.get("speed") or "fast",
-        "aspectRatio": payload.get("aspectRatio") or "1:1",
+        # Дублируем ключ в camelCase и snake_case, чтобы перекрыть дефолт модели (aspect_ratio=1:1)
+        "aspectRatio": aspect_ratio_value,
+        "aspect_ratio": aspect_ratio_value,
         "version": str(payload.get("version") or "7"),
         "stylization": normalize_int(payload.get("stylization"), 200, 0, 1000, 10),
         "weirdness": normalize_int(payload.get("weirdness"), 0, 0, 3000, 50),
