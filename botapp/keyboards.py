@@ -219,7 +219,7 @@ def get_reference_prompt_mods_keyboard() -> InlineKeyboardMarkup:
 
 # === БАЛАНС ===
 
-def get_balance_keyboard() -> InlineKeyboardMarkup:
+def get_balance_keyboard(payment_url: str) -> InlineKeyboardMarkup:
     """
     Клавиатура для раздела баланса
     Показывается после нажатия "Мой баланс (цены)"
@@ -227,8 +227,8 @@ def get_balance_keyboard() -> InlineKeyboardMarkup:
     """
     builder = InlineKeyboardBuilder()
 
-    # Кнопка пополнить баланс в сообщении о балансе
-    builder.button(text="💳 Пополнить баланс", callback_data="deposit")
+    # Кнопка пополнить баланс сразу открывает Mini App
+    builder.button(text="💳 Пополнить баланс", web_app=WebAppInfo(url=payment_url))
     builder.button(text="🎁 Ввести промокод", callback_data="enter_promocode")
     builder.adjust(1)
 
