@@ -329,7 +329,7 @@
 
             <div class="upload" id="uploadBlock" style="display:none;">
                 <p class="label" style="margin:0 0 6px;">Загрузите изображение (JPG/PNG/WebP, до 10 МБ)</p>
-                <input type="file" id="imgInput" accept="image/png,image/jpeg,image/webp">
+                <input type="file" id="imgInput" accept="image/*">
                 <div class="preview" id="imgPreview">Файл не выбран</div>
             </div>
         </div>
@@ -590,39 +590,47 @@
         }
 
         els.imgInput.addEventListener("change", (e) => {
-            const file = e.target.files?.[0];
-            if (!file) {
-                resetImage();
-                return;
-            }
-            if (!["image/png", "image/jpeg", "image/webp"].includes(file.type)) {
-                setError("Поддерживаются JPG, PNG или WebP.");
-                resetImage();
-                return;
-            }
-            if (file.size > MAX_IMAGE_SIZE) {
-                setError("Изображение слишком большое (макс 10 МБ).");
-                resetImage();
-                return;
-            }
-            const reader = new FileReader();
-            reader.onload = () => {
-                const result = reader.result;
-                if (typeof result === "string") {
-                    const base64 = result.split(",")[1] || result;
-                    state.imageData = base64;
-                    state.imageMime = file.type;
-                    state.imageName = file.name;
-                    const sizeKb = (file.size / 1024).toFixed(1);
-                    els.imgPreview.textContent = `${file.name} · ${sizeKb} КБ`;
-                    setError("");
+            try {
+                const file = e.target.files?.[0];
+                if (!file) {
+                    resetImage();
+                    return;
                 }
-            };
-            reader.onerror = () => {
-                setError("Не удалось прочитать файл.");
+                // Relaxed validation: allow any image type
+                if (!file.type.startsWith("image/")) {
+                    setError("Пожалуйста, выберите изображение.");
+                    resetImage();
+                    return;
+                }
+                if (file.size > MAX_IMAGE_SIZE) {
+                    setError("Изображение слишком большое (макс 10 МБ).");
+                    resetImage();
+                    return;
+                }
+                const reader = new FileReader();
+                reader.onload = () => {
+                    const result = reader.result;
+                    if (typeof result === "string") {
+                        const base64 = result.split(",")[1] || result;
+                        state.imageData = base64;
+                        state.imageMime = file.type;
+                        state.imageName = file.name;
+                        const sizeKb = (file.size / 1024).toFixed(1);
+                        els.imgPreview.textContent = `${file.name} · ${sizeKb} КБ`;
+                        setError("");
+                    }
+                };
+                reader.onerror = (e) => {
+                    console.error("FileReader error:", e);
+                    setError("Не удалось прочитать файл. Попробуйте другое изображение.");
+                    resetImage();
+                };
+                reader.readAsDataURL(file);
+            } catch (err) {
+                console.error("File input error:", err);
+                setError("Ошибка при выборе файла: " + err.message);
                 resetImage();
-            };
-            reader.readAsDataURL(file);
+            }
         });
 
         const priceFromQuery = new URLSearchParams(window.location.search).get("price");
