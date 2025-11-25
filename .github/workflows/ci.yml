@@ -90,4 +90,4 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Run Tests
-        run: python manage.py test
+        run: python manage.py test --keepdb
