@@ -404,6 +404,15 @@ async def handle_gpt_image_webapp_data(message: Message, state: FSMContext):
         base = item.get("data")
         if not base:
             continue
+        # Передаем base64 как есть для _prepare_input_images
+        mime = item.get("mime") or "image/png"
+        name = item.get("name") or "image.png"
+        inline_images.append({
+            "content_base64": base,  # Уже в base64 формате
+            "mime_type": mime,
+            "file_name": name
+        })
+        # Декодируем только для валидации
         try:
             raw_bytes = base64.b64decode(base)
         except Exception as exc:
@@ -413,9 +422,6 @@ async def handle_gpt_image_webapp_data(message: Message, state: FSMContext):
                 reply_markup=get_cancel_keyboard(),
             )
             return
-        mime = item.get("mime") or "image/png"
-        name = item.get("name") or "image.png"
-        inline_images.append({"content": raw_bytes, "mime": mime, "name": name})
 
     if mode == "edit" and not inline_images:
         await message.answer(
