@@ -342,7 +342,14 @@
             aspectRatio: "9:16",
             start: { data: null, mime: null, name: null },
             end: { data: null, mime: null, name: null },
+            priceLabel: "—",
+            pricePerSec: Number(params.get("price_per_sec")) || NaN,
+            durationSeconds: Number(params.get("duration")) || 8,
         };
+
+        state.durationSeconds = Number.isFinite(state.durationSeconds) && state.durationSeconds > 0
+            ? state.durationSeconds
+            : 8;
 
         const els = {
             modeToggle: document.getElementById("modeToggle"),
@@ -380,7 +387,8 @@
             els.promptCount.textContent = `${state.prompt.length}/${MAX_PROMPT}`;
             if (tg?.MainButton) {
                 if (state.prompt.length > 0) {
-                    tg.MainButton.setText("Сгенерировать");
+                    const btnText = state.priceLabel === "—" ? "Сгенерировать" : `Сгенерировать · ${state.priceLabel}`;
+                    tg.MainButton.setText(btnText);
                     tg.MainButton.show();
                 } else {
                     tg.MainButton.hide();
@@ -579,6 +587,17 @@
         els.endInput.addEventListener("change", () =>
             handleFile(els.endInput, "end", els.endPreview, els.endThumb, els.endInfo)
         );
+
+        const priceFromQuery = params.get("price");
+        if (priceFromQuery) setPriceLabel(priceFromQuery);
+        try {
+            const init = tg?.initDataUnsafe?.start_param;
+            if (init && init.startsWith("price=")) {
+                setPriceLabel(init.replace("price=", ""));
+            }
+        } catch (e) { /* ignore */ }
+        updatePrice();
+        if (state.priceLabel === "—" && !priceFromQuery) setPriceLabel("—");
 
         updateCounts();
         toggleUploads(false);
