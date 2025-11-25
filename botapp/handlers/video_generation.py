@@ -484,20 +484,28 @@ async def _handle_kling_webapp_data_impl(message: Message, state: FSMContext, pa
     except (TypeError, ValueError):
         cfg_scale_value = 0.5
 
+    defaults = model.default_params or {}
+    allowed_aspects = _extract_allowed_aspect_ratios(model) or ["16:9", "9:16", "1:1"]
+    requested_aspect = (
+        payload.get("aspectRatio")
+        or payload.get("aspect_ratio")
+        or defaults.get("aspect_ratio")
+        or "16:9"
+    )
+    fallback_aspect = defaults.get("aspect_ratio")
+    if fallback_aspect not in allowed_aspects:
+        fallback_aspect = allowed_aspects[0]
+    aspect_ratio = requested_aspect if requested_aspect in allowed_aspects else fallback_aspect
+
     params = {
         "duration": duration_value,
         "cfg_scale": cfg_scale_value,
+        "aspect_ratio": aspect_ratio,
     }
 
-    aspect_ratio = None
     source_media = None
 
-    if generation_type == "text2video":
-        aspect_ratio = payload.get("aspectRatio") or payload.get("aspect_ratio") or "16:9"
-        if aspect_ratio not in {"16:9", "9:16", "1:1"}:
-            aspect_ratio = "16:9"
-        params["aspect_ratio"] = aspect_ratio
-    else:
+    if generation_type == "image2video":
         image_b64 = payload.get("imageData")
         if not image_b64:
             await message.answer(
