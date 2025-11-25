@@ -124,6 +124,16 @@ async def _process_promocode_activation(
     return True
 
 
+async def _ask_for_promocode(message: Message, state: FSMContext) -> None:
+    """Переводит пользователя в режим ввода промокода и выводит подсказку."""
+    await state.clear()
+    await state.set_state(BotStates.payment_enter_promocode)
+    await message.answer(
+        "Введите промокод в чат👇",
+        reply_markup=get_cancel_keyboard(),
+    )
+
+
 @router.message(StateFilter("*"), F.text == "💳 Пополнить баланс")
 async def deposit_from_menu(message: Message, state: FSMContext):
     """
@@ -330,12 +340,7 @@ async def handle_promocode(message: Message, state: FSMContext):
     """
     # Если это кнопка меню - просто переводим в состояние
     if message.text == "🎁 Ввести промокод":
-        await state.clear()
-        await state.set_state(BotStates.payment_enter_promocode)
-        await message.answer(
-            "Введите промокод в чат👇",
-            reply_markup=get_cancel_keyboard(),
-        )
+        await _ask_for_promocode(message, state)
         return
 
     # Если это сам промокод (начинается с PROMO)
@@ -366,6 +371,16 @@ async def process_promocode_input(message: Message, state: FSMContext):
     if success:
         await state.clear()
         await state.set_state(BotStates.main_menu)
+
+
+@router.callback_query(StateFilter("*"), F.data == "enter_promocode")
+async def handle_promocode_callback(callback: CallbackQuery, state: FSMContext):
+    """
+    Обработчик inline-кнопки "Ввести промокод" из раздела баланса.
+    Настраиваем поведение так же, как у кнопки в клавиатуре.
+    """
+    await callback.answer()
+    await _ask_for_promocode(callback.message, state)
 
 
 @router.callback_query(StateFilter("*"), F.data == "main_menu")
