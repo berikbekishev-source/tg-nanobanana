@@ -41,15 +41,22 @@ def _shorten_caption(text: str, limit: int = MAX_TELEGRAM_CAPTION) -> str:
     return text[: limit - 1] + "…"
 
 
-def send_telegram_photo(chat_id: int, photo_bytes: bytes, caption: str, reply_markup: Optional[Dict] = None):
+def send_telegram_photo(
+    chat_id: int,
+    photo_bytes: bytes,
+    caption: str,
+    reply_markup: Optional[Dict] = None,
+    parse_mode: Optional[str] = None,
+):
     """Отправка изображения файлом (document) в Telegram напрямую."""
     url = f"https://api.telegram.org/bot{settings.TELEGRAM_BOT_TOKEN}/sendDocument"
     files = {"document": ("image.png", photo_bytes, "image/png")}
     data = {
         "chat_id": chat_id,
         "caption": _shorten_caption(caption),
-        "parse_mode": "Markdown",
     }
+    if parse_mode:
+        data["parse_mode"] = parse_mode
     if reply_markup:
         data["reply_markup"] = json.dumps(reply_markup)
 
