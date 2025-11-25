@@ -28,6 +28,11 @@ from botapp.business.balance import BalanceService, InsufficientBalanceError
 from botapp.business.pricing import get_base_price_tokens
 from botapp.tasks import generate_image_task
 from botapp.error_tracker import ErrorTracker
+from botapp.generation_text import (
+    format_image_start_message,
+    resolve_format_and_quality,
+    resolve_image_mode_label,
+)
 
 router = Router()
 logger = logging.getLogger(__name__)
@@ -381,9 +386,6 @@ async def handle_gpt_image_webapp_data(message: Message, state: FSMContext):
 
     def normalize_size(value: Any) -> str:
         allowed = {
-            "512x512",
-            "768x1024",
-            "1024x768",
             "1024x1024",
             "1024x1536",
             "1536x1024",
@@ -663,17 +665,23 @@ async def handle_nanobanana_webapp_data(message: Message, state: FSMContext):
         await state.clear()
         return
 
+    start_message = format_image_start_message(
+        model.display_name,
+        resolve_image_mode_label(generation_type),
+        aspect_ratio,
+        image_size,
+        prompt,
+    )
+
     await message.answer(
-        "🎨 Генерация началась!\n\n"
-        f"Модель: {model.display_name}\n"
-        f"Режим: {'Текст → Изображение' if generation_type == 'text2image' else 'Изображение → Изображение'}\n"
-        f"Аспект: {aspect_ratio} · Качество: {image_size}\n"
-        f"Промт: {prompt[:120]}{'...' if len(prompt) > 120 else ''}",
+        start_message,
         reply_markup=get_main_menu_inline_keyboard(),
+        parse_mode=None,
     )
 
     generate_image_task.delay(gen_request.id)
     await state.clear()
+
 
 
 async def _start_generation(message: Message, state: FSMContext, prompt: str):
@@ -786,14 +794,31 @@ async def _start_generation(message: Message, state: FSMContext, prompt: str):
 
         logging.info(f"[_START_GENERATION] Запрос создан: request_id={gen_request.id}")
 
+        aspect_ratio_value = (
+            (generation_params or {}).get("aspect_ratio")
+            or (generation_params or {}).get("aspectRatio")
+            or (data.get("midjourney_params") or {}).get("aspect_ratio")
+            or (data.get("midjourney_params") or {}).get("aspectRatio")
+        )
+        format_value, quality_value = resolve_format_and_quality(
+            model.provider,
+            generation_params,
+            aspect_ratio=aspect_ratio_value,
+        )
+        mode_label = resolve_image_mode_label(generation_type, mode)
+        model_title = getattr(model, "display_name", None) or data.get("model_name") or model.name
+        start_message = format_image_start_message(
+            model_title,
+            mode_label,
+            format_value,
+            quality_value,
+            prompt,
+        )
+
         # Отправляем информационное сообщение с деталями
         await message.answer(
-            f"🎨 **Генерация началась!**\n\n"
-            f"Модель: {data['model_name']}\n"
-            f"Промт: {prompt[:100]}{'...' if len(prompt) > 100 else ''}\n\n"
-            f"⏳ Обычно это занимает 10-30 секунд...\n"
-            f"Я отправлю вам результат, как только он будет готов!",
-            parse_mode="Markdown",
+            start_message,
+            parse_mode=None,
             reply_markup=get_main_menu_inline_keyboard()
         )
 

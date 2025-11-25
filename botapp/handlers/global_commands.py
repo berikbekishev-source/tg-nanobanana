@@ -98,7 +98,9 @@ async def global_create_image_start(message: Message, state: FSMContext):
     
     # Получаем активные модели для изображений
     models = await sync_to_async(list)(
-        AIModel.objects.filter(type='image', is_active=True).order_by('order')
+        AIModel.objects.filter(type='image', is_active=True)
+        .exclude(slug="nano-banana")
+        .order_by('order')
     )
 
     if not models:
@@ -128,7 +130,11 @@ async def global_create_image_start(message: Message, state: FSMContext):
                     f"{PUBLIC_BASE_URL}/gpt-image/?"
                     f"model={quote_plus(model.slug)}&price={quote_plus(price_label)}"
                 )
-            if model.provider in {"gemini_vertex", "gemini"} and model.slug.startswith("nano-banana"):
+            if (
+                model.provider in {"gemini_vertex", "gemini"}
+                and model.slug.startswith("nano-banana")
+                and model.slug != "nano-banana"
+            ):
                 cost = await sync_to_async(get_base_price_tokens)(model)
                 price_label = f"⚡{cost:.2f} токенов"
                 nano_banana_webapps[model.slug] = (
