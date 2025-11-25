@@ -22,7 +22,11 @@ router = Router()
 MAIN_MENU_ACTIONS = {
     "🎨 Создать изображение",
     "🎬 Создать видео",
-    "📲Промт по рефференсу",
+    "📲 Промт по референсу",
+    "📲Промт по референсу",
+    "Промт по референсу",
+    "Промт по референсу",
+    "📲Промт по референсу",
     "💰 Мой баланс (цены)",
     "💳 Пополнить баланс",
     "🎁 Ввести промокод",
@@ -68,7 +72,7 @@ async def cmd_start(message: Message, state: FSMContext):
         "Меня зовут INTEGER и вот что я умею:\n\n"
         "🖼 Генерация картинок в NanoBanana и GPT\n\n"
         "📹 Генерация видео через Sora2, VEO 3, Kling\n\n"
-        "🔍 Промт по рефференсу. Скинь в бота ссылку на любой Reels, Shorts, TikTok и получи промт для генерации точно такого же видео!\n\n"
+        "🔍 Промт по референсу. Скинь в бота ссылку на любой Reels, Shorts, TikTok и получи промт для генерации точно такого же видео!\n\n"
         "Нажмите на кнопку в меню и выберите что хотите создать 👇"
     )
 
@@ -197,8 +201,20 @@ async def cmd_help(message: Message):
     ~F.text.in_(MAIN_MENU_ACTIONS),
     ~F.text.startswith("/"),
 )
-async def handle_free_text_any_state(message: Message):
-    """Ответ на произвольный текст в любом состоянии, кроме ввода промокода."""
+async def handle_free_text_any_state(message: Message, state: FSMContext):
+    """Ответ на произвольный текст в любом состоянии, кроме ввода промокода и референс-флоу."""
+    current_state = await state.get_state()
+    skip_states = {
+        BotStates.payment_enter_promocode.state,
+        BotStates.reference_prompt_select_model.state,
+        BotStates.reference_prompt_wait_reference.state,
+        BotStates.reference_prompt_confirm_mods.state,
+        BotStates.reference_prompt_wait_mods.state,
+        BotStates.reference_prompt_processing.state,
+    }
+    if current_state in skip_states:
+        return
+
     await message.answer(
         "Пожалуйста выберите нужное действие нажав на кнопку в меню 👇",
         reply_markup=get_main_menu_keyboard(PAYMENT_URL)
