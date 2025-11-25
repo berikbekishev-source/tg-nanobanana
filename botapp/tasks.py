@@ -1020,18 +1020,18 @@ def extend_video_task(self, request_id: int):
         req.refresh_from_db()
         charged_amount, balance_after = _extract_charge_details(req)
 
-    message = get_generation_complete_message(
-        prompt=prompt,
-        generation_type=generation_type,
-        model_name=model.display_name,
-        model_display_name=model.display_name,
-        generation_params=req.generation_params or {},
-        model_provider=model.provider,
-        duration=req.duration or int(round(combined_duration)),
-        resolution=req.video_resolution or final_resolution,
-        aspect_ratio=req.aspect_ratio or final_aspect_ratio,
-        charged_amount=charged_amount,
-        balance_after=balance_after,
+        message = get_generation_complete_message(
+            prompt=prompt,
+            generation_type=generation_type,
+            model_name=model.display_name,
+            model_display_name=model.display_name,
+            generation_params=req.generation_params or {},
+            model_provider=model.provider,
+            duration=req.duration or int(round(combined_duration)),
+            resolution=req.video_resolution or final_resolution,
+            aspect_ratio=req.aspect_ratio or final_aspect_ratio,
+            charged_amount=charged_amount,
+            balance_after=balance_after,
         )
 
         send_telegram_video(
