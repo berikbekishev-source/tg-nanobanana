@@ -394,15 +394,13 @@
             mode: "text2video",
             prompt: "",
             aspectRatio: "16:9",
-            duration: Number(params.get("duration")) || 5,
+            duration: 5,
             cfgScale: 0.5,
             imageData: null,
             imageMime: null,
             imageName: null,
             priceLabel: "—",
-            pricePerSec: Number(params.get("price_per_sec")) || NaN,
         };
-        state.duration = sanitizeDuration(state.duration);
 
         const els = {
             modeToggle: document.getElementById("modeToggle"),
@@ -647,7 +645,6 @@
             if (init && init.startsWith("price=")) setPriceLabel(init.replace("price=", ""));
         } catch (e) {/* ignore */ }
         if (state.priceLabel === "—" && !priceFromQuery) setPriceLabel("—");
-        updatePrice();
 
         updateCounts();
         switchMode("text2video");
