@@ -394,14 +394,14 @@
             mode: "text2video",
             prompt: "",
             aspectRatio: "16:9",
-            duration: 5,
+            duration: Number(params.get("duration")) || 5,
             cfgScale: 0.5,
             imageData: null,
             imageMime: null,
             imageName: null,
             priceLabel: "—",
             tokensPerSecond: null,
-            priceBaseDuration: 5,
+            priceBaseDuration: Number(params.get("price_base_duration")) || Number(params.get("duration")) || 10,
         };
 
         const els = {
