@@ -73,12 +73,6 @@
             margin-bottom: 10px;
         }
 
-        .price {
-            font-size: 13px;
-            color: var(--muted);
-            margin: 2px 0 0;
-        }
-
         .badge {
             width: 48px;
             height: 48px;
@@ -247,7 +241,6 @@
             <div>
                 <h1>Sora 2 · Видео</h1>
                 <p class="sub">Text→Video и Image→Video до 12 c, 16:9 или 9:16</p>
-                <p class="price" id="priceLabelText">Стоимость: —</p>
             </div>
         </div>
 
@@ -264,6 +257,16 @@
             <textarea id="prompt" maxlength="2000"
                 placeholder="Опишите сюжет, движение камеры, свет и звук..."></textarea>
             <div class="count" id="promptCount">0/2000</div>
+        </div>
+
+        <div id="imgBlock" class="section" style="display:none;">
+            <div class="section-title">Изображение-референс</div>
+            <div class="upload">
+                <div class="label" style="margin:0 0 6px;">PNG/JPG/WebP до 10 МБ. Подготовим к нужному размеру
+                    автоматически.</div>
+                <input type="file" id="imgInput" accept="image/png,image/jpeg,image/webp">
+                <div class="hint" id="imgPreview">Файл не выбран</div>
+            </div>
         </div>
 
         <div class="section">
@@ -285,23 +288,12 @@
             <div class="label">Качество</div>
             <div id="qualityToggle" class="chip-toggle">
                 <div class="chip active" data-quality="standard">Standard (720p)</div>
-                <div class="chip" data-quality="hd">HD (1080p)</div>
-            </div>
-        </div>
-
-        <div id="imgBlock" class="section" style="display:none;">
-            <div class="section-title">Изображение-референс</div>
-            <div class="upload">
-                <div class="label" style="margin:0 0 6px;">PNG/JPG/WebP до 10 МБ. Подготовим к нужному размеру
-                    автоматически.</div>
-                <input type="file" id="imgInput" accept="image/png,image/jpeg,image/webp">
-                <div class="hint" id="imgPreview">Файл не выбран</div>
             </div>
         </div>
 
         <div class="error" id="error"></div>
         <div class="footer">
-            • Standard/HD влияют на разрешение: 720p или 1080p.<br>
+            • Формат подстраивается под выбранное соотношение сторон.<br>
             • Sora 2 поддерживает 4/8/12 секунд. Критичные сцены описывайте в промте.
         </div>
     </div>
@@ -324,7 +316,6 @@
             imageData: null,
             imageMime: null,
             imageName: null,
-            priceLabel: "—",
         };
 
         const els = {
@@ -367,6 +358,7 @@
             els.promptCount.textContent = `${state.prompt.length}/2000`;
             if (tg?.MainButton) {
                 if (state.prompt.length > 0) {
+                    tg.MainButton.setText("Сгенерировать");
                     tg.MainButton.show();
                 } else {
                     tg.MainButton.hide();
@@ -374,21 +366,9 @@
             }
         }
 
-        function setPriceLabel(label) {
-            state.priceLabel = label || "—";
-            if (tg?.MainButton) {
-                const btnText = state.priceLabel === "—" ? "Сгенерировать" : `Сгенерировать · ${state.priceLabel}`;
-                tg.MainButton.setText(btnText);
-            }
-            const priceEl = document.getElementById("priceLabelText");
-            if (priceEl) {
-                priceEl.textContent = `Стоимость: ${state.priceLabel}`;
-            }
-        }
-
         function applyQuality(q) {
-            state.quality = q;
-            state.resolution = q === "hd" ? "1080p" : "720p";
+            state.quality = "standard";
+            state.resolution = "720p";
         }
 
 
@@ -517,7 +497,6 @@
             e.preventDefault();
             setActive(els.qualityToggle, btn);
             applyQuality(btn.dataset.quality);
-            setPriceLabel(state.priceLabel);
         });
 
         const MAX_IMAGE_SIZE = 10 * 1024 * 1024; // 10 MB
@@ -577,20 +556,6 @@
             }
         });
 
-        const priceFromQuery = params.get("price");
-        if (priceFromQuery) {
-            setPriceLabel(priceFromQuery);
-        }
-        try {
-            const init = tg?.initDataUnsafe?.start_param;
-            if (init && init.startsWith("price=")) {
-                setPriceLabel(init.replace("price=", ""));
-            }
-        } catch (e) { /* ignore */ }
-        if (state.priceLabel === "—" && !priceFromQuery) {
-            setPriceLabel("—");
-        }
-
         updateCounts();
         els.imgBlock.style.display = "none";
 
@@ -598,7 +563,6 @@
             try {
                 tg.ready();
                 tg.expand();
-                setPriceLabel(state.priceLabel);
                 if (!state.prompt) tg.MainButton.hide();
                 tg.onEvent("mainButtonClicked", sendData);
             } catch (e) { /* ignore */ }

@@ -316,7 +316,10 @@
                 <div class="chip active" data-mode="text2video">Текст → Видео</div>
                 <div class="chip" data-mode="image2video">Изображение → Видео</div>
             </div>
-            <p class="muted">Длительность ролика 5–10 секунд. Формат кадра выбирается вручную и работает для обоих режимов.</p>
+            <p class="muted">
+                Длительность ролика 5–10 секунд. Формат кадра задаётся только для текста — в Image → Video
+                берём соотношение сторон исходного изображения.
+            </p>
         </div>
 
         <div class="section">
@@ -451,7 +454,7 @@
         function switchMode(mode) {
             state.mode = mode;
             els.uploadBlock.style.display = mode === "image2video" ? "block" : "none";
-            els.formatSection.style.display = "block";
+            els.formatSection.style.display = mode === "text2video" ? "block" : "none";
         }
 
         function sanitizeDuration(value) {
@@ -495,8 +498,10 @@
                     prompt: state.prompt,
                     duration: state.duration,
                     cfgScale: state.cfgScale,
-                    aspectRatio: state.aspectRatio,
                 };
+                if (state.mode === "text2video") {
+                    payload.aspectRatio = state.aspectRatio;
+                }
                 if (state.mode === "image2video") {
                     payload.imageData = state.imageData;
                     payload.imageMime = state.imageMime;
