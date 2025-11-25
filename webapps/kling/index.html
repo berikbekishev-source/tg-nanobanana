@@ -645,7 +645,6 @@
             if (init && init.startsWith("price=")) setPriceLabel(init.replace("price=", ""));
         } catch (e) {/* ignore */ }
         if (state.priceLabel === "—" && !priceFromQuery) setPriceLabel("—");
-        updatePrice();
 
         updateCounts();
         switchMode("text2video");
