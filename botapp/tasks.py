@@ -41,15 +41,22 @@ def _shorten_caption(text: str, limit: int = MAX_TELEGRAM_CAPTION) -> str:
     return text[: limit - 1] + "…"
 
 
-def send_telegram_photo(chat_id: int, photo_bytes: bytes, caption: str, reply_markup: Optional[Dict] = None):
+def send_telegram_photo(
+    chat_id: int,
+    photo_bytes: bytes,
+    caption: str,
+    reply_markup: Optional[Dict] = None,
+    parse_mode: Optional[str] = None,
+):
     """Отправка изображения файлом (document) в Telegram напрямую."""
     url = f"https://api.telegram.org/bot{settings.TELEGRAM_BOT_TOKEN}/sendDocument"
     files = {"document": ("image.png", photo_bytes, "image/png")}
     data = {
         "chat_id": chat_id,
         "caption": _shorten_caption(caption),
-        "parse_mode": "Markdown",
     }
+    if parse_mode:
+        data["parse_mode"] = parse_mode
     if reply_markup:
         data["reply_markup"] = json.dumps(reply_markup)
 
@@ -652,6 +659,9 @@ def generate_image_task(self, request_id: int):
                     model_display_name=model.display_name,
                     quantity=quantity,
                     aspect_ratio=req.aspect_ratio or "1:1",
+                    generation_params=req.generation_params or {},
+                    model_provider=model.provider,
+                    image_mode=(req.generation_params or {}).get("image_mode"),
                     charged_amount=charged_amount,
                     balance_after=balance_after,
                 )
@@ -840,6 +850,8 @@ def generate_video_task(self, request_id: int):
             generation_type=generation_type,
             model_name=model.display_name,
             model_display_name=model.display_name,
+            generation_params=req.generation_params or {},
+            model_provider=model.provider,
             duration=req.duration or result.duration,
             resolution=req.video_resolution or result.resolution,
             aspect_ratio=req.aspect_ratio or result.aspect_ratio,
@@ -1020,6 +1032,8 @@ def extend_video_task(self, request_id: int):
             generation_type=generation_type,
             model_name=model.display_name,
             model_display_name=model.display_name,
+            generation_params=req.generation_params or {},
+            model_provider=model.provider,
             duration=req.duration or int(round(combined_duration)),
             resolution=req.video_resolution or final_resolution,
             aspect_ratio=req.aspect_ratio or final_aspect_ratio,

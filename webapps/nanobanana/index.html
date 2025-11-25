@@ -301,10 +301,15 @@
             target.classList.add("active");
         }
 
+        function getMainButtonText() {
+            return state.priceLabel === "—" ? "Сгенерировать" : `Сгенерировать · ${state.priceLabel}`;
+        }
+
         function updatePrompt() {
             state.prompt = els.prompt.value.trim();
             els.promptCount.textContent = `${state.prompt.length}/${MAX_PROMPT}`;
             if (tg?.MainButton) {
+                tg.MainButton.setText(getMainButtonText());
                 if (state.prompt.length > 0) {
                     tg.MainButton.show();
                 } else {
@@ -406,8 +411,7 @@
         function setPriceLabel(label) {
             state.priceLabel = label || "—";
             if (tg?.MainButton) {
-                const btnText = state.priceLabel === "—" ? "Сгенерировать" : `Сгенерировать · ${state.priceLabel}`;
-                tg.MainButton.setText(btnText);
+                tg.MainButton.setText(getMainButtonText());
                 if (!state.prompt) {
                     tg.MainButton.hide();
                 }
@@ -543,13 +547,16 @@
             } catch (e) {
                 /* ignore */
             }
+            if (!priceFromQuery) {
+                setPriceLabel(state.priceLabel);
+            }
         }
 
         if (tg) {
             try {
                 tg.ready();
                 tg.expand();
-                tg.MainButton.setText("Сгенерировать");
+                tg.MainButton.setText(getMainButtonText());
                 tg.MainButton.hide();
                 tg.onEvent("mainButtonClicked", sendData);
             } catch (e) {

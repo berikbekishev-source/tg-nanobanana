@@ -16,6 +16,14 @@ from botapp.business.pricing import (
     get_pricing_settings,
     usd_to_retail_tokens,
 )
+from botapp.generation_text import (
+    format_image_result_message,
+    format_video_result_message,
+    format_video_start_message,
+    resolve_format_and_quality,
+    resolve_image_mode_label,
+    resolve_video_mode_label,
+)
 
 
 # === ГЛАВНОЕ МЕНЮ ===
@@ -74,6 +82,8 @@ def get_image_models_keyboard(
 
     for model in models:
         if model.type == 'image' and model.is_active:
+            if model.slug == "nano-banana":
+                continue
             # Для Midjourney и GPT Image сразу открываем WebApp, остальные — через callback
             if model.provider == "midjourney" and midjourney_webapps.get(model.slug):
                 builder.button(
@@ -369,13 +379,23 @@ def get_prices_info(balance: Decimal) -> str:
     return "\n".join(lines)
 
 
-def get_generation_start_message() -> str:
-    """Системное сообщение перед началом генерации"""
-    return (
-        "⏳ Ожидайте, генерация началась!\n\n"
-        "Модель: {model}\n\n"
-        "Промт: {prompt}\n\n"
-        "Я отправлю вам результат, как только он будет готов!"
+def get_generation_start_message(
+    *,
+    model: str,
+    mode: Optional[str],
+    aspect_ratio: Optional[str],
+    resolution: Optional[str],
+    duration: Optional[int],
+    prompt: str,
+) -> str:
+    """Системное сообщение перед началом генерации видео."""
+    return format_video_start_message(
+        model_name=model,
+        mode_label=resolve_video_mode_label(mode or ""),
+        aspect_ratio=aspect_ratio or "—",
+        resolution=resolution or "—",
+        duration=duration,
+        prompt=prompt,
     )
 
 
@@ -398,53 +418,52 @@ def get_generation_complete_message(
         model_display_name: Выводимое имя модели (если нужно отличать от хэштега)
         **kwargs: Дополнительные параметры (duration, resolution, aspect_ratio и т.д.)
     """
-    tool_names = {
-        'text2image': 'text2image',
-        'image2image': 'image2image',
-        'text2video': 'text2video',
-        'image2video': 'image2video'
-    }
+    if "image" in generation_type:
+        params = kwargs.get("generation_params") or kwargs.get("params") or kwargs
+        aspect_ratio = kwargs.get("aspect_ratio")
+        if aspect_ratio is None and isinstance(params, dict):
+            aspect_ratio = params.get("aspect_ratio") or params.get("aspectRatio")
 
-    segments = [f"Ваш запрос: {prompt}"]
-    segments.append(f"Режим генерации: {tool_names.get(generation_type, generation_type)}")
+        format_value, quality_value = resolve_format_and_quality(
+            kwargs.get("model_provider") or "",
+            params,
+            aspect_ratio=aspect_ratio,
+        )
+        mode_label = resolve_image_mode_label(
+            generation_type,
+            kwargs.get("image_mode") or (params or {}).get("image_mode"),
+        )
+        charged_amount = kwargs.get("charged_amount")
+        balance_after = kwargs.get("balance_after")
+        if charged_amount is None:
+            charged_amount = Decimal("0.00")
+        if balance_after is None:
+            balance_after = Decimal("0.00")
 
-    if 'video' in generation_type:
-        duration = kwargs.get('duration')
-        if duration:
-            segments.append(f"Продолжительность: {duration} сек.")
-        aspect_ratio = kwargs.get('aspect_ratio')
-        if aspect_ratio:
-            segments.append(f"Соотношение сторон: {aspect_ratio}")
-        resolution = kwargs.get('resolution')
-        if resolution:
-            segments.append(f"Разрешение: {resolution}")
-    else:
-        quantity = kwargs.get('quantity')
-        if quantity and quantity > 1:
-            segments.append(f"Количество: {quantity}")
-        aspect_ratio = kwargs.get('aspect_ratio')
-        if aspect_ratio:
-            segments.append(f"Соотношение сторон: {aspect_ratio}")
+        return format_image_result_message(
+            model_display_name or model_name,
+            mode_label,
+            format_value,
+            quality_value,
+            prompt,
+            Decimal(charged_amount),
+            Decimal(balance_after),
+        )
 
-    segments.append(f"Модель: {model_display_name or model_name}")
+    params = kwargs.get("generation_params") or kwargs.get("params") or {}
+    aspect_ratio = kwargs.get("aspect_ratio") or params.get("aspect_ratio") or params.get("aspectRatio")
+    resolution = kwargs.get("resolution") or kwargs.get("video_resolution") or params.get("resolution")
+    duration = kwargs.get("duration") or params.get("duration") or params.get("seconds")
+    charged_amount = kwargs.get("charged_amount")
+    balance_after = kwargs.get("balance_after")
 
-    charged_amount = kwargs.get('charged_amount')
-    balance_after = kwargs.get('balance_after')
-    finance_parts = []
-    if charged_amount is not None:
-        finance_parts.append(f"Списано: ⚡{charged_amount:.2f}")
-    if balance_after is not None:
-        finance_parts.append(f"Баланс: ⚡{balance_after:.2f}")
-    if finance_parts:
-        segments.append(" ".join(finance_parts))
-
-    formatted = []
-    for seg in segments:
-        seg = seg.strip()
-        if not seg:
-            continue
-        if seg[-1] not in ".!?":
-            seg += "."
-        formatted.append(seg)
-
-    return "\n\n".join(formatted)
+    return format_video_result_message(
+        model_display_name or model_name,
+        resolve_video_mode_label(generation_type),
+        aspect_ratio or "—",
+        resolution or "—",
+        duration,
+        prompt,
+        Decimal(charged_amount or "0.00"),
+        Decimal(balance_after or "0.00"),
+    )

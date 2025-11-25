@@ -389,8 +389,12 @@ async def _handle_sora_webapp_data_impl(message: Message, state: FSMContext, pay
         return
 
     await message.answer(
-        get_generation_start_message().format(
+        get_generation_start_message(
             model=model.display_name,
+            mode=generation_type,
+            aspect_ratio=aspect_ratio,
+            resolution=resolution,
+            duration=duration_value,
             prompt=prompt,
         ),
         reply_markup=get_main_menu_inline_keyboard()
@@ -484,20 +488,28 @@ async def _handle_kling_webapp_data_impl(message: Message, state: FSMContext, pa
     except (TypeError, ValueError):
         cfg_scale_value = 0.5
 
+    defaults = model.default_params or {}
+    allowed_aspects = _extract_allowed_aspect_ratios(model) or ["16:9", "9:16", "1:1"]
+    requested_aspect = (
+        payload.get("aspectRatio")
+        or payload.get("aspect_ratio")
+        or defaults.get("aspect_ratio")
+        or "16:9"
+    )
+    fallback_aspect = defaults.get("aspect_ratio")
+    if fallback_aspect not in allowed_aspects:
+        fallback_aspect = allowed_aspects[0]
+    aspect_ratio = requested_aspect if requested_aspect in allowed_aspects else fallback_aspect
+
     params = {
         "duration": duration_value,
         "cfg_scale": cfg_scale_value,
+        "aspect_ratio": aspect_ratio,
     }
 
-    aspect_ratio = None
     source_media = None
 
-    if generation_type == "text2video":
-        aspect_ratio = payload.get("aspectRatio") or payload.get("aspect_ratio") or "16:9"
-        if aspect_ratio not in {"16:9", "9:16", "1:1"}:
-            aspect_ratio = "16:9"
-        params["aspect_ratio"] = aspect_ratio
-    else:
+    if generation_type == "image2video":
         image_b64 = payload.get("imageData")
         if not image_b64:
             await message.answer(
@@ -602,8 +614,12 @@ async def _handle_kling_webapp_data_impl(message: Message, state: FSMContext, pa
         return
 
     await message.answer(
-        get_generation_start_message().format(
+        get_generation_start_message(
             model=model.display_name,
+            mode=generation_type,
+            aspect_ratio=aspect_ratio,
+            resolution=None,
+            duration=duration_value,
             prompt=prompt,
         ),
         reply_markup=get_main_menu_inline_keyboard()
@@ -858,8 +874,12 @@ async def _handle_veo_webapp_data_impl(message: Message, state: FSMContext, payl
         return
 
     await message.answer(
-        get_generation_start_message().format(
+        get_generation_start_message(
             model=model.display_name,
+            mode=generation_type,
+            aspect_ratio=aspect_ratio,
+            resolution=resolution,
+            duration=duration,
             prompt=prompt,
         ),
         reply_markup=get_main_menu_inline_keyboard()
@@ -1341,8 +1361,12 @@ async def handle_video_prompt(message: Message, state: FSMContext):
         return
 
     await message.answer(
-        get_generation_start_message().format(
+        get_generation_start_message(
             model=model.display_name,
+            mode=generation_type,
+            aspect_ratio=selected_aspect_ratio,
+            resolution=selected_resolution,
+            duration=selected_duration,
             prompt=prompt,
         ),
         reply_markup=get_main_menu_inline_keyboard()
@@ -1556,8 +1580,12 @@ async def handle_video_extension_prompt(message: Message, state: FSMContext):
         return
 
     await message.answer(
-        get_generation_start_message().format(
+        get_generation_start_message(
             model=model.display_name if model else "—",
+            mode="image2video",
+            aspect_ratio=aspect_ratio,
+            resolution=resolution,
+            duration=8,
             prompt=text,
         ),
         reply_markup=get_main_menu_inline_keyboard()
