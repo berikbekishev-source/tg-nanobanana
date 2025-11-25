@@ -1,19 +1,25 @@
 """
 Обработчики генерации изображений
 """
+import asyncio
+import json
+import logging
+from typing import List, Dict, Any, Optional
+import base64
+from decimal import Decimal
+
 from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery
 from aiogram.fsm.context import FSMContext
-from typing import List, Dict, Any
+from aiogram.filters import StateFilter
+from asgiref.sync import sync_to_async
 
 from botapp.states import BotStates
 from botapp.keyboards import (
     get_image_models_keyboard,
-    get_back_to_menu_keyboard,
     get_model_info_message,
     get_cancel_keyboard,
     get_main_menu_inline_keyboard,
-    get_generation_complete_message,
     get_image_mode_keyboard,
 )
 from botapp.models import TgUser, AIModel, BotErrorEvent
@@ -21,124 +27,687 @@ from botapp.business.generation import GenerationService
 from botapp.business.balance import BalanceService, InsufficientBalanceError
 from botapp.business.pricing import get_base_price_tokens
 from botapp.tasks import generate_image_task
-from asgiref.sync import sync_to_async
-import uuid
 from botapp.error_tracker import ErrorTracker
+from botapp.generation_text import (
+    format_image_start_message,
+    resolve_format_and_quality,
+    resolve_image_mode_label,
+)
 
 router = Router()
+logger = logging.getLogger(__name__)
 
 
-@router.message(F.text == "🎨 Создать изображение")
-async def create_image_start(message: Message, state: FSMContext):
+# Обработчик кнопки "🎨 Создать изображение" перенесен в global_commands.py
+# чтобы работать из любого состояния
+
+# Обработчик выбора модели "img_model:" также перенесен в global_commands.py
+# чтобы работать из любого состояния
+
+
+@router.message(
+    StateFilter("*"),
+    F.web_app_data.data.contains("midjourney_settings"),
+)
+async def handle_midjourney_webapp_data(message: Message, state: FSMContext):
     """
-    Шаг 1: Выбор модели генерации изображений
+    Принимаем данные из WebApp настроек Midjourney и запускаем/готовим генерацию.
+    Поддерживает работу как с предварительно выбранной моделью, так и без неё.
     """
-    # Получаем активные модели для изображений
-    models = await sync_to_async(list)(
-        AIModel.objects.filter(type='image', is_active=True).order_by('order')
-    )
+    user_id = message.from_user.id
 
-    if not models:
-        await message.answer(
-            "😔 К сожалению, сейчас нет доступных моделей для генерации изображений.\n"
-            "Попробуйте позже.",
-            reply_markup=get_main_menu_inline_keyboard()
-        )
-        return
+    # Детальное логирование начала обработки
+    logging.info(f"[MIDJOURNEY_WEBAPP] Начало обработки данных от пользователя {user_id}")
+    print(f"[MIDJOURNEY_WEBAPP] web_app_data received from user={user_id}", flush=True)
 
-    # Отправляем список моделей с inline кнопкой меню
-    await message.answer(
-        "🎨 **Выберите модель для генерации изображений:**",
-        reply_markup=get_image_models_keyboard(models),
-        parse_mode="Markdown"
-    )
-
-    # Устанавливаем состояние выбора модели
-    await state.set_state(BotStates.image_select_model)
-
-
-@router.callback_query(F.data.startswith("img_model:"))
-async def select_image_model(callback: CallbackQuery, state: FSMContext):
-    """
-    Шаг 2: После выбора модели показываем информацию и ждем промт
-    """
-    await callback.answer()
-
-    # Получаем slug модели из callback data
-    model_slug = callback.data.split(":")[1]
-
-    # Получаем модель из БД
     try:
-        model = await sync_to_async(AIModel.objects.get)(slug=model_slug, is_active=True)
-    except AIModel.DoesNotExist:
-        await callback.message.answer(
-            "❌ Модель не найдена или недоступна.",
-            reply_markup=get_main_menu_inline_keyboard()
+        payload = json.loads(message.web_app_data.data or '{}')
+        logging.info(f"[MIDJOURNEY_WEBAPP] Получен payload: {json.dumps(payload, ensure_ascii=False)[:500]}")
+        print(f"[MIDJOURNEY_WEBAPP] payload raw: {message.web_app_data.data[:200]}", flush=True)
+    except Exception as e:
+        logging.error(f"[MIDJOURNEY_WEBAPP] Ошибка парсинга данных от {user_id}: {e}")
+        await message.answer(
+            "❌ Не удалось прочитать данные из окна настроек. Попробуйте открыть снова.",
+            reply_markup=get_cancel_keyboard(),
         )
         return
 
-    # Сохраняем выбранную модель в состояние
-    await state.update_data(selected_model=model_slug, model_id=model.id)
+    if payload.get("kind") != "midjourney_settings":
+        logging.warning(f"[MIDJOURNEY_WEBAPP] Неверный тип данных: {payload.get('kind')}")
+        return
+
+    # Получаем текущее состояние FSM
+    data = await state.get_data()
+
+    # Получаем slug модели из payload с fallback на состояние и дефолт
+    model_slug = payload.get("modelSlug") or data.get("model_slug") or data.get("selected_model") or "midjourney-v6"
+    logging.info(f"[MIDJOURNEY_WEBAPP] Model slug: {model_slug} (source: {'payload' if payload.get('modelSlug') else 'state/default'})")
+
+    # Проверяем, что не пытаемся использовать не-midjourney провайдера
+    if data and data.get("model_provider") not in {None, "midjourney"}:
+        logging.warning(f"[MIDJOURNEY_WEBAPP] Неверный провайдер: {data.get('model_provider')}")
+        await message.answer(
+            "⚠️ WebApp настройки доступны только для моделей Midjourney.",
+            reply_markup=get_main_menu_inline_keyboard(),
+        )
+        await state.clear()
+        return
+
+    # Загружаем модель по slug
+    try:
+        logging.info(f"[MIDJOURNEY_WEBAPP] Загружаем модель по slug: {model_slug}")
+        model = await sync_to_async(AIModel.objects.get)(slug=model_slug, is_active=True)
+        logging.info(f"[MIDJOURNEY_WEBAPP] Модель загружена: {model.name} (ID: {model.id})")
+    except AIModel.DoesNotExist:
+        logging.error(f"[MIDJOURNEY_WEBAPP] Модель не найдена: {model_slug}")
+        await message.answer(
+            f"⚠️ Модель {model_slug} недоступна. Выберите её заново из списка моделей.",
+            reply_markup=get_main_menu_inline_keyboard(),
+        )
+        await state.clear()
+        return
+
+    # Обновляем FSM данными модели
+    from botapp.business.pricing import get_base_price_tokens
+    cost = await sync_to_async(get_base_price_tokens)(model)
+    max_images_supported = getattr(model, "max_input_images", 0) or 0
+    if max_images_supported <= 0:
+        max_images_supported = 4
+    await state.update_data(
+        model_id=model.id,
+        model_slug=model.slug,
+        selected_model=model.name,
+        model_name=model.name,  # Добавляем для совместимости
+        model_provider=model.provider,
+        model_price=float(cost),
+        max_images=max_images_supported,
+    )
+    logging.info(f"[MIDJOURNEY_WEBAPP] FSM обновлен для модели {model.name}, цена: {cost}")
+
+    # Проверяем промт
+    prompt = (payload.get("prompt") or "").strip()
+    if not prompt:
+        logging.warning(f"[MIDJOURNEY_WEBAPP] Промт отсутствует от {user_id}")
+        await message.answer("Введите промт в окне настроек и отправьте ещё раз.", reply_markup=get_cancel_keyboard())
+        return
+
+    logging.info(f"[MIDJOURNEY_WEBAPP] Промт: {prompt[:100]}...")
 
     # Проверяем баланс пользователя
-    user = await sync_to_async(TgUser.objects.get)(chat_id=callback.from_user.id)
-    balance = await sync_to_async(BalanceService.get_balance)(user)
-    model_cost = await sync_to_async(get_base_price_tokens)(model)
+    try:
+        user = await sync_to_async(TgUser.objects.get)(chat_id=user_id)
+        balance_service = BalanceService()
+        can_generate, error_msg = await sync_to_async(balance_service.check_can_generate)(
+            user,
+            model,
+            total_cost_tokens=cost,
+        )
+        if not can_generate:
+            logging.warning(f"[MIDJOURNEY_WEBAPP] Недостаточно средств или лимит: {user_id}, ошибка: {error_msg}")
+            try:
+                current_balance = await sync_to_async(balance_service.get_balance)(user)
+            except Exception:
+                current_balance = Decimal("0.00")
 
-    if balance < model_cost:
-        await callback.message.answer(
-            f"❌ **Недостаточно токенов**\n\n"
-            f"Ваш баланс: ⚡ {balance:.2f} токенов\n"
-            f"Стоимость генерации: ⚡ {model_cost:.2f} токенов\n\n"
-            f"Необходимо пополнить баланс на ⚡ {model_cost - balance:.2f} токенов",
-            parse_mode="Markdown",
+            await message.answer(
+                f"❌ {error_msg}\n\n"
+                f"Необходимо: ⚡{cost:.2f}\n"
+                f"Ваш баланс: ⚡{current_balance:.2f}\n\n"
+                f"Пополните баланс и попробуйте снова.",
+                reply_markup=get_main_menu_inline_keyboard()
+            )
+            await state.clear()
+            return
+        logging.info(f"[MIDJOURNEY_WEBAPP] Баланс проверен: пользователь {user_id}, стоимость {cost}")
+    except Exception as e:
+        logging.error(f"[MIDJOURNEY_WEBAPP] Ошибка проверки баланса: {e}")
+        await message.answer(
+            "❌ Произошла ошибка при проверке баланса. Попробуйте позже.",
             reply_markup=get_main_menu_inline_keyboard()
         )
         await state.clear()
         return
 
-    # Сохраняем данные для генерации
+    task_type = payload.get("taskType") or "mj_txt2img"
+    image_mode = "text" if task_type == "mj_txt2img" else "edit"
+
+    logging.info(f"[MIDJOURNEY_WEBAPP] Task type: {task_type}, Image mode: {image_mode}")
+
+    def normalize_int(value, default, min_v, max_v, step=None):
+        try:
+            num = int(float(value))
+        except (TypeError, ValueError):
+            num = default
+        num = max(min_v, min(max_v, num))
+        if step and step > 0:
+            num = int(round(num / step) * step)
+        return num
+
+    aspect_ratio_value = payload.get("aspectRatio") or "1:1"
+
+    midjourney_params = {
+        "speed": payload.get("speed") or "fast",
+        # Дублируем ключ в camelCase и snake_case, чтобы перекрыть дефолт модели (aspect_ratio=1:1)
+        "aspectRatio": aspect_ratio_value,
+        "aspect_ratio": aspect_ratio_value,
+        "version": str(payload.get("version") or "7"),
+        "stylization": normalize_int(payload.get("stylization"), 200, 0, 1000, 10),
+        "weirdness": normalize_int(payload.get("weirdness"), 0, 0, 3000, 50),
+        "variety": normalize_int(payload.get("variety"), 10, 0, 100, 5),
+    }
+
+    logging.info(f"[MIDJOURNEY_WEBAPP] Параметры MJ: {midjourney_params}")
+
+    inline_images: List[Dict[str, Any]] = []
+    image_data = payload.get("imageData")
+    image_mime = payload.get("imageMime") or "image/png"
+    image_name = payload.get("imageName") or "image.png"
+
+    if task_type == "mj_img2img":
+        if image_data:
+            try:
+                # Не декодируем base64 - передаем как есть для _prepare_input_images
+                inline_images.append({
+                    "content_base64": image_data,  # Уже в base64 формате
+                    "mime_type": image_mime,
+                    "file_name": image_name
+                })
+                # Декодируем только для проверки размера
+                raw = base64.b64decode(image_data)
+                logging.info(f"[MIDJOURNEY_WEBAPP] Изображение подготовлено: {len(raw)} байт")
+            except Exception as e:
+                logging.error(f"[MIDJOURNEY_WEBAPP] Ошибка обработки изображения: {e}")
+                await message.answer("Не удалось прочитать изображение из WebApp. Загрузите файл ещё раз.", reply_markup=get_cancel_keyboard())
+                return
+        else:
+            logging.warning(f"[MIDJOURNEY_WEBAPP] Изображение отсутствует для img2img")
+            await message.answer("Для режима «Изображение → Изображение» нужно загрузить картинку в WebApp.", reply_markup=get_cancel_keyboard())
+            return
+
+    # Обновляем состояние всеми необходимыми данными
     await state.update_data(
-        model_slug=model_slug,
-        model_id=model.id,
-        model_name=model.display_name,
-        model_provider=model.provider,
-        model_price=float(model_cost),
-        max_images=model.max_input_images,
-        supports_images=model.supports_image_input,
-        image_mode=None,
+        image_mode=image_mode,
         remix_images=[],
         edit_base_id=None,
+        pending_caption=prompt,
+        midjourney_params=midjourney_params,
+        midjourney_inline_images=inline_images,
     )
 
-    info_message = (
-        get_model_info_message(model, base_price=model_cost)
-        + "\n\nРежимы:\n"
-        "• Создать из текста — промт без изображений\n"
-        "• Отредактировать — одно изображение + промт\n"
-        "• Ремикс — 2-4 изображения + промт"
+    logging.info(f"[MIDJOURNEY_WEBAPP] FSM обновлен, готов к запуску генерации")
+
+    if image_mode == "text":
+        logging.info(f"[MIDJOURNEY_WEBAPP] Запуск text2image генерации для {user_id}")
+        try:
+            await _start_generation(message, state, prompt)
+            logging.info(f"[MIDJOURNEY_WEBAPP] Генерация успешно запущена для {user_id}")
+        except Exception as e:
+            logging.error(f"[MIDJOURNEY_WEBAPP] Ошибка запуска генерации: {e}", exc_info=True)
+            await message.answer(
+                "❌ Произошла ошибка при запуске генерации. Попробуйте позже.",
+                reply_markup=get_main_menu_inline_keyboard()
+            )
+            await state.clear()
+        return
+
+    # image_mode == edit (image->image)
+    # Если изображение уже загружено через WebApp, сразу запускаем генерацию
+    if inline_images:
+        logging.info(f"[MIDJOURNEY_WEBAPP] Запуск img2img генерации с изображением из WebApp для {user_id}")
+        try:
+            await _start_generation(message, state, prompt)
+            logging.info(f"[MIDJOURNEY_WEBAPP] Генерация успешно запущена для {user_id}")
+        except Exception as e:
+            logging.error(f"[MIDJOURNEY_WEBAPP] Ошибка запуска генерации: {e}", exc_info=True)
+            await message.answer(
+                "❌ Произошла ошибка при запуске генерации. Попробуйте позже.",
+                reply_markup=get_main_menu_inline_keyboard()
+            )
+            await state.clear()
+        return
+
+    # Если изображение не было загружено через WebApp, просим загрузить через чат
+    logging.info(f"[MIDJOURNEY_WEBAPP] Режим img2img, ожидаем загрузку изображения через чат")
+    await message.answer(
+        "🖼 Отправьте изображение, я применю настройки и промт из окна Midjourney.",
+        reply_markup=get_cancel_keyboard(),
     )
-
-    await state.set_state(BotStates.image_select_mode)
-    await callback.message.answer(
-        info_message,
-        reply_markup=get_image_mode_keyboard(),
-    )
+    await state.set_state(BotStates.image_wait_prompt)
 
 
-@router.message(BotStates.image_wait_prompt, F.text)
-async def receive_image_prompt(message: Message, state: FSMContext):
+@router.message(
+    StateFilter("*"),
+    F.web_app_data.data.contains("gpt_image_settings"),
+)
+async def handle_gpt_image_webapp_data(message: Message, state: FSMContext):
     """
-    Получаем текстовый промт для генерации
+    Принимаем данные из WebApp настроек GPT Image и запускаем генерацию.
     """
+    user_id = message.from_user.id
+    logger.info(f"[GPT_IMAGE_WEBAPP] Получены данные от пользователя {user_id}")
+
+    try:
+        payload = json.loads(message.web_app_data.data or "{}")
+        logger.info(f"[GPT_IMAGE_WEBAPP] Payload: {json.dumps(payload, ensure_ascii=False)[:500]}")
+    except Exception as exc:
+        logger.error(f"[GPT_IMAGE_WEBAPP] Ошибка парсинга: {exc}")
+        await message.answer(
+            "❌ Не удалось прочитать данные из окна настроек. Попробуйте открыть снова.",
+            reply_markup=get_cancel_keyboard(),
+        )
+        return
+
+    if payload.get("kind") != "gpt_image_settings":
+        logger.warning(f"[GPT_IMAGE_WEBAPP] Неверный тип данных: {payload.get('kind')}")
+        return
+
     data = await state.get_data()
-    prompt = message.text
+    model_slug = (
+        payload.get("modelSlug")
+        or data.get("model_slug")
+        or data.get("selected_model")
+        or "gpt-image-1"
+    )
+
+    try:
+        model = await sync_to_async(AIModel.objects.get)(slug=model_slug, is_active=True)
+    except AIModel.DoesNotExist:
+        await message.answer(
+            f"⚠️ Модель {model_slug} недоступна. Выберите её заново из списка моделей.",
+            reply_markup=get_main_menu_inline_keyboard(),
+        )
+        await state.clear()
+        return
+
+    if model.provider != "openai_image":
+        await message.answer(
+            "⚠️ Этот WebApp работает только с моделью GPT Image.",
+            reply_markup=get_main_menu_inline_keyboard(),
+        )
+        await state.clear()
+        return
+
+    cost = await sync_to_async(get_base_price_tokens)(model)
+    max_images_supported = getattr(model, "max_input_images", 0) or 4
+    await state.update_data(
+        model_id=model.id,
+        model_slug=model.slug,
+        selected_model=model.slug,
+        model_name=model.display_name,
+        model_provider=model.provider,
+        model_price=float(cost),
+        max_images=max_images_supported,
+        supports_images=model.supports_image_input,
+    )
+
+    prompt = (payload.get("prompt") or "").strip()
+    if not prompt:
+        await message.answer(
+            "Введите промт в окне настроек и отправьте ещё раз.",
+            reply_markup=get_cancel_keyboard(),
+        )
+        return
+
+    # Проверка баланса
+    try:
+        user = await sync_to_async(TgUser.objects.get)(chat_id=user_id)
+        balance_service = BalanceService()
+        can_generate, error_msg = await sync_to_async(balance_service.check_can_generate)(
+            user,
+            model,
+            total_cost_tokens=cost,
+        )
+        if not can_generate:
+            try:
+                current_balance = await sync_to_async(balance_service.get_balance)(user)
+            except Exception:
+                current_balance = Decimal("0.00")
+
+            await message.answer(
+                f"❌ {error_msg}\n"
+                f"Необходимо: ⚡{cost:.2f}\n"
+                f"Ваш баланс: ⚡{current_balance:.2f}\n\n"
+                f"Пополните баланс и попробуйте снова.",
+                reply_markup=get_main_menu_inline_keyboard(),
+            )
+            await state.clear()
+            return
+    except Exception as exc:
+        logger.error(f"[GPT_IMAGE_WEBAPP] Ошибка проверки баланса: {exc}")
+        await message.answer(
+            "❌ Произошла ошибка при проверке баланса. Попробуйте позже.",
+            reply_markup=get_main_menu_inline_keyboard(),
+        )
+        await state.clear()
+        return
+
+    task_type = payload.get("taskType") or "gpt_txt2img"
+    mode = "text" if task_type == "gpt_txt2img" else "edit"
+
+    def normalize_size(value: Any) -> str:
+        allowed = {
+            "1024x1024",
+            "1024x1536",
+            "1536x1024",
+            "auto",
+        }
+        text_value = str(value or "1024x1024").lower()
+        return text_value if text_value in allowed else "1024x1024"
+
+    def normalize_quality(value: Any) -> str:
+        allowed = {"low", "medium", "high", "auto"}
+        text_value = str(value or "auto").lower()
+        return text_value if text_value in allowed else "auto"
+
+    raw_params = payload.get("params") or {}
+    gpt_params = {
+        "size": normalize_size(raw_params.get("size")),
+        "quality": normalize_quality(raw_params.get("quality")),
+    }
+
+    inline_images: List[Dict[str, Any]] = []
+    for item in payload.get("images") or []:
+        base = item.get("data")
+        if not base:
+            continue
+        # Передаем base64 как есть для _prepare_input_images
+        mime = item.get("mime") or "image/png"
+        name = item.get("name") or "image.png"
+        inline_images.append({
+            "content_base64": base,  # Уже в base64 формате
+            "mime_type": mime,
+            "file_name": name
+        })
+        # Декодируем только для валидации
+        try:
+            raw_bytes = base64.b64decode(base)
+        except Exception as exc:
+            logger.error(f"[GPT_IMAGE_WEBAPP] Ошибка декодирования изображения: {exc}")
+            await message.answer(
+                "Не удалось прочитать одно из изображений. Загрузите файл снова.",
+                reply_markup=get_cancel_keyboard(),
+            )
+            return
+
+    if mode == "edit" and not inline_images:
+        await message.answer(
+            "Для режима «Изображение → Изображение» нужно загрузить хотя бы одну картинку в WebApp.",
+            reply_markup=get_cancel_keyboard(),
+        )
+        return
+
+    if inline_images and len(inline_images) > max_images_supported:
+        inline_images = inline_images[:max_images_supported]
+
+    await state.update_data(
+        image_mode=mode,
+        remix_images=[],
+        edit_base_id=None,
+        pending_caption=prompt,
+        midjourney_inline_images=inline_images,
+        midjourney_params=gpt_params,
+        generation_params=gpt_params,
+    )
+
+    try:
+        await _start_generation(message, state, prompt)
+    except Exception as exc:
+        logger.error(f"[GPT_IMAGE_WEBAPP] Ошибка запуска генерации: {exc}", exc_info=True)
+        await message.answer(
+            "❌ Произошла ошибка при запуске генерации. Попробуйте позже.",
+            reply_markup=get_main_menu_inline_keyboard(),
+        )
+        await state.clear()
+
+
+@router.message(
+    StateFilter("*"),
+    F.web_app_data.data.contains("nano_banana_settings"),
+)
+async def handle_nanobanana_webapp_data(message: Message, state: FSMContext):
+    """
+    Принимаем данные Nano Banana WebApp (Gemini 3 Pro) и запускаем генерацию.
+    """
+    user_id = message.from_user.id
+    raw_data = message.web_app_data.data or "{}"
+
+    try:
+        payload = json.loads(raw_data)
+        if isinstance(payload, str):
+            payload = json.loads(payload)
+    except Exception:
+        await message.answer(
+            "❌ Не удалось прочитать данные из окна настроек. Откройте его и попробуйте ещё раз.",
+            reply_markup=get_cancel_keyboard(),
+        )
+        await state.clear()
+        return
+
+    if payload.get("kind") != "nano_banana_settings":
+        return
+
+    data = await state.get_data()
+    model_slug = (
+        payload.get("modelSlug")
+        or data.get("model_slug")
+        or data.get("selected_model")
+        or "nano-banana-pro"
+    )
+
+    try:
+        model = await sync_to_async(AIModel.objects.get)(slug=model_slug, is_active=True)
+    except AIModel.DoesNotExist:
+        await message.answer(
+            "Модель Nano Banana недоступна. Выберите её заново из списка моделей.",
+            reply_markup=get_main_menu_inline_keyboard(),
+        )
+        await state.clear()
+        return
+
+    if model.provider not in {"gemini_vertex", "gemini"}:
+        await message.answer(
+            "Эта WebApp работает только с Nano Banana (Gemini).",
+            reply_markup=get_main_menu_inline_keyboard(),
+        )
+        await state.clear()
+        return
+
+    prompt = (payload.get("prompt") or "").strip()
+    if not prompt:
+        await message.answer("Введите промт в окне настроек и отправьте ещё раз.", reply_markup=get_cancel_keyboard())
+        return
+    if len(prompt) > model.max_prompt_length:
+        await message.answer(
+            f"❌ Промт слишком длинный! Максимум {model.max_prompt_length} символов.",
+            reply_markup=get_cancel_keyboard(),
+        )
+        return
+
+    try:
+        user = await sync_to_async(TgUser.objects.get)(chat_id=user_id)
+    except TgUser.DoesNotExist:
+        await message.answer(
+            "Не удалось найти пользователя. Начните заново.",
+            reply_markup=get_main_menu_inline_keyboard(),
+        )
+        await state.clear()
+        return
+
+    try:
+        cost = await sync_to_async(get_base_price_tokens)(model)
+        balance_service = BalanceService()
+        can_generate, error_msg = await sync_to_async(balance_service.check_can_generate)(
+            user,
+            model,
+            total_cost_tokens=cost,
+        )
+        if not can_generate:
+            try:
+                current_balance = await sync_to_async(balance_service.get_balance)(user)
+            except Exception:
+                current_balance = Decimal("0.00")
+            await message.answer(
+                f"❌ {error_msg}\n"
+                f"Необходимо: ⚡{cost:.2f}\n"
+                f"Ваш баланс: ⚡{current_balance:.2f}\n",
+                reply_markup=get_main_menu_inline_keyboard(),
+            )
+            await state.clear()
+            return
+    except Exception as exc:
+        await message.answer(
+            "❌ Ошибка при проверке баланса. Попробуйте позже.",
+            reply_markup=get_main_menu_inline_keyboard(),
+        )
+        await ErrorTracker.alog(
+            origin=BotErrorEvent.Origin.TELEGRAM,
+            severity=BotErrorEvent.Severity.ERROR,
+            handler="handle_nanobanana_webapp_data.balance",
+            chat_id=user_id,
+            payload={"model": model.slug},
+            exc=exc,
+        )
+        await state.clear()
+        return
+
+    allowed_aspects = {"1:1", "2:3", "3:2", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9"}
+    aspect_ratio = (
+        payload.get("aspectRatio")
+        or payload.get("aspect_ratio")
+        or (model.default_params or {}).get("aspect_ratio")
+        or "1:1"
+    )
+    if aspect_ratio not in allowed_aspects:
+        aspect_ratio = "1:1"
+
+    raw_quality = (payload.get("imageSize") or payload.get("quality") or "1K").upper()
+    quality_allowed = {"1K", "2K", "4K"} if "pro" in model.slug else {"1K"}
+    image_size = raw_quality if raw_quality in quality_allowed else next(iter(quality_allowed))
+
+    generation_type_raw = (payload.get("generationType") or payload.get("taskType") or "text2image").lower()
+    generation_type = "image2image" if generation_type_raw in {"image2image", "img2img", "nano_img2img"} else "text2image"
+    image_mode = "edit" if generation_type == "image2image" else "text"
+
+    images_payload: List[Dict[str, Any]] = []
+    if generation_type == "image2image":
+        incoming = payload.get("images") or []
+        max_allowed = min(model.max_input_images or len(incoming) or 1, 8)
+        for idx, img in enumerate(incoming[:max_allowed]):
+            data_b64 = img.get("data") or img.get("base64") or img.get("content") or ""
+            if not data_b64:
+                continue
+            if "," in data_b64:
+                data_b64 = data_b64.split(",")[-1]
+            try:
+                raw_bytes = base64.b64decode(data_b64)
+            except Exception:
+                continue
+            if len(raw_bytes) > 10 * 1024 * 1024:
+                continue
+            mime = img.get("mime") or img.get("mime_type") or "image/png"
+            name = img.get("name") or img.get("file_name") or f"image_{idx + 1}.png"
+            images_payload.append(
+                {
+                    "content_base64": base64.b64encode(raw_bytes).decode(),
+                    "mime_type": mime,
+                    "file_name": name,
+                    "size": len(raw_bytes),
+                    "source": "nano_webapp",
+                }
+            )
+
+        if not images_payload:
+            await message.answer(
+                "Загрузите хотя бы одно изображение (до 8 файлов, до 10 МБ каждый).",
+                reply_markup=get_cancel_keyboard(),
+            )
+            return
+
+    params = {
+        "image_mode": image_mode,
+        "aspect_ratio": aspect_ratio,
+        "image_size": image_size,
+    }
+
+    try:
+        gen_request = await sync_to_async(GenerationService.create_generation_request)(
+            user=user,
+            ai_model=model,
+            prompt=prompt,
+            quantity=1,
+            generation_type=generation_type,
+            input_images=images_payload,
+            generation_params=params,
+            aspect_ratio=aspect_ratio,
+        )
+    except InsufficientBalanceError as exc:
+        await message.answer(str(exc), reply_markup=get_main_menu_inline_keyboard())
+        await state.clear()
+        return
+    except Exception as exc:
+        await message.answer(
+            "❌ Не удалось подготовить генерацию. Попробуйте ещё раз.",
+            reply_markup=get_main_menu_inline_keyboard(),
+        )
+        await ErrorTracker.alog(
+            origin=BotErrorEvent.Origin.TELEGRAM,
+            severity=BotErrorEvent.Severity.ERROR,
+            handler="handle_nanobanana_webapp_data.prepare",
+            chat_id=user_id,
+            payload={
+                "generation_type": generation_type,
+                "aspect_ratio": aspect_ratio,
+                "image_size": image_size,
+                "images": len(images_payload),
+            },
+            exc=exc,
+        )
+        await state.clear()
+        return
+
+    start_message = format_image_start_message(
+        model.display_name,
+        resolve_image_mode_label(generation_type),
+        aspect_ratio,
+        image_size,
+        prompt,
+    )
+
+    await message.answer(
+        start_message,
+        reply_markup=get_main_menu_inline_keyboard(),
+        parse_mode=None,
+    )
+
+    generate_image_task.delay(gen_request.id)
+    await state.clear()
+
+
+
+async def _start_generation(message: Message, state: FSMContext, prompt: str):
+    """
+    Internal helper to start generation process.
+    Used by both text prompt handler and auto-start from caption.
+    """
+    user_id = message.from_user.id
+    logging.info(f"[_START_GENERATION] Начало генерации для пользователя {user_id}, промт: {prompt[:100]}...")
+
+    data = await state.get_data()
     mode = data.get("image_mode") or "text"
     remix_images = data.get("remix_images") or []
     edit_base_id = data.get("edit_base_id")
+    inline_images = data.get("midjourney_inline_images") or []
+
+    logging.info(f"[_START_GENERATION] Режим: {mode}, remix_images: {len(remix_images)}, edit_base_id: {edit_base_id}, inline_images: {len(inline_images)}")
 
     # Проверяем длину промта
-    model = await sync_to_async(AIModel.objects.get)(id=data['model_id'])
+    try:
+        model = await sync_to_async(AIModel.objects.get)(id=data['model_id'])
+    except (AIModel.DoesNotExist, KeyError):
+        await message.answer("Ошибка: модель не найдена. Начните заново.")
+        await state.clear()
+        return
+
     if len(prompt) > model.max_prompt_length:
         await message.answer(
             f"❌ Промт слишком длинный!\n"
@@ -154,20 +723,43 @@ async def receive_image_prompt(message: Message, state: FSMContext):
     # Создаем запрос на генерацию через сервис
     generation_type = 'text2image'
     input_entries: List[Dict[str, Any]] = []
+    
+    logging.info(f"[_START_GENERATION] Определение generation_type: mode={mode}, inline_images count={len(inline_images)}, edit_base_id={edit_base_id}")
+    
     if mode == "edit":
-        if not edit_base_id:
+        if inline_images:
+            generation_type = 'image2image'
+            input_entries = inline_images
+            logging.info(f"[_START_GENERATION] Установлен generation_type=image2image из inline_images, input_entries count={len(input_entries)}")
+        elif not edit_base_id:
             await message.answer(
                 "Отправьте изображение для редактирования, затем текстовый промт.",
                 reply_markup=get_cancel_keyboard(),
             )
             return
-        generation_type = 'image2image'
-        input_entries = [
-            {"telegram_file_id": edit_base_id},
-        ]
+        else:
+            generation_type = 'image2image'
+            input_entries = [
+                {"telegram_file_id": edit_base_id},
+            ]
     elif mode == "remix":
         min_required = 2
-        max_allowed = max(min_required, min(data.get("max_images", 4), 4))
+        # Исправлено: корректная обработка max_images (0 не должен превращаться в min_required)
+        max_images = data.get("max_images", min_required)
+        if max_images is None or max_images <= 0:
+            max_images = min_required
+        max_allowed = max(min_required, max_images)
+        # Детальное логирование для диагностики
+        print(f"[START_GENERATION] Remix mode: remix_images={len(remix_images)}, "
+              f"max_allowed={max_allowed}, model_id={data.get('model_id')}, "
+              f"max_images={max_images}", flush=True)
+        print(f"[START_GENERATION] remix_images file_ids: {remix_images}", flush=True)
+        logger.info(
+            f"[HANDLER] Remix mode: remix_images={len(remix_images)}, "
+            f"max_allowed={max_allowed}, model_id={data.get('model_id')}, "
+            f"max_images={max_images}"
+        )
+        logger.info(f"[HANDLER DEBUG] remix_images file_ids: {remix_images}")
         if len(remix_images) < min_required:
             await message.answer(
                 f"Для режима «Ремикс» нужно минимум {min_required} изображений. Загрузите ещё и повторите попытку.",
@@ -179,10 +771,17 @@ async def receive_image_prompt(message: Message, state: FSMContext):
             {"telegram_file_id": file_id, "type": "subject"}
             for file_id in remix_images[:max_allowed]
         ]
+        logger.info(f"[HANDLER] Created input_entries with {len(input_entries)} images from {len(remix_images)} available")
     else:
         input_entries = []
 
     try:
+        extra_params = data.get("midjourney_params") or {}
+        generation_params = {"image_mode": mode}
+        generation_params.update(extra_params)
+
+        logging.info(f"[_START_GENERATION] Создание запроса: generation_type={generation_type}, input_entries={len(input_entries)}, params={generation_params}")
+
         gen_request = await sync_to_async(GenerationService.create_generation_request)(
             user=user,
             ai_model=model,
@@ -190,25 +789,47 @@ async def receive_image_prompt(message: Message, state: FSMContext):
             quantity=1,  # По умолчанию 1 изображение
             generation_type=generation_type,
             input_images=input_entries,
-            generation_params={"image_mode": mode},
+            generation_params=generation_params,
+        )
+
+        logging.info(f"[_START_GENERATION] Запрос создан: request_id={gen_request.id}")
+
+        aspect_ratio_value = (
+            (generation_params or {}).get("aspect_ratio")
+            or (generation_params or {}).get("aspectRatio")
+            or (data.get("midjourney_params") or {}).get("aspect_ratio")
+            or (data.get("midjourney_params") or {}).get("aspectRatio")
+        )
+        format_value, quality_value = resolve_format_and_quality(
+            model.provider,
+            generation_params,
+            aspect_ratio=aspect_ratio_value,
+        )
+        mode_label = resolve_image_mode_label(generation_type, mode)
+        model_title = getattr(model, "display_name", None) or data.get("model_name") or model.name
+        start_message = format_image_start_message(
+            model_title,
+            mode_label,
+            format_value,
+            quality_value,
+            prompt,
         )
 
         # Отправляем информационное сообщение с деталями
         await message.answer(
-            f"🎨 **Генерация началась!**\n\n"
-            f"Модель: {data['model_name']}\n"
-            f"Промт: {prompt[:100]}{'...' if len(prompt) > 100 else ''}\n\n"
-            f"⏳ Обычно это занимает 10-30 секунд...\n"
-            f"Я отправлю вам результат, как только он будет готов!",
-            parse_mode="Markdown",
+            start_message,
+            parse_mode=None,
             reply_markup=get_main_menu_inline_keyboard()
         )
 
         # Запускаем задачу генерации
-        generate_image_task.delay(gen_request.id)
+        logging.info(f"[_START_GENERATION] Запуск Celery задачи для request_id={gen_request.id}")
+        task_result = generate_image_task.delay(gen_request.id)
+        logging.info(f"[_START_GENERATION] Celery задача запущена: task_id={task_result.id}")
 
         # Очищаем состояние
         await state.clear()
+        logging.info(f"[_START_GENERATION] Состояние очищено для пользователя {user_id}")
 
     except InsufficientBalanceError as e:
         await message.answer(
@@ -225,7 +846,7 @@ async def receive_image_prompt(message: Message, state: FSMContext):
         await ErrorTracker.alog(
             origin=BotErrorEvent.Origin.TELEGRAM,
             severity=BotErrorEvent.Severity.WARNING,
-            handler="image_generation.receive_image_prompt",
+            handler="image_generation._start_generation",
             chat_id=message.chat.id,
             payload={
                 "mode": mode,
@@ -239,13 +860,23 @@ async def receive_image_prompt(message: Message, state: FSMContext):
         await state.clear()
 
 
+@router.message(BotStates.image_wait_prompt, F.text)
+async def receive_image_prompt(message: Message, state: FSMContext):
+    """
+    Получаем текстовый промт для генерации
+    """
+    await _start_generation(message, state, message.text)
+
+
 @router.message(BotStates.image_wait_prompt, F.photo)
 async def receive_image_for_prompt(message: Message, state: FSMContext):
     """
     Получаем изображения или маску в зависимости от выбранного режима.
+    Поддерживает отправку альбомов (media_group) и авто-старт при наличии подписи (caption).
     """
     data = await state.get_data()
     mode = data.get("image_mode") or "text"
+    pending_caption = data.get("pending_caption")
 
     if not data.get('supports_images'):
         await message.answer(
@@ -267,45 +898,160 @@ async def receive_image_for_prompt(message: Message, state: FSMContext):
 
     if mode == "edit":
         await state.update_data(edit_base_id=photo.file_id)
-        await message.answer(
-            "🖼️ Изображение получено. Теперь отправьте текстовый промт.",
-            reply_markup=get_cancel_keyboard(),
-        )
+        # Если есть подпись, используем её как промт сразу
+        if message.caption:
+            await _start_generation(message, state, message.caption)
+        elif pending_caption:
+            # Если вдруг был сохранен промт ранее (маловероятно для edit, но для порядка)
+            await _start_generation(message, state, pending_caption)
+        else:
+            await message.answer(
+                "🖼️ Изображение получено. Теперь отправьте текстовый промт.",
+                reply_markup=get_cancel_keyboard(),
+            )
         return
 
-    # режим remix
+    # Режим remix
     remix_images = data.get('remix_images', [])
-    if len(remix_images) >= max_images:
-        await message.answer(
-            f"❌ Уже загружено максимальное количество изображений ({max_images}). Теперь отправьте текстовый промт.",
-            reply_markup=get_cancel_keyboard(),
-        )
+    print(f"[DEBUG] Handler started, mode={mode}, existing_remix_images={len(remix_images)}", flush=True)
+    chat_id = message.chat.id
+
+    # Логирование входящего изображения
+    print(f"[REMIX INCOMING] New photo received: file_id={photo.file_id[:20]}..., "
+          f"media_group_id={message.media_group_id}, caption={bool(message.caption)}, "
+          f"current_remix_count={len(remix_images)}", flush=True)
+    logger.info(f"[REMIX INCOMING] New photo received: file_id={photo.file_id[:20]}..., "
+                f"media_group_id={message.media_group_id}, caption={bool(message.caption)}, "
+                f"current_remix_count={len(remix_images)}")
+
+    # Если есть подпись в текущем сообщении, запоминаем её в локальную переменную
+    # (но сохранять в стейт будем только в блоке обработки, чтобы избежать гонки)
+    current_caption = message.caption
+
+    # Универсальная буферизация для режима Remix
+    # Используем chat_id как ключ группировки, чтобы ловить и альбомы, и быстрые одиночные отправки
+    print(f"[DEBUG] Starting Redis buffer operations for chat_id={chat_id}", flush=True)
+    redis = state.storage.redis
+    key_images = f"remix_buffer_imgs:{chat_id}"
+    key_caption = f"remix_buffer_cap:{chat_id}"
+
+    # Сохраняем file_id в Redis-список
+    await redis.rpush(key_images, photo.file_id)
+    await redis.expire(key_images, 60)
+    logger.info(f"[REMIX_BUFFER] Added photo to Redis buffer: chat_id={chat_id}, file_id={photo.file_id[:20]}..., media_group_id={message.media_group_id}")
+
+    # Если пришла подпись - сохраняем её в Redis (перезаписываем, считаем актуальной последнюю/любую)
+    if current_caption:
+        await redis.set(key_caption, current_caption, ex=60)
+        logger.info(f"[REMIX_BUFFER] Saved caption to Redis: chat_id={chat_id}, caption_len={len(current_caption)}")
+
+    # Оптимизированная задержка:
+    # - Альбом (с подписью или без): 2.0 c — гарантированно соберёт 3+ фото, отправленных одним батчем
+    # - Одиночные фото: 0.5 c
+    if message.media_group_id:
+        delay = 2.0
+    else:
+        # Одиночное фото
+        delay = 0.5
+    logger.info(
+        f"[REMIX_BUFFER] Delay before flush: delay={delay}, media_group={bool(message.media_group_id)}, "
+        f"has_caption={bool(current_caption)}"
+    )
+    await asyncio.sleep(delay)
+
+    # Используем Lua-скрипт для атомарного получения и удаления списка
+    lua_script = """
+    local list = redis.call('LRANGE', KEYS[1], 0, -1)
+    if #list > 0 then
+        redis.call('DEL', KEYS[1])
+    end
+    return list
+    """
+    
+    try:
+        stored_images = await redis.eval(lua_script, 1, key_images)
+    except Exception as e:
+        logger.error(f"Redis eval error: {e}")
+        stored_images = []
+
+    if not stored_images:
+        # Значит другой обработчик (воркер) уже забрал данные и обрабатывает их
+        logger.info(f"[REMIX_BUFFER] No images in buffer (already processed by another worker): chat_id={chat_id}")
         return
 
-    remix_images.append(photo.file_id)
-    await state.update_data(remix_images=remix_images)
+    # Этот воркер - "победитель", он обрабатывает всю пачку
+    logger.info(f"[REMIX_BUFFER] Processing buffer: chat_id={chat_id}, stored_images_count={len(stored_images)}")
 
-    min_needed = max(2, min(max_images, 4))
-    if len(remix_images) < min_needed:
-        await message.answer(
-            f"✅ Изображение {len(remix_images)} загружено. Нужно минимум {min_needed} изображений."
-            f" Загрузите ещё или отмените операцию.",
-            reply_markup=get_cancel_keyboard(),
-        )
-    elif len(remix_images) < max_images:
-        await message.answer(
-            f"✅ Изображение {len(remix_images)} загружено. Можно добавить ещё {max_images - len(remix_images)} "
-            "или отправить текстовый промт.",
-            reply_markup=get_cancel_keyboard(),
-        )
+    # 1. Забираем caption из Redis (если был)
+    stored_caption = await redis.get(key_caption)
+    if stored_caption:
+        stored_caption = stored_caption.decode('utf-8')
+        await redis.delete(key_caption)
+        # Обновляем pending_caption, если нашли новый
+        pending_caption = stored_caption
+        logger.info(f"[REMIX_BUFFER] Got caption from Redis: caption_len={len(stored_caption)}")
+
+    # 2. Декодируем image ids
+    new_images = [img_id.decode('utf-8') if isinstance(img_id, bytes) else img_id for img_id in stored_images]
+    logger.info(f"[REMIX_BUFFER] Decoded {len(new_images)} images from Redis")
+    logger.info(f"[REMIX_BUFFER DEBUG] new_images from Redis: {new_images}")
+
+    # 3. Получаем АКТУАЛЬНЫЙ стейт заново, так как за время sleep он мог измениться (маловероятно при такой схеме, но надежнее)
+    # Но так как мы единственные кто пишет в remix_images через этот буфер, можно брать из data,
+    # но лучше перестраховаться, если вдруг были какие-то другие операции.
+    # data = await state.get_data() -> уже есть.
+    # remix_images = data.get('remix_images', []) -> уже есть.
+    # Просто добавляем.
+
+    logger.info(f"[REMIX_BUFFER DEBUG] remix_images before extend: {remix_images}")
+    remix_images.extend(new_images)
+    remix_images = list(dict.fromkeys(remix_images)) # Уник
+    logger.info(f"[REMIX_BUFFER] Updated remix_images list: count={len(remix_images)}, has_caption={bool(pending_caption)}")
+    logger.info(f"[REMIX_BUFFER DEBUG] remix_images after unique: {remix_images}")
+
+    # 4. Сохраняем обновленный список и pending_caption в стейт
+    await state.update_data(remix_images=remix_images, pending_caption=pending_caption)
+    logger.info(f"[REMIX_BUFFER] Saved to FSM state: remix_images_count={len(remix_images)}")
+    
+    # 5. Проверяем условия авто-старта
+    # Для ремикса всегда нужно минимум 2 изображения
+    min_needed = 2
+
+    print(f"[REMIX AUTO-START CHECK] remix_images={len(remix_images)}, "
+          f"min_needed={min_needed}, has_caption={bool(pending_caption)}", flush=True)
+    logger.info(f"[REMIX AUTO-START CHECK] remix_images={len(remix_images)}, "
+                f"min_needed={min_needed}, has_caption={bool(pending_caption)}")
+
+    # После сбора через Redis буфер проверяем автостарт
+    # Важно: на этом этапе мы УЖЕ собрали все изображения из буфера (после задержки)
+    # Поэтому можем запускать генерацию для альбомов с подписью
+    if len(remix_images) >= min_needed and pending_caption:
+        # Запускаем генерацию: у нас есть достаточно изображений и текст
+        print(f"[REMIX AUTO-START] Triggering generation with {len(remix_images)} images after buffer collection", flush=True)
+        logger.info(f"[REMIX AUTO-START] Triggering generation with {len(remix_images)} images after buffer collection")
+        await _start_generation(message, state, pending_caption)
+        return
+
+    # 6. Если автостарт не сработал - отправляем статус (ОДИН РАЗ на пачку)
+    # Показываем статус только если НЕТ промта или не хватает изображений
+    # НЕ показываем промежуточные статусы для альбомов с caption (они обрабатываются после задержки)
+    msg_text = ""
+    if len(remix_images) >= max_images:
+        msg_text = f"✅ Загружено {len(remix_images)} изображений (максимум). Отправьте текстовый промт."
+    elif len(remix_images) < min_needed:
+        # Для альбомов с caption не показываем "Загружено 1" - ждём сбора всех фото
+        if not (message.media_group_id and current_caption):
+            msg_text = f"✅ Загружено {len(remix_images)} изображений. Нужно минимум {min_needed}. Загрузите ещё."
     else:
-        await message.answer(
-            "✅ Достаточно изображений! Отправьте текстовый промт для запуска ремикса.",
-            reply_markup=get_cancel_keyboard(),
-        )
+        # 2 или больше изображений, но нет промта
+        msg_text = f"✅ Загружено {len(remix_images)} изображений. Можно добавить ещё или отправить промт."
+
+    if msg_text:
+        await message.answer(msg_text, reply_markup=get_cancel_keyboard())
+    return
 
 
-@router.callback_query(F.data == "main_menu")
+@router.callback_query(StateFilter("*"), F.data == "main_menu")
 async def handle_main_menu_callback(callback: CallbackQuery, state: FSMContext):
     """
     Обработчик inline кнопки "Главное меню"
@@ -326,17 +1072,25 @@ async def handle_main_menu_callback(callback: CallbackQuery, state: FSMContext):
         "Главное меню:",
         reply_markup=get_main_menu_keyboard(PAYMENT_URL)
     )
-@router.callback_query(BotStates.image_select_mode, F.data.startswith("image_mode:"))
+
+
+@router.callback_query(StateFilter("*"), F.data.startswith("image_mode:"))
 async def select_image_mode(callback: CallbackQuery, state: FSMContext):
     """Обработка выбора режима генерации изображений."""
     await callback.answer()
     mode = callback.data.split(":", maxsplit=1)[1]
 
     data = await state.get_data()
+    # Если данных нет (стерся стейт), но кнопку нажали - пытаемся восстановить или просим заново
+    if not data:
+         await callback.message.answer(
+            "⚠️ Сессия устарела. Пожалуйста, выберите модель заново.",
+            reply_markup=get_main_menu_inline_keyboard()
+        )
+         return
+         
     supports_images = data.get("supports_images", False)
     max_images = data.get("max_images", 0)
-    provider = data.get("model_provider")
-    supports_edit = provider in {"openai_image", "gemini"}
 
     if mode in {"edit", "remix"} and (not supports_images or max_images <= 0):
         await callback.message.answer(

@@ -207,6 +207,7 @@ VERTEX_PROJECT_ID = os.getenv("VERTEX_PROJECT_ID", GCP_PROJECT_ID)
 VERTEX_LOCATION = os.getenv("VERTEX_LOCATION", GCP_LOCATION or "us-central1")
 NANO_BANANA_API_KEY = os.getenv("NANO_BANANA_API_KEY")
 NANO_BANANA_GEMINI_MODEL = os.getenv("NANO_BANANA_GEMINI_MODEL")
+NANO_BANANA_PRO_MODEL = os.getenv("NANO_BANANA_PRO_MODEL", "publishers/google/models/gemini-3.0-pro-image-preview")
 
 # --- OpenAI Sora ---
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
@@ -280,6 +281,11 @@ if SENTRY_DSN:
 ERROR_ALERT_CHAT_ID = os.getenv("ERROR_ALERT_CHAT_ID") or LAVA_FALLBACK_CHAT_ID
 ERROR_ALERT_COOLDOWN = int(os.getenv("ERROR_ALERT_COOLDOWN", "300"))
 ERROR_LOG_RETENTION_DAYS = int(os.getenv("ERROR_LOG_RETENTION_DAYS", "30"))
+
+# --- Upload limits ---
+# Поднимаем лимиты для WebApp: base64 изображений может быть крупным
+DATA_UPLOAD_MAX_MEMORY_SIZE = 50 * 1024 * 1024  # 50 MB
+FILE_UPLOAD_MAX_MEMORY_SIZE = 50 * 1024 * 1024
 
 # Test comment for Railway reconnect verification (deployment test)
 # E2E test timestamp: 2025-11-18 19:40 (with Railway CLI verification)

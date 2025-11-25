@@ -91,21 +91,3 @@ jobs:
 
       - name: Run Tests
         run: python manage.py test --keepdb
-
-  # 3. Staging Smoke (После пуша в staging)
-  staging-smoke:
-    if: ${{ github.ref == 'refs/heads/staging' }}
-    needs: lint
-    runs-on: ubuntu-latest
-    steps:
-      - name: Wait for Railway deploy (Manual pause)
-        run: sleep 10 # Просто ждем старта, реальный чек делает отдельный workflow
-
-  # 4. Production Smoke (После пуша в main)
-  production-smoke:
-    if: ${{ github.ref == 'refs/heads/main' }}
-    needs: full-test
-    runs-on: ubuntu-latest
-    steps:
-      - name: Placeholder for monitor
-        run: echo "Production monitoring is handled by post-deploy-monitor workflow"

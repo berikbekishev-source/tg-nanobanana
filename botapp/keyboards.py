@@ -1,20 +1,28 @@
 """
 Клавиатуры для навигации по боту согласно ТЗ
 """
-import os
 from typing import List, Sequence, Tuple, Optional
 from decimal import Decimal
+from django.conf import settings
 from aiogram.types import (
     ReplyKeyboardMarkup, KeyboardButton,
     InlineKeyboardMarkup, InlineKeyboardButton,
     WebAppInfo
 )
-from aiogram.utils.keyboard import ReplyKeyboardBuilder, InlineKeyboardBuilder
+from aiogram.utils.keyboard import InlineKeyboardBuilder
 from botapp.models import AIModel
 from botapp.business.pricing import (
     get_base_price_tokens,
     get_pricing_settings,
     usd_to_retail_tokens,
+)
+from botapp.generation_text import (
+    format_image_result_message,
+    format_video_result_message,
+    format_video_start_message,
+    resolve_format_and_quality,
+    resolve_image_mode_label,
+    resolve_video_mode_label,
 )
 
 
@@ -22,7 +30,7 @@ from botapp.business.pricing import (
 
 def get_main_menu_keyboard(payment_url: str) -> ReplyKeyboardMarkup:
     """
-    Главное меню бота (4 кнопки согласно ТЗ)
+    Главное меню бота
     payment_url - ссылка на Mini App для оплаты
     """
     keyboard = ReplyKeyboardMarkup(
@@ -40,7 +48,16 @@ def get_main_menu_keyboard(payment_url: str) -> ReplyKeyboardMarkup:
                 )
             ],
             [
-                KeyboardButton(text="Промт по рефференсу")
+                KeyboardButton(text="📲 Промт по референсу"),
+            ],
+            [
+                KeyboardButton(text="🏠Главное меню"),
+            ],
+            [
+                KeyboardButton(text="🎁 Ввести промокод"),
+            ],
+            [
+                KeyboardButton(text="🧡 Поддержка")
             ]
         ],
         resize_keyboard=True,
@@ -49,63 +66,93 @@ def get_main_menu_keyboard(payment_url: str) -> ReplyKeyboardMarkup:
     return keyboard
 
 
-def get_back_to_menu_keyboard() -> ReplyKeyboardMarkup:
-    """Кнопка возврата в главное меню (должна быть везде)"""
-    keyboard = ReplyKeyboardMarkup(
-        keyboard=[
-            [KeyboardButton(text="🏠 Главное меню")]
-        ],
-        resize_keyboard=True
-    )
-    return keyboard
-
-
 # === ГЕНЕРАЦИЯ ИЗОБРАЖЕНИЙ ===
 
-def get_image_models_keyboard(models: List[AIModel]) -> InlineKeyboardMarkup:
+def get_image_models_keyboard(
+    models: List[AIModel],
+    midjourney_webapps: Optional[dict] = None,
+    gpt_image_webapps: Optional[dict] = None,
+    nano_banana_webapps: Optional[dict] = None,
+) -> InlineKeyboardMarkup:
     """Шаг 1: Выбор модели для изображений"""
     builder = InlineKeyboardBuilder()
+    midjourney_webapps = midjourney_webapps or {}
+    gpt_image_webapps = gpt_image_webapps or {}
+    nano_banana_webapps = nano_banana_webapps or {}
 
     for model in models:
         if model.type == 'image' and model.is_active:
-            # Показываем только название модели
-            builder.button(
-                text=model.display_name,
-                callback_data=f"img_model:{model.slug}"
-            )
+            if model.slug == "nano-banana":
+                continue
+            # Для Midjourney и GPT Image сразу открываем WebApp, остальные — через callback
+            if model.provider == "midjourney" and midjourney_webapps.get(model.slug):
+                builder.button(
+                    text=model.display_name,
+                    web_app=WebAppInfo(url=midjourney_webapps[model.slug]),
+                )
+            elif model.provider == "openai_image" and gpt_image_webapps.get(model.slug):
+                builder.button(
+                    text=model.display_name,
+                    web_app=WebAppInfo(url=gpt_image_webapps[model.slug]),
+                )
+            elif (
+                model.provider in {"gemini_vertex", "gemini"}
+                and model.slug.startswith("nano-banana")
+                and nano_banana_webapps.get(model.slug)
+            ):
+                builder.button(
+                    text=model.display_name,
+                    web_app=WebAppInfo(url=nano_banana_webapps[model.slug]),
+                )
+            else:
+                builder.button(
+                    text=model.display_name,
+                    callback_data=f"img_model:{model.slug}"
+                )
 
     builder.adjust(1)
-
-    # Добавляем кнопку возврата в главное меню
-    builder.row(InlineKeyboardButton(
-        text="🏠 Главное меню",
-        callback_data="main_menu"
-    ))
 
     return builder.as_markup()
 
 
 # === ГЕНЕРАЦИЯ ВИДЕО ===
 
-def get_video_models_keyboard(models: List[AIModel]) -> InlineKeyboardMarkup:
+def get_video_models_keyboard(
+    models: List[AIModel],
+    kling_webapps: Optional[dict] = None,
+    veo_webapps: Optional[dict] = None,
+    sora_webapps: Optional[dict] = None,
+) -> InlineKeyboardMarkup:
     """Шаг 1: Выбор модели для видео"""
     builder = InlineKeyboardBuilder()
+    kling_webapps = kling_webapps or {}
+    veo_webapps = veo_webapps or {}
+    sora_webapps = sora_webapps or {}
 
     for model in models:
         if model.type == 'video' and model.is_active:
-            # Показываем только название модели
-            builder.button(
-                text=model.display_name,
-                callback_data=f"vid_model:{model.slug}"
-            )
+            if model.provider == "kling" and kling_webapps.get(model.slug):
+                builder.button(
+                    text=model.display_name,
+                    web_app=WebAppInfo(url=kling_webapps[model.slug]),
+                )
+            elif model.provider == "veo" and veo_webapps.get(model.slug):
+                builder.button(
+                    text=model.display_name,
+                    web_app=WebAppInfo(url=veo_webapps[model.slug]),
+                )
+            elif model.provider == "openai" and sora_webapps.get(model.slug):
+                builder.button(
+                    text=model.display_name,
+                    web_app=WebAppInfo(url=sora_webapps[model.slug]),
+                )
+            else:
+                builder.button(
+                    text=model.display_name,
+                    callback_data=f"vid_model:{model.slug}"
+                )
 
     builder.adjust(1)
-
-    # Добавляем кнопку возврата в главное меню
-    builder.row(InlineKeyboardButton(
-        text="🏠 Главное меню",
-        callback_data="main_menu"
-    ))
 
     return builder.as_markup()
 
@@ -117,7 +164,6 @@ def get_video_format_keyboard() -> InlineKeyboardMarkup:
     builder.button(text="16:9 (Horizontal)", callback_data="video_format:16:9")
     builder.adjust(2)
     builder.row(InlineKeyboardButton(text="❌ Отмена", callback_data="cancel"))
-    builder.row(InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu"))
     return builder.as_markup()
 
 
@@ -131,7 +177,6 @@ def get_video_duration_keyboard(durations: Sequence[int]) -> InlineKeyboardMarku
         )
     if builder.buttons:
         builder.adjust(len(durations) if len(durations) <= 3 else 3)
-    builder.row(InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu"))
     return builder.as_markup()
 
 
@@ -140,10 +185,9 @@ def get_video_resolution_keyboard(resolutions: Sequence[str]) -> InlineKeyboardM
     builder = InlineKeyboardBuilder()
     for value in resolutions:
         label = value.upper().replace("P", "p")
-        builder.button(text=label, callback_data=f"video_resolution:{value.lower()}")
+    builder.button(text=label, callback_data=f"video_resolution:{value.lower()}")
     if builder.buttons:
         builder.adjust(len(resolutions) if len(resolutions) <= 3 else 3)
-    builder.row(InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu"))
     return builder.as_markup()
 
 
@@ -161,8 +205,6 @@ def get_reference_prompt_models_keyboard(models: Sequence[Tuple[str, str]]) -> I
 
     if builder.buttons:
         builder.adjust(1)
-
-    builder.row(InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu"))
     return builder.as_markup()
 
 
@@ -177,7 +219,7 @@ def get_reference_prompt_mods_keyboard() -> InlineKeyboardMarkup:
 
 # === БАЛАНС ===
 
-def get_balance_keyboard() -> InlineKeyboardMarkup:
+def get_balance_keyboard(payment_url: str) -> InlineKeyboardMarkup:
     """
     Клавиатура для раздела баланса
     Показывается после нажатия "Мой баланс (цены)"
@@ -185,8 +227,8 @@ def get_balance_keyboard() -> InlineKeyboardMarkup:
     """
     builder = InlineKeyboardBuilder()
 
-    # Кнопка пополнить баланс в сообщении о балансе
-    builder.button(text="💳 Пополнить баланс", callback_data="deposit")
+    # Кнопка пополнить баланс сразу открывает Mini App
+    builder.button(text="💳 Пополнить баланс", web_app=WebAppInfo(url=payment_url))
     builder.button(text="🎁 Ввести промокод", callback_data="enter_promocode")
     builder.adjust(1)
 
@@ -220,11 +262,24 @@ def get_cancel_keyboard() -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
-def get_main_menu_inline_keyboard() -> InlineKeyboardMarkup:
-    """Inline кнопка для возврата в главное меню"""
+def get_support_keyboard() -> InlineKeyboardMarkup:
+    """Кнопка для перехода в чат с админом"""
     builder = InlineKeyboardBuilder()
-    builder.button(text="🏠 Главное меню", callback_data="main_menu")
+    builder.button(
+        text="Открыть чат с админом",
+        url="https://t.me/berik_smmpro"
+    )
+    builder.adjust(1)
     return builder.as_markup()
+
+
+def get_main_menu_inline_keyboard(payment_url: Optional[str] = None) -> ReplyKeyboardMarkup:
+    """
+    Возврат в главное меню (reply клавиатура).
+    Используется там, где ранее была inline-кнопка.
+    """
+    url = payment_url or getattr(settings, "PAYMENT_MINI_APP_URL", "https://example.com/payment")
+    return get_main_menu_keyboard(url)
 
 
 def format_balance(balance: Decimal) -> str:
@@ -235,17 +290,13 @@ def format_balance(balance: Decimal) -> str:
 def get_model_info_message(model: AIModel, base_price: Optional[Decimal] = None) -> str:
     """
     Формирует сообщение с информацией о модели (Шаг 2)
-    Теперь берет данные из модели в БД вместо if-else
     """
-    description = model.short_description or model.description
     price_value = base_price if base_price is not None else get_base_price_tokens(model)
-    message = (
-        f"{model.display_name}\n"
-        f"Стоимость от ⚡{price_value:.2f} токенов\n"
-        f"{description}\n\n"
-        "Выберите режим генерации ниже."
+    return (
+        f"{model.display_name}\n\n"
+        f"Стоимость ⚡{price_value:.2f} токенов\n\n"
+        "Выберите режим генерации 👇"
     )
-    return message
 
 
 def get_image_mode_keyboard() -> InlineKeyboardMarkup:
@@ -319,12 +370,35 @@ def get_prices_info(balance: Decimal) -> str:
     return "\n".join(lines)
 
 
-def get_generation_start_message() -> str:
-    """Системное сообщение перед началом генерации"""
-    return "Приступаю к генерации, ожидайте"
+def get_generation_start_message(
+    *,
+    model: str,
+    mode: Optional[str],
+    aspect_ratio: Optional[str],
+    resolution: Optional[str],
+    duration: Optional[int],
+    prompt: str,
+) -> str:
+    """Системное сообщение перед началом генерации видео."""
+    return format_video_start_message(
+        model_name=model,
+        mode_label=resolve_video_mode_label(mode or ""),
+        aspect_ratio=aspect_ratio or "—",
+        resolution=resolution or "—",
+        duration=duration,
+        prompt=prompt,
+    )
 
 
-def get_generation_complete_message(prompt: str, generation_type: str, model_name: str, **kwargs) -> str:
+def get_generation_complete_message(
+    prompt: str,
+    generation_type: str,
+    model_name: str,
+    *,
+    model_display_name: Optional[str] = None,
+    model_hashtag: Optional[str] = None,
+    **kwargs,
+) -> str:
     """
     Системное сообщение после завершения генерации
 
@@ -332,55 +406,55 @@ def get_generation_complete_message(prompt: str, generation_type: str, model_nam
         prompt: Промт пользователя
         generation_type: Тип генерации (text2image, image2image, text2video, image2video)
         model_name: Название модели
+        model_display_name: Выводимое имя модели (если нужно отличать от хэштега)
         **kwargs: Дополнительные параметры (duration, resolution, aspect_ratio и т.д.)
     """
-    tool_names = {
-        'text2image': 'text2image',
-        'image2image': 'image2image',
-        'text2video': 'text2video',
-        'image2video': 'image2video'
-    }
+    if "image" in generation_type:
+        params = kwargs.get("generation_params") or kwargs.get("params") or kwargs
+        aspect_ratio = kwargs.get("aspect_ratio")
+        if aspect_ratio is None and isinstance(params, dict):
+            aspect_ratio = params.get("aspect_ratio") or params.get("aspectRatio")
 
-    segments = [f"Ваш запрос: {prompt}"]
-    segments.append(f"Инструмент: {tool_names.get(generation_type, generation_type)}")
+        format_value, quality_value = resolve_format_and_quality(
+            kwargs.get("model_provider") or "",
+            params,
+            aspect_ratio=aspect_ratio,
+        )
+        mode_label = resolve_image_mode_label(
+            generation_type,
+            kwargs.get("image_mode") or (params or {}).get("image_mode"),
+        )
+        charged_amount = kwargs.get("charged_amount")
+        balance_after = kwargs.get("balance_after")
+        if charged_amount is None:
+            charged_amount = Decimal("0.00")
+        if balance_after is None:
+            balance_after = Decimal("0.00")
 
-    if 'video' in generation_type:
-        duration = kwargs.get('duration')
-        if duration:
-            segments.append(f"Продолжительность: {duration} сек.")
-        aspect_ratio = kwargs.get('aspect_ratio')
-        if aspect_ratio:
-            segments.append(f"Соотношение сторон: {aspect_ratio}")
-        resolution = kwargs.get('resolution')
-        if resolution:
-            segments.append(f"Разрешение: {resolution}")
-    else:
-        quantity = kwargs.get('quantity')
-        if quantity and quantity > 1:
-            segments.append(f"Количество: {quantity}")
-        aspect_ratio = kwargs.get('aspect_ratio')
-        if aspect_ratio:
-            segments.append(f"Соотношение сторон: {aspect_ratio}")
+        return format_image_result_message(
+            model_display_name or model_name,
+            mode_label,
+            format_value,
+            quality_value,
+            prompt,
+            Decimal(charged_amount),
+            Decimal(balance_after),
+        )
 
-    hashtag = kwargs.get('model_hashtag')
-    if not hashtag:
-        safe = ''.join(ch for ch in model_name if ch.isalnum())
-        hashtag = f"#{safe.lower()}" if safe else "#model"
-    segments.append(f"Модель: {hashtag}")
+    params = kwargs.get("generation_params") or kwargs.get("params") or {}
+    aspect_ratio = kwargs.get("aspect_ratio") or params.get("aspect_ratio") or params.get("aspectRatio")
+    resolution = kwargs.get("resolution") or kwargs.get("video_resolution") or params.get("resolution")
+    duration = kwargs.get("duration") or params.get("duration") or params.get("seconds")
+    charged_amount = kwargs.get("charged_amount")
+    balance_after = kwargs.get("balance_after")
 
-    charged_amount = kwargs.get('charged_amount')
-    if charged_amount is not None:
-        segments.append(f"Списано: ⚡{charged_amount:.2f}")
-
-    balance_after = kwargs.get('balance_after')
-    if balance_after is not None:
-        segments.append(f"Баланс: ⚡{balance_after:.2f}")
-
-    formatted_segments = []
-    for seg in segments:
-        seg = seg.strip()
-        if seg and seg[-1] not in '.!?':
-            seg += '.'
-        formatted_segments.append(seg)
-
-    return ' '.join(formatted_segments)
+    return format_video_result_message(
+        model_display_name or model_name,
+        resolve_video_mode_label(generation_type),
+        aspect_ratio or "—",
+        resolution or "—",
+        duration,
+        prompt,
+        Decimal(charged_amount or "0.00"),
+        Decimal(balance_after or "0.00"),
+    )

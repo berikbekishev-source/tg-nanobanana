@@ -3,25 +3,47 @@
 """
 from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery
-from aiogram.filters import CommandStart, Command
+from aiogram.filters import CommandStart, Command, StateFilter
 from aiogram.fsm.context import FSMContext
 from django.conf import settings
 
 from botapp.states import BotStates
 from botapp.keyboards import (
     get_main_menu_keyboard,
-    get_back_to_menu_keyboard,
     get_balance_keyboard,
-    get_prices_info
+    get_prices_info,
+    get_support_keyboard,
 )
 from botapp.models import TgUser, UserSettings
 from botapp.business.balance import BalanceService
 from asgiref.sync import sync_to_async
 
 router = Router()
+MAIN_MENU_ACTIONS = {
+    "🎨 Создать изображение",
+    "🎬 Создать видео",
+    "📲 Промт по референсу",
+    "📲Промт по референсу",
+    "Промт по референсу",
+    "Промт по рефференсу",
+    "📲Промт по рефференсу",
+    "💰 Мой баланс (цены)",
+    "💳 Пополнить баланс",
+    "🎁 Ввести промокод",
+    "🧡 Поддержка",
+    "🏠Главное меню",
+    "🏠 Главное меню",
+}
 
 # URL для Mini App (будет браться из настроек)
-PAYMENT_URL = getattr(settings, 'PAYMENT_MINI_APP_URL', 'https://example.com/payment')
+_configured_payment_url = getattr(settings, 'PAYMENT_MINI_APP_URL', None)
+_public_base_url = getattr(settings, 'PUBLIC_BASE_URL', '')
+if _configured_payment_url:
+    PAYMENT_URL = _configured_payment_url
+elif _public_base_url:
+    PAYMENT_URL = f"{_public_base_url.rstrip('/')}/miniapp/"
+else:
+    PAYMENT_URL = 'https://example.com/miniapp/'
 
 
 @router.message(CommandStart())
@@ -45,14 +67,14 @@ async def cmd_start(message: Message, state: FSMContext):
     # Создаем баланс для нового пользователя
     if created:
         await sync_to_async(BalanceService.ensure_balance)(user)
-        welcome_text = (
-            f"👋 Добро пожаловать, {message.from_user.first_name}!\n\n"
-            "Я помогу вам создавать потрясающие изображения и видео с помощью AI.\n\n"
-            "🎁 Вам начислен приветственный бонус: 5 токенов!\n\n"
-            "Выберите, что хотите создать:"
-        )
-    else:
-        welcome_text = f"👋 С возвращением, {message.from_user.first_name}!\n\nЧто будем создавать сегодня?"
+    welcome_text = (
+        f"👋 Добро пожаловать, {message.from_user.first_name}!\n\n"
+        "Меня зовут INTEGER и вот что я умею:\n\n"
+        "🖼 Генерация картинок в NanoBanana и GPT\n\n"
+        "📹 Генерация видео через Sora2, VEO 3, Kling\n\n"
+        "🔍 Промт по референсу. Скинь в бота ссылку на любой Reels, Shorts, TikTok и получи промт для генерации точно такого же видео!\n\n"
+        "Нажмите на кнопку в меню и выберите что хотите создать 👇"
+    )
 
     # Отправляем приветственное сообщение с главным меню
     await message.answer(
@@ -64,51 +86,23 @@ async def cmd_start(message: Message, state: FSMContext):
     await state.set_state(BotStates.main_menu)
 
 
-@router.message(F.text == "🏠 Главное меню")
-async def back_to_main_menu(message: Message, state: FSMContext):
-    """Возврат в главное меню"""
-    await state.clear()
-    await state.set_state(BotStates.main_menu)
+# Обработчик кнопки "🏠 Главное меню" перенесен в global_commands.py
+# чтобы работать из любого состояния
 
+# Обработчик кнопки "💰 Мой баланс (цены)" перенесен в global_commands.py
+# чтобы работать из любого состояния
+
+
+@router.message(StateFilter("*"), F.text == "🧡 Поддержка")
+async def support_contact(message: Message):
+    """Контакт с админом"""
     await message.answer(
-        "Главное меню:",
-        reply_markup=get_main_menu_keyboard(PAYMENT_URL)
+        "Если нужна помощь, напишите админу. Нажмите кнопку ниже, чтобы открыть чат.",
+        reply_markup=get_support_keyboard()
     )
 
 
-@router.message(F.text == "💰 Мой баланс (цены)")
-async def show_balance(message: Message, state: FSMContext):
-    """
-    Обработчик кнопки 'Мой баланс (цены)'
-    Отправляет сообщение с текущим балансом пользователя и ценами
-    """
-    # Получаем пользователя
-    user = await sync_to_async(TgUser.objects.get)(chat_id=message.from_user.id)
-
-    # Получаем баланс пользователя
-    balance = await sync_to_async(BalanceService.get_balance)(user)
-
-    # Формируем сообщение с балансом и ценами
-    balance_message = await sync_to_async(get_prices_info)(balance)
-
-    # Отправляем сообщение с балансом + inline кнопка "Пополнить баланс"
-    await message.answer(
-        balance_message,
-        reply_markup=get_balance_keyboard(),
-        parse_mode=None
-    )
-
-    # Меняем клавиатуру на кнопку "Главное меню"
-    await message.answer(
-        "Выберите действие:",
-        reply_markup=get_back_to_menu_keyboard()
-    )
-
-    # Устанавливаем состояние просмотра баланса
-    await state.set_state(BotStates.balance_view)
-
-
-@router.callback_query(F.data == "deposit")
+@router.callback_query(StateFilter("*"), F.data == "deposit")
 async def deposit_callback(callback: CallbackQuery, state: FSMContext):
     """
     Обработчик inline кнопки "Пополнить баланс" из раздела баланса
@@ -119,7 +113,13 @@ async def deposit_callback(callback: CallbackQuery, state: FSMContext):
     # Формируем URL с параметрами пользователя
     user_id = callback.from_user.id
     username = callback.from_user.username or ""
-    payment_url_with_params = f"{PAYMENT_URL}?user_id={user_id}&username={username}"
+    configured_payment_url = PAYMENT_URL
+    if configured_payment_url:
+        payment_url = configured_payment_url
+    else:
+        public_base = getattr(settings, "PUBLIC_BASE_URL", "")
+        payment_url = f"{public_base.rstrip('/')}/miniapp/" if public_base else "https://example.com/miniapp/"
+    payment_url_with_params = f"{payment_url}?user_id={user_id}&username={username}"
 
     # Создаем inline кнопку для открытия Mini App
     from aiogram.utils.keyboard import InlineKeyboardBuilder
@@ -129,6 +129,11 @@ async def deposit_callback(callback: CallbackQuery, state: FSMContext):
     builder.button(
         text="💳 Открыть страницу оплаты",
         web_app=WebAppInfo(url=payment_url_with_params)
+    )
+    # Фолбек: обычная ссылка, если WebApp заблокирован Телеграмом
+    builder.button(
+        text="🌐 Открыть в браузере",
+        url=payment_url_with_params
     )
 
     await callback.message.answer(
@@ -143,7 +148,7 @@ async def deposit_callback(callback: CallbackQuery, state: FSMContext):
     )
 
 
-@router.callback_query(F.data == "cancel")
+@router.callback_query(StateFilter("*"), F.data == "cancel")
 async def cancel_action(callback: CallbackQuery, state: FSMContext):
     """Обработчик кнопки отмены"""
     await callback.answer("Действие отменено")
@@ -153,7 +158,7 @@ async def cancel_action(callback: CallbackQuery, state: FSMContext):
 
     # Возвращаем в главное меню
     await callback.message.answer(
-        "Главное меню:",
+        "Выберите нужное  действие нажав на кнопку в меню 👇",
         reply_markup=get_main_menu_keyboard(PAYMENT_URL)
     )
 
@@ -185,8 +190,25 @@ async def cmd_help(message: Message):
     await message.answer(help_text, parse_mode="Markdown")
 
 
-@router.message(Command("balance"))
-async def cmd_balance(message: Message, state: FSMContext):
-    """Быстрая команда для проверки баланса"""
-    # Вызываем тот же обработчик, что и для кнопки
-    await show_balance(message, state)
+# Команда /balance перенесена в global_commands.py
+# чтобы работать из любого состояния
+
+
+@router.message(
+    StateFilter("*"),
+    ~StateFilter(BotStates.payment_enter_promocode),
+    ~StateFilter(BotStates.reference_prompt_select_model),
+    ~StateFilter(BotStates.reference_prompt_wait_reference),
+    ~StateFilter(BotStates.reference_prompt_confirm_mods),
+    ~StateFilter(BotStates.reference_prompt_wait_mods),
+    ~StateFilter(BotStates.reference_prompt_processing),
+    F.text,
+    ~F.text.in_(MAIN_MENU_ACTIONS),
+    ~F.text.startswith("/"),
+)
+async def handle_free_text_any_state(message: Message, state: FSMContext):
+    """Ответ на произвольный текст в любом состоянии, кроме ввода промокода и референс-флоу."""
+    await message.answer(
+        "Пожалуйста выберите нужное действие нажав на кнопку в меню 👇",
+        reply_markup=get_main_menu_keyboard(PAYMENT_URL)
+    )

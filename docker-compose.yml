@@ -20,15 +20,6 @@ services:
     command: ["celery","-A","config.celery:app","beat","-l","INFO"]
     env_file: .env
     depends_on: [redis]
-  flower:
-    build:
-      context: .
-      dockerfile: Dockerfile.worker
-    command: ["celery","-A","config.celery:app","flower","--address=0.0.0.0","--port=5555"]
-    env_file: .env
-    ports: ["5555:5555"]
-    depends_on: [redis, web]
   redis:
     image: redis:7-alpine
-
 

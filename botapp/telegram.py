@@ -1,7 +1,17 @@
+import asyncio
+import json
+import logging
+import os
+from datetime import date, datetime
+from decimal import Decimal
+from typing import Optional
+from uuid import UUID
+
 from django.conf import settings
 from aiogram import Bot, Dispatcher
 from aiogram.fsm.storage.redis import RedisStorage
 from aiogram.types import Message
+from aiogram.exceptions import TelegramRetryAfter
 import redis.asyncio as aioredis
 
 from botapp.chat_logger import ChatLogger
@@ -63,11 +73,80 @@ Message.answer = _answer_with_logging
 
 
 _bot = LoggingBot(token=settings.TELEGRAM_BOT_TOKEN)
-_storage = RedisStorage(redis=aioredis.from_url(settings.CELERY_BROKER_URL))  # тот же Redis
+def _encode_for_json(value):
+    """Приводим несериализуемые типы к строкам, чтобы FSM не падал на Decimal/UUID/datetime."""
+    if isinstance(value, Decimal):
+        return str(value)
+    if isinstance(value, (UUID, datetime, date)):
+        return value.isoformat()
+    return str(value)
+
+
+def _json_dumps(data):
+    return json.dumps(data, ensure_ascii=False, default=_encode_for_json)
+
+
+_storage = RedisStorage(
+    redis=aioredis.from_url(settings.CELERY_BROKER_URL),  # тот же Redis
+    json_dumps=_json_dumps,
+    json_loads=json.loads,
+)  # safe JSON (Decimal/UUID/datetime → str)
 dp = Dispatcher(storage=_storage)
 dp.errors.register(aiogram_error_handler)
 
 bot = _bot  # re-export
+logger = logging.getLogger(__name__)
+
+
+def setup_webhook_on_start() -> None:
+    """Автоматическая установка вебхука при старте веб-сервиса."""
+    flag = os.getenv("AUTO_SET_WEBHOOK_ON_START", "true").lower()
+    if flag not in {"1", "true", "yes"}:
+        logger.info("Пропускаем установку вебхука: AUTO_SET_WEBHOOK_ON_START=%s", flag)
+        return
+
+    base = (settings.PUBLIC_BASE_URL or "").rstrip("/")
+    secret = settings.TG_WEBHOOK_SECRET
+
+    if not base or not secret:
+        logger.warning("Пропускаем установку вебхука: нет PUBLIC_BASE_URL или TG_WEBHOOK_SECRET")
+        return
+
+    url = f"{base}/api/telegram/webhook"
+    allowed_updates = [
+        "message",
+        "edited_message",
+        "channel_post",
+        "edited_channel_post",
+        "inline_query",
+        "chosen_inline_result",
+        "callback_query",
+        "shipping_query",
+        "pre_checkout_query",
+        "poll",
+        "poll_answer",
+        "my_chat_member",
+        "chat_member",
+        "chat_join_request",
+    ]
+
+    async def _run():
+        try:
+            await bot.set_webhook(url=url, secret_token=secret, allowed_updates=allowed_updates)
+            return True
+        except TelegramRetryAfter as exc:
+            delay: Optional[int] = getattr(exc, "retry_after", None) or 1
+            logger.warning("Telegram вернул Flood control (%s s). Повторим установку вебхука.", delay)
+            await asyncio.sleep(delay)
+            await bot.set_webhook(url=url, secret_token=secret, allowed_updates=allowed_updates)
+            return True
+
+    try:
+        asyncio.run(_run())
+        logger.info("Вебхук установлен при старте: %s", url)
+    except Exception:
+        logger.exception("Не удалось установить вебхук при старте")
+
 
 def setup_telegram():
     """
@@ -78,6 +157,6 @@ def setup_telegram():
     # Проверка, чтобы не подключать повторно
     if main_router not in dp.sub_routers:
         dp.include_router(main_router)
-        print("✅ Telegram bot initialized with FSM handlers")
+        logger.info("Telegram bot initialized with FSM handlers")
     else:
-        print("⚠️ Router already attached, skipping setup_telegram()")
+        logger.info("Router already attached, skipping setup_telegram()")

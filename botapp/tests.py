@@ -1,5 +1,6 @@
 import asyncio
 import base64
+import os
 import unittest
 from decimal import Decimal
 from io import BytesIO
@@ -34,6 +35,8 @@ from botapp.services import (
     generate_images_for_model,
     OPENAI_IMAGE_EDIT_URL,
 )
+
+SKIP_VERTEX_TESTS = bool(os.getenv("CI") or os.getenv("DISABLE_VERTEX_TESTS"))
 
 
 def _cost_from_price(price_tokens: Decimal | str) -> Decimal:
@@ -597,6 +600,7 @@ class ReferenceMimeDetectionTests(TestCase):
         self.assertEqual(mime, "video/mp4")
 
 
+@unittest.skipIf(SKIP_VERTEX_TESTS, "Vertex AI интеграционные тесты отключены в CI")
 class GeminiVertexFallbackTests(TestCase):
     @patch("botapp.services._authorized_vertex_session")
     @patch("botapp.services._load_service_account_info")
@@ -637,6 +641,7 @@ class GeminiVertexFallbackTests(TestCase):
         self.assertIn("generativelanguage.googleapis.com", second_call_url)
 
 
+@unittest.skipIf(SKIP_VERTEX_TESTS, "Vertex AI интеграционные тесты отключены в CI")
 class GeminiVertexApiKeyTests(TestCase):
     @override_settings(NANO_BANANA_API_KEY="test-key")
     @patch("botapp.services.httpx.post")

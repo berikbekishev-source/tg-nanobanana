@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import math
 import time
 from typing import Any, Dict, Optional, Tuple
@@ -11,6 +12,9 @@ from botapp.media_utils import prepare_image_for_dimensions
 
 from . import register_video_provider
 from .base import BaseVideoProvider, VideoGenerationError, VideoGenerationResult
+
+
+logger = logging.getLogger(__name__)
 
 
 def resolve_sora_size(resolution: Optional[Any], aspect_ratio: Optional[Any]) -> Optional[str]:
@@ -117,19 +121,38 @@ class OpenAISoraProvider(BaseVideoProvider):
             input_mime_type=input_mime_type,
         )
 
-        initial_response = self._request_json(
-            "POST",
-            "/videos",
-            json_payload=json_payload,
-            data=form_payload,
-            files=files,
-        )
-        job_id = initial_response.get("id")
-        if not job_id:
-            raise VideoGenerationError("OpenAI Sora не вернул идентификатор задания.")
+        max_attempts = 3  # 1 основной запрос + 2 ретрая для transient video_generation_failed
+        attempt = 0
+        last_error: Optional[Exception] = None
+        while attempt < max_attempts:
+            attempt += 1
+            initial_response = self._request_json(
+                "POST",
+                "/videos",
+                json_payload=json_payload,
+                data=form_payload,
+                files=files,
+            )
+            job_id = initial_response.get("id")
+            if not job_id:
+                raise VideoGenerationError("OpenAI Sora не вернул идентификатор задания.")
 
-        job_status = initial_response.get("status")
-        job_details = initial_response if job_status == "succeeded" else self._poll_job(job_id)
+            job_status = initial_response.get("status")
+
+            try:
+                job_details = initial_response if job_status == "succeeded" else self._poll_job(job_id)
+                # если дошли сюда без исключения — успех
+                break
+            except VideoGenerationError as exc:
+                if self._should_retry(str(exc), attempt, max_attempts):
+                    # transient сбой на стороне Sora — небольшой backoff и повтор
+                    time.sleep(3 * attempt)
+                    last_error = exc
+                    continue
+                raise
+        else:
+            # Если по какой-то причине цикл не вышел через break
+            raise last_error or VideoGenerationError("Sora не смогла завершить генерацию после нескольких попыток.")
 
         video_bytes, mime_type = self._download_video(job_details)
 
@@ -418,13 +441,14 @@ class OpenAISoraProvider(BaseVideoProvider):
         except httpx.HTTPStatusError as exc:  # type: ignore[attr-defined]
             detail = self._format_error_detail(exc.response)
             status_code = exc.response.status_code if exc.response else None
+            self._log_http_error(status_code, exc.response)
             if status_code == 401:
                 raise VideoGenerationError("Неверный OpenAI API ключ или нет доступа к Sora.") from exc
             if status_code == 403:
                 raise VideoGenerationError("Доступ к модели Sora запрещён. Проверьте разрешения в аккаунте OpenAI.") from exc
             if status_code == 429:
                 raise VideoGenerationError(
-                    "Превышены лимиты OpenAI Sora. Снизьте частоту запросов или увеличьте квоты."
+                    "Превышены лимиты OpenAI Sora (429). Снизьте частоту запросов или увеличьте квоты."
                 ) from exc
             raise VideoGenerationError(f"Ошибка OpenAI Sora ({status_code}): {detail}") from exc
         except httpx.RequestError as exc:
@@ -469,6 +493,30 @@ class OpenAISoraProvider(BaseVideoProvider):
         if isinstance(value, (int, float)):
             return httpx.Timeout(float(value), connect=default_connect)
         return default
+
+    def _log_http_error(self, status_code: Optional[int], response: Optional[httpx.Response]) -> None:
+        if not response:
+            return
+        # Логируем только краткую выжимку тела, чтобы видеть причину 5xx/429 без утечек токенов.
+        try:
+            body = response.text
+        except Exception:
+            body = "<unreadable>"
+        if body and len(body) > 500:
+            body = body[:500] + "…"
+        logger.warning("OpenAI Sora ответила ошибкой: status=%s body=%s", status_code, body)
+
+    def _should_retry(self, message: str, attempt: int, max_attempts: int) -> bool:
+        if attempt >= max_attempts:
+            return False
+        text = message.lower()
+        if "video_generation_failed" in text:
+            return True
+        if "openai sora (429" in text or "лимиты openai sora" in text:
+            return True
+        if "openai sora (5" in text or "server error" in text:
+            return True
+        return False
 
 
 register_video_provider(OpenAISoraProvider.slug, OpenAISoraProvider)

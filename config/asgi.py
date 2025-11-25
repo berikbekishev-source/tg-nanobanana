@@ -14,7 +14,7 @@ os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'config.settings')
 
 application = get_asgi_application()
 
-# 👇 если у тебя есть функция для инициализации aiogram
+# Инициализация aiogram (вебхук ставится при старте контейнера в start_web.sh)
 from botapp.telegram import setup_telegram
 
 setup_telegram()

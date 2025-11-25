@@ -1,6 +1,7 @@
 """
 Celery задачи для асинхронной генерации изображений и видео
 """
+import base64
 import json
 import logging
 import os
@@ -20,24 +21,42 @@ from .business.balance import BalanceService
 from .business.generation import GenerationService
 from .chat_logger import ChatLogger
 from .error_tracker import ErrorTracker
-from .keyboards import get_generation_complete_message, get_main_menu_inline_keyboard
+from .keyboards import get_generation_complete_message
 from .media_utils import detect_reference_mime, ensure_png_format
-from .models import AIModel, BotErrorEvent, GenRequest, TgUser
+from .models import BotErrorEvent, GenRequest, TgUser
 from .providers import VideoGenerationError, get_video_provider
 from .services import generate_images_for_model, supabase_upload_png, supabase_upload_video
 
 logger = logging.getLogger(__name__)
 
+MAX_TELEGRAM_CAPTION = 1024  # ограничение Telegram на caption для медиа
 
-def send_telegram_photo(chat_id: int, photo_bytes: bytes, caption: str, reply_markup: Optional[Dict] = None):
-    """Отправка фото в Telegram через Bot API напрямую (без aiogram)"""
-    url = f"https://api.telegram.org/bot{settings.TELEGRAM_BOT_TOKEN}/sendPhoto"
-    files = {"photo": ("image.png", photo_bytes, "image/png")}
+
+def _shorten_caption(text: str, limit: int = MAX_TELEGRAM_CAPTION) -> str:
+    """Обрезает caption до лимита Telegram."""
+    if not text:
+        return text
+    if len(text) <= limit:
+        return text
+    return text[: limit - 1] + "…"
+
+
+def send_telegram_photo(
+    chat_id: int,
+    photo_bytes: bytes,
+    caption: str,
+    reply_markup: Optional[Dict] = None,
+    parse_mode: Optional[str] = None,
+):
+    """Отправка изображения файлом (document) в Telegram напрямую."""
+    url = f"https://api.telegram.org/bot{settings.TELEGRAM_BOT_TOKEN}/sendDocument"
+    files = {"document": ("image.png", photo_bytes, "image/png")}
     data = {
         "chat_id": chat_id,
-        "caption": caption,
-        "parse_mode": "Markdown"
+        "caption": _shorten_caption(caption),
     }
+    if parse_mode:
+        data["parse_mode"] = parse_mode
     if reply_markup:
         data["reply_markup"] = json.dumps(reply_markup)
 
@@ -50,18 +69,18 @@ def send_telegram_photo(chat_id: int, photo_bytes: bytes, caption: str, reply_ma
 
 
 def send_telegram_video(chat_id: int, video_bytes: bytes, caption: str, reply_markup: Optional[Dict] = None):
-    """Отправка видео в Telegram через Bot API напрямую"""
-    url = f"https://api.telegram.org/bot{settings.TELEGRAM_BOT_TOKEN}/sendVideo"
-    files = {"video": ("video.mp4", video_bytes, "video/mp4")}
+    """Отправка видео файлом (document) в Telegram напрямую."""
+    url = f"https://api.telegram.org/bot{settings.TELEGRAM_BOT_TOKEN}/sendDocument"
+    files = {"document": ("video.mp4", video_bytes, "video/mp4")}
     data = {
         "chat_id": chat_id,
-        "caption": caption,
-        "parse_mode": "Markdown"
+        "caption": _shorten_caption(caption),
+        "parse_mode": "Markdown",
     }
     if reply_markup:
         data["reply_markup"] = json.dumps(reply_markup)
 
-    with httpx.Client(timeout=60) as client:
+    with httpx.Client(timeout=120) as client:
         resp = client.post(url, files=files, data=data)
         resp.raise_for_status()
         payload = resp.json()
@@ -90,14 +109,24 @@ def send_telegram_message(chat_id: int, text: str, reply_markup: Optional[Dict] 
 
 
 def get_inline_menu_markup():
-    """Получение разметки inline кнопки главного меню для JSON"""
+    """Разметка reply-клавиатуры главного меню"""
+    payment_url = getattr(settings, "PAYMENT_MINI_APP_URL", "https://example.com/payment")
     return {
-        "inline_keyboard": [[
-            {
-                "text": "🏠 Главное меню",
-                "callback_data": "main_menu"
-            }
-        ]]
+        "keyboard": [
+            [
+                {"text": "🎨 Создать изображение"},
+                {"text": "🎬 Создать видео"},
+            ],
+            [
+                {"text": "💰 Мой баланс (цены)"},
+                {"text": "💳 Пополнить баланс", "web_app": {"url": payment_url}},
+            ],
+            [{"text": "📲 Промт по референсу"}],
+            [{"text": "🏠Главное меню"}],
+            [{"text": "🧡 Поддержка"}],
+        ],
+        "resize_keyboard": True,
+        "one_time_keyboard": False,
     }
 
 
@@ -109,10 +138,6 @@ def get_video_result_markup(request_id: int, include_extension: bool = True) -> 
             "text": "🔁 Продлить FAST",
             "callback_data": f"extend_video:{request_id}",
         }])
-    keyboard.append([{
-        "text": "🏠 Главное меню",
-        "callback_data": "main_menu",
-    }])
     return {"inline_keyboard": keyboard}
 
 
@@ -469,20 +494,47 @@ def _prepare_input_images(sources: List[Any], limit: Optional[int]) -> List[Dict
             break
         file_id: Optional[str] = None
         role: Optional[str] = None
+        mime_type: Optional[str] = None
+        filename = f"input_{idx}.png"
+        base64_data: Optional[str] = None
+        storage_url: Optional[str] = None
+        content: Optional[bytes] = None
+
         if isinstance(entry, dict):
             file_id = entry.get("telegram_file_id") or entry.get("file_id")
             role = entry.get("type") or entry.get("role")
+            mime_type = entry.get("mime_type") or entry.get("mime")
+            filename = entry.get("filename") or entry.get("file_name") or entry.get("name") or filename
+            base64_data = entry.get("content_base64") or entry.get("base64") or entry.get("data")
+            storage_url = entry.get("storage_url") or entry.get("url")
         elif isinstance(entry, str):
             file_id = entry
-        if not file_id:
+
+        if file_id:
+            image_bytes, mime_type_raw = download_telegram_file(file_id)
+            mime_type = mime_type or mime_type_raw
+            content = image_bytes
+        elif base64_data:
+            try:
+                data_str = base64_data.split(",")[-1] if "," in base64_data else base64_data
+                content = base64.b64decode(data_str)
+            except Exception:
+                content = None
+        elif storage_url:
+            try:
+                content = fetch_remote_file(storage_url)
+            except Exception:
+                content = None
+
+        if content is None:
             continue
-        image_bytes, mime_type = download_telegram_file(file_id)
-        png_bytes, png_mime = ensure_png_format(image_bytes, mime_type)
+
+        png_bytes, png_mime = ensure_png_format(content, mime_type or "image/png")
         payloads.append(
             {
                 "content": png_bytes,
                 "mime_type": png_mime,
-                "filename": f"input_{idx}.png",
+                "filename": filename,
                 "role": role,
             }
         )
@@ -527,9 +579,12 @@ def generate_image_task(self, request_id: int):
     """
     Задача генерации изображений
     """
+    logger.info(f"[CELERY_IMAGE_TASK] Начало выполнения задачи генерации изображения: request_id={request_id}")
+
     req: Optional[GenRequest] = None
     try:
         req = GenRequest.objects.select_related('user', 'ai_model', 'transaction').get(id=request_id)
+        logger.info(f"[CELERY_IMAGE_TASK] Запрос загружен: user={req.user.chat_id}, model={req.ai_model.name}, provider={req.ai_model.provider}")
 
         # Получаем модель и параметры
         model = req.ai_model
@@ -543,9 +598,21 @@ def generate_image_task(self, request_id: int):
 
         input_images_payload: List[Dict[str, Any]] = []
         if generation_type == 'image2image':
-            max_inputs = model.max_input_images or None
             input_sources = req.input_images or []
+            max_inputs = model.max_input_images or None
+            # Для ремикса отдаем все разрешенные моделью референсы (документация Gemini допускает до 14 для Pro).
+            if image_mode == "remix":
+                if max_inputs:
+                    max_inputs = min(len(input_sources), max_inputs)
+                else:
+                    max_inputs = len(input_sources) or None
+            logger.info(
+                f"[TASK] Подготовка изображений для запроса {req.id}: input_sources={len(input_sources)}, "
+                f"max_inputs={max_inputs}, model.max_input_images={model.max_input_images}, mode={image_mode}"
+            )
             input_images_payload = _prepare_input_images(input_sources, max_inputs)
+            logger.info(f"[TASK] Подготовлено {len(input_images_payload)} изображений для передачи в модель")
+
             if not input_images_payload:
                 generation_type = 'text2image'
         if generation_type != 'image2image':
@@ -562,35 +629,64 @@ def generate_image_task(self, request_id: int):
             image_mode=image_mode,
         )
 
+        # Проверка что генерация вернула результаты
+        if not imgs:
+            error_msg = f"Генерация не вернула изображений. Model: {model.display_name}, Type: {generation_type}, Mode: {image_mode}"
+            logger.error(f"[TASK] {error_msg}")
+            raise ValueError(error_msg)
+
+        logger.info(f"[TASK] Успешно сгенерировано {len(imgs)} изображений для запроса {req.id}")
+
         urls = []
         inline_markup = get_inline_menu_markup()
         charged_amount, balance_after = _extract_charge_details(req)
 
         # Загружаем и отправляем каждое изображение
         for idx, img in enumerate(imgs, start=1):
-            # Загружаем в Storage
-            url_obj = supabase_upload_png(img)
-            url = url_obj.get("public_url") if isinstance(url_obj, dict) else url_obj
-            urls.append(url)
+            try:
+                # Загружаем в Storage
+                logger.info(f"[TASK] Загрузка изображения {idx}/{quantity} в Supabase для запроса {req.id}")
+                url_obj = supabase_upload_png(img)
+                url = url_obj.get("public_url") if isinstance(url_obj, dict) else url_obj
+                urls.append(url)
+                logger.info(f"[TASK] Изображение {idx}/{quantity} загружено: {url}")
 
-            # Формируем системное сообщение после генерации
-            system_message = get_generation_complete_message(
-                prompt=prompt,
-                generation_type=generation_type,
-                model_name=model.display_name,
-                quantity=quantity,
-                aspect_ratio=req.aspect_ratio or "1:1",
-                charged_amount=charged_amount,
-                balance_after=balance_after,
-            )
+                # Формируем системное сообщение после генерации
+                system_message = get_generation_complete_message(
+                    prompt=prompt,
+                    generation_type=generation_type,
+                    model_name=model.display_name,
+                    model_display_name=model.display_name,
+                    quantity=quantity,
+                    aspect_ratio=req.aspect_ratio or "1:1",
+                    generation_params=req.generation_params or {},
+                    model_provider=model.provider,
+                    image_mode=(req.generation_params or {}).get("image_mode"),
+                    charged_amount=charged_amount,
+                    balance_after=balance_after,
+                )
 
-            # Отправляем изображение с системным сообщением
-            send_telegram_photo(
-                chat_id=req.chat_id,
-                photo_bytes=img,
-                caption=system_message + f"\n\n📷 Изображение {idx}/{quantity}",
-                reply_markup=inline_markup
-            )
+                # Отправляем изображение с системным сообщением
+                logger.info(f"[TASK] Отправка изображения {idx}/{quantity} в Telegram (chat_id={req.chat_id})")
+                send_telegram_photo(
+                    chat_id=req.chat_id,
+                    photo_bytes=img,
+                    caption=system_message + f"\n\n📷 Изображение {idx}/{quantity}",
+                    reply_markup=inline_markup
+                )
+                logger.info(f"[TASK] Изображение {idx}/{quantity} успешно отправлено в Telegram")
+            except Exception as img_error:
+                logger.exception(f"[TASK] Ошибка при обработке изображения {idx}/{quantity} для запроса {req.id}: {img_error}")
+                # Продолжаем обработку остальных изображений
+                continue
+
+        # Проверка что хотя бы одно изображение было успешно обработано
+        if not urls:
+            error_msg = f"Ни одно изображение не было успешно загружено или отправлено для запроса {req.id}"
+            logger.error(f"[TASK] {error_msg}")
+            raise ValueError(error_msg)
+
+        logger.info(f"[TASK] Запрос {req.id} завершен успешно. Загружено и отправлено {len(urls)}/{quantity} изображений")
 
         # Обновляем статус запроса
         req.status = "done"
@@ -648,23 +744,90 @@ def generate_video_task(self, request_id: int):
 
         input_media: Optional[bytes] = None
         input_mime_type: Optional[str] = None
+        last_frame_media: Optional[bytes] = None
+        last_frame_mime: Optional[str] = None
 
         source_media = req.source_media if isinstance(req.source_media, dict) else {}
         telegram_file_id = params.get("input_image_file_id") or source_media.get("telegram_file_id")
-        if generation_type == 'image2video' and telegram_file_id:
+
+        inline_entry: Optional[Dict[str, Any]] = None
+        if generation_type == "image2video":
+            for entry in req.input_images or []:
+                if not isinstance(entry, dict):
+                    continue
+                raw_b64 = entry.get("content_base64") or entry.get("base64") or entry.get("data")
+                if raw_b64:
+                    inline_entry = entry
+                    break
+
+        if generation_type == "image2video" and inline_entry:
+            raw_b64 = inline_entry.get("content_base64") or inline_entry.get("base64") or inline_entry.get("data")
+            try:
+                input_media = base64.b64decode(raw_b64)
+            except Exception as exc:
+                raise VideoGenerationError("Не удалось прочитать изображение из WebApp.") from exc
+            input_mime_type = (
+                inline_entry.get("mime_type")
+                or inline_entry.get("mime")
+                or inline_entry.get("content_type")
+                or "image/png"
+            )
+        elif generation_type == 'image2video' and telegram_file_id:
             input_media, input_mime_type = download_telegram_file(telegram_file_id)
             preferred_mime = params.get("input_image_mime_type") or source_media.get("mime_type")
             if preferred_mime:
                 input_mime_type = preferred_mime
+        elif generation_type == 'image2video':
+            storage_url = source_media.get("storage_url") or params.get("image_url")
+            base64_data = source_media.get("base64") or params.get("image_base64")
+            if storage_url:
+                try:
+                    input_media = fetch_remote_file(storage_url)
+                    input_mime_type = source_media.get("mime_type") or params.get("input_image_mime_type") or "image/png"
+                except Exception as exc:
+                    logger.warning("Failed to fetch image from storage_url=%s: %s", storage_url, exc, exc_info=exc)
+            elif base64_data:
+                try:
+                    input_media = base64.b64decode(base64_data)
+                    input_mime_type = source_media.get("mime_type") or params.get("input_image_mime_type") or "image/png"
+                except Exception as exc:
+                    logger.warning("Failed to decode base64 image for video generation: %s", exc, exc_info=exc)
 
-        result = provider.generate(
-            prompt=prompt,
-            model_name=model.api_model_name,
-            generation_type=generation_type,
-            params=params,
-            input_media=input_media,
-            input_mime_type=input_mime_type,
-        )
+        final_frame_data = params.pop("final_frame", None)
+        if final_frame_data and isinstance(final_frame_data, dict):
+            raw_b64 = (
+                final_frame_data.get("content_base64")
+                or final_frame_data.get("base64")
+                or final_frame_data.get("data")
+            )
+            if raw_b64:
+                try:
+                    last_frame_media = base64.b64decode(raw_b64)
+                except Exception as exc:
+                    raise VideoGenerationError("Не удалось прочитать конечный кадр из WebApp.") from exc
+                if len(last_frame_media) > 5 * 1024 * 1024:
+                    raise VideoGenerationError("Конечный кадр превышает 5 МБ.")
+                last_frame_mime = (
+                    final_frame_data.get("mime_type")
+                    or final_frame_data.get("mime")
+                    or final_frame_data.get("content_type")
+                    or "image/png"
+                )
+
+        generate_kwargs: Dict[str, Any] = {
+            "prompt": prompt,
+            "model_name": model.api_model_name,
+            "generation_type": generation_type,
+            "params": params,
+            "input_media": input_media,
+            "input_mime_type": input_mime_type,
+        }
+        # Не все провайдеры поддерживают last_frame_* (например, Kling).
+        if last_frame_media is not None and getattr(provider, "slug", "") != "kling":
+            generate_kwargs["last_frame_media"] = last_frame_media
+            generate_kwargs["last_frame_mime_type"] = last_frame_mime
+
+        result = provider.generate(**generate_kwargs)
 
         upload_result = supabase_upload_video(result.content, mime_type=result.mime_type)
         public_url = upload_result.get("public_url") if isinstance(upload_result, dict) else upload_result
@@ -686,22 +849,52 @@ def generate_video_task(self, request_id: int):
             prompt=prompt,
             generation_type=generation_type,
             model_name=model.display_name,
+            model_display_name=model.display_name,
+            generation_params=req.generation_params or {},
+            model_provider=model.provider,
             duration=req.duration or result.duration,
             resolution=req.video_resolution or result.resolution,
             aspect_ratio=req.aspect_ratio or result.aspect_ratio,
-            model_hashtag=model.hashtag,
             charged_amount=charged_amount,
             balance_after=balance_after,
         )
 
         allow_extension = model.provider == "veo"
 
-        send_telegram_video(
-            chat_id=req.chat_id,
-            video_bytes=result.content,
-            caption=message,
-            reply_markup=get_video_result_markup(req.id, include_extension=allow_extension),
-        )
+        try:
+            send_telegram_video(
+                chat_id=req.chat_id,
+                video_bytes=result.content,
+                caption=message,
+                reply_markup=get_video_result_markup(req.id, include_extension=allow_extension),
+            )
+        except httpx.HTTPStatusError as e:
+            status = e.response.status_code if e.response else "unknown"
+            body = e.response.text if e.response else str(e)
+            logger.warning("Telegram sendDocument failed: status=%s body=%s", status, body[:500], exc_info=e)
+            fallback_text = (
+                "Видео готово, но Telegram вернул ошибку при отправке файла. "
+                f"Ссылка для скачивания: {public_url}"
+            )
+            send_telegram_message(
+                req.chat_id,
+                fallback_text,
+                reply_markup=get_video_result_markup(req.id, include_extension=allow_extension),
+                parse_mode=None,
+            )
+        except Exception as e:
+            logger.exception("Unexpected error while sending video to Telegram")
+            fallback_text = (
+                "Видео готово, но не удалось отправить его файлом. "
+                f"Ссылка для скачивания: {public_url}"
+            )
+            send_telegram_message(
+                req.chat_id,
+                fallback_text,
+                reply_markup=get_video_result_markup(req.id, include_extension=allow_extension),
+                parse_mode=None,
+            )
+            raise e
 
     except VideoGenerationError as e:
         GenerationService.fail_generation(req, str(e), refund=True)
@@ -838,10 +1031,12 @@ def extend_video_task(self, request_id: int):
             prompt=prompt,
             generation_type=generation_type,
             model_name=model.display_name,
+            model_display_name=model.display_name,
+            generation_params=req.generation_params or {},
+            model_provider=model.provider,
             duration=req.duration or int(round(combined_duration)),
             resolution=req.video_resolution or final_resolution,
             aspect_ratio=req.aspect_ratio or final_aspect_ratio,
-            model_hashtag=model.hashtag,
             charged_amount=charged_amount,
             balance_after=balance_after,
         )
@@ -926,6 +1121,6 @@ def process_payment_webhook(self, payment_data: Dict):
     except TgUser.DoesNotExist:
         # Пользователь не найден
         pass
-    except Exception as e:
+    except Exception:
         # Логируем ошибку
         raise

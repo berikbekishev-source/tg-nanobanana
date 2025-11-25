@@ -1,9 +1,13 @@
 """
 Обработчики генерации видео
 """
+import base64
+import json
+from io import BytesIO
 from typing import Any, Dict, List, Optional, Tuple
 
 from aiogram import Router, F
+from aiogram.filters import StateFilter
 from aiogram.types import Message, CallbackQuery
 from aiogram.fsm.context import FSMContext
 
@@ -20,10 +24,11 @@ from botapp.keyboards import (
 from botapp.models import TgUser, AIModel, GenRequest, BotErrorEvent
 from botapp.business.generation import GenerationService
 from botapp.business.balance import BalanceService, InsufficientBalanceError
-from botapp.business.pricing import get_base_price_tokens
+from botapp.business.pricing import calculate_request_cost, get_base_price_tokens
 from botapp.tasks import generate_video_task, extend_video_task
 from botapp.providers.video.openai_sora import resolve_sora_dimensions
 from asgiref.sync import sync_to_async
+from botapp.services import supabase_upload_png
 from botapp.error_tracker import ErrorTracker
 
 router = Router()
@@ -83,9 +88,805 @@ def _format_image_hint_text(dimensions: Optional[Tuple[int, int]]) -> Optional[s
         return None
     width, height = dimensions
     return (
-        f"Для режима img2video используйте изображение {width}x{height}. "
+        f"Размер изображения должно быть: {width}x{height}. "
         "Если размер будет другим, мы автоматически обрежем центр под нужный формат."
     )
+
+
+MAX_KLING_IMAGE_BYTES = 10 * 1024 * 1024
+
+
+def _convert_to_png_bytes(raw: bytes, mime: Optional[str]) -> bytes:
+    mime_value = (mime or "").lower()
+    if mime_value == "image/png":
+        return raw
+    try:
+        from PIL import Image
+    except ImportError:
+        return raw
+    try:
+        with Image.open(BytesIO(raw)) as img:
+            buffer = BytesIO()
+            img.save(buffer, format="PNG")
+            return buffer.getvalue()
+    except Exception:
+        return raw
+
+
+def _extract_public_url(upload_obj) -> Optional[str]:
+    if isinstance(upload_obj, dict):
+        return upload_obj.get("public_url") or upload_obj.get("publicUrl") or upload_obj.get("publicURL")
+    return upload_obj
+
+def _extract_allowed_aspect_ratios(model: AIModel) -> List[str]:
+    """Возвращает список разрешенных аспектов для модели."""
+    allowed: List[str] = []
+    params = model.allowed_params or {}
+    raw = params.get("aspect_ratio")
+    if isinstance(raw, list):
+        allowed = [str(v) for v in raw if v]
+    elif isinstance(raw, dict):
+        opts = raw.get("options") or raw.get("values")
+        if isinstance(opts, list):
+            allowed = [str(v) for v in opts if v]
+    return [r.strip() for r in allowed if isinstance(r, str) and r.strip()]
+
+MAX_VEO_IMAGE_BYTES = 5 * 1024 * 1024
+
+
+def _parse_webapp_payload(raw: str) -> Optional[Dict[str, Any]]:
+    """
+    Аккуратно парсим web_app_data, учитывая экранирование и двойное кодирование.
+    """
+    decoded = raw or "{}"
+    try:
+        if isinstance(decoded, bytes):
+            decoded = decoded.decode("utf-8", errors="ignore")
+        if decoded.startswith('{\"') or decoded.startswith("{\'"):
+            try:
+                decoded = decoded.encode().decode("unicode_escape")
+            except Exception:
+                pass
+        payload = json.loads(decoded)
+        if isinstance(payload, str):
+            try:
+                payload = json.loads(payload)
+            except Exception:
+                return None
+        return payload if isinstance(payload, dict) else None
+    except Exception:
+        return None
+
+
+@router.message(StateFilter("*"), F.web_app_data)
+async def handle_webapp_data_dispatcher(message: Message, state: FSMContext):
+    """Dispatcher for all WebApp data - routes to specific handler based on 'kind' field."""
+    # Parse the payload once
+    try:
+        raw_data = message.web_app_data.data or "{}"
+        if isinstance(raw_data, bytes):
+            raw_data = raw_data.decode("utf-8", errors="ignore")
+        if raw_data.startswith('{\\"') or raw_data.startswith("{\\'"):
+            try:
+                raw_data = raw_data.encode().decode("unicode_escape")
+            except Exception:
+                pass
+        payload = json.loads(raw_data)
+        if isinstance(payload, str):
+            try:
+                payload = json.loads(payload)
+            except Exception:
+                pass
+    except Exception:
+        await message.answer(
+            "❌ Не удалось прочитать данные из окна настроек. Откройте его и попробуйте ещё раз.",
+            reply_markup=get_cancel_keyboard(),
+        )
+        await state.clear()
+        return
+
+    # Route based on kind
+    kind = payload.get("kind") if isinstance(payload, dict) else None
+    if kind == "sora2_settings":
+        await _handle_sora_webapp_data_impl(message, state, payload)
+    elif kind == "kling_settings":
+        await _handle_kling_webapp_data_impl(message, state, payload)
+    elif kind == "veo_video_settings":
+        await _handle_veo_webapp_data_impl(message, state, payload)
+    # If kind doesn't match, silently ignore (other handlers may process it)
+
+
+async def _handle_sora_webapp_data_impl(message: Message, state: FSMContext, payload: dict):
+    """Принимаем данные Sora 2 WebApp и запускаем генерацию."""
+    data = await state.get_data()
+    model_slug = payload.get("modelSlug") or data.get("model_slug") or data.get("selected_model") or "sora2"
+
+    try:
+        model = await sync_to_async(AIModel.objects.get)(slug=model_slug, is_active=True)
+    except AIModel.DoesNotExist:
+        await message.answer(
+            "Модель Sora недоступна. Выберите её заново из списка моделей.",
+            reply_markup=get_main_menu_inline_keyboard(),
+        )
+        await state.clear()
+        return
+
+    if model.provider not in {"openai"}:
+        await message.answer(
+            "Эта WebApp работает только с моделью Sora 2.",
+            reply_markup=get_main_menu_inline_keyboard(),
+        )
+        await state.clear()
+        return
+
+    await state.update_data(model_id=int(model.id), model_slug=str(model.slug), model_provider=str(model.provider))
+
+    prompt = (payload.get("prompt") or "").strip()
+    if not prompt:
+        await message.answer("Введите промт в окне настроек и отправьте ещё раз.", reply_markup=get_cancel_keyboard())
+        return
+
+    generation_type = (payload.get("generationType") or "text2video").lower()
+    if generation_type not in {"text2video", "image2video"}:
+        generation_type = "text2video"
+
+    allowed_durations = []
+    try:
+        allowed_durations = model.allowed_params.get("duration") or []
+    except Exception:
+        allowed_durations = []
+
+    try:
+        duration_value = int(float(payload.get("duration") or payload.get("seconds") or 8))
+    except (TypeError, ValueError):
+        duration_value = 8
+    duration_value = max(2, min(60, duration_value))
+    if allowed_durations:
+        try:
+            values = allowed_durations if isinstance(allowed_durations, list) else allowed_durations.get("options") or []
+            if values and duration_value not in values:
+                duration_value = values[0]
+        except Exception:
+            pass
+
+    aspect_ratio = (
+        payload.get("aspectRatio")
+        or payload.get("aspect_ratio")
+        or (model.default_params or {}).get("aspect_ratio")
+        or "16:9"
+    )
+    if aspect_ratio not in {"16:9", "9:16", "1:1"}:
+        aspect_ratio = "16:9"
+
+    quality_raw = (payload.get("quality") or "").lower()
+    resolution = payload.get("resolution") or (model.default_params or {}).get("resolution") or "720p"
+    if quality_raw == "hd":
+        resolution = "1080p"
+    elif quality_raw == "standard":
+        resolution = "720p"
+    resolution = resolution.lower()
+
+    params = {
+        "duration": duration_value,
+        "aspect_ratio": aspect_ratio,
+        "resolution": resolution,
+    }
+
+    source_media = {}
+    if generation_type == "image2video":
+        image_b64 = payload.get("imageData")
+        if not image_b64:
+            await message.answer(
+                "Загрузите изображение для режима Image → Video.",
+                reply_markup=get_cancel_keyboard(),
+            )
+            return
+        try:
+            raw = base64.b64decode(image_b64)
+        except Exception:
+            await message.answer(
+                "Не удалось прочитать изображение. Загрузите файл ещё раз.",
+                reply_markup=get_cancel_keyboard(),
+            )
+            return
+        if len(raw) > MAX_KLING_IMAGE_BYTES:
+            await message.answer(
+                "Изображение слишком большое. Максимум 10 МБ.",
+                reply_markup=get_cancel_keyboard(),
+            )
+            return
+
+        mime = payload.get("imageMime") or "image/png"
+        file_name = payload.get("imageName") or "image.png"
+        png_bytes = _convert_to_png_bytes(raw, mime)
+        try:
+            upload_obj = await sync_to_async(supabase_upload_png)(png_bytes)
+        except Exception as exc:  # pragma: no cover - сеть/хранилище
+            await ErrorTracker.alog(
+                origin=BotErrorEvent.Origin.TELEGRAM,
+                severity=BotErrorEvent.Severity.WARNING,
+                handler="video_generation.handle_sora_webapp_data",
+                chat_id=message.chat.id,
+                payload={"reason": "supabase_upload_failed"},
+                exc=exc,
+            )
+            await message.answer(
+                "Не удалось загрузить изображение в хранилище. Попробуйте другой файл.",
+                reply_markup=get_cancel_keyboard(),
+            )
+            await state.clear()
+            return
+
+        image_url = _extract_public_url(upload_obj)
+        if not image_url:
+            await message.answer(
+                "Не удалось получить ссылку на изображение. Попробуйте снова.",
+                reply_markup=get_cancel_keyboard(),
+            )
+            await state.clear()
+            return
+
+        params["image_url"] = image_url
+        params["input_image_mime_type"] = mime
+        source_media = {
+            "file_name": file_name,
+            "mime_type": mime,
+            "storage_url": image_url,
+            "size_bytes": len(raw),
+            "source": "sora_webapp",
+        }
+
+    try:
+        user = await sync_to_async(TgUser.objects.get)(chat_id=message.from_user.id)
+    except TgUser.DoesNotExist:
+        await message.answer(
+            "Не удалось найти пользователя. Начните заново.",
+            reply_markup=get_main_menu_inline_keyboard(),
+        )
+        await state.clear()
+        return
+
+    try:
+        gen_request = await sync_to_async(GenerationService.create_generation_request)(
+            user=user,
+            ai_model=model,
+            prompt=prompt,
+            quantity=1,
+            generation_type=generation_type,
+            generation_params=params,
+            duration=duration_value,
+            video_resolution=resolution,
+            aspect_ratio=aspect_ratio,
+            source_media=source_media,
+        )
+    except InsufficientBalanceError as exc:
+        await message.answer(str(exc), reply_markup=get_main_menu_inline_keyboard())
+        await state.clear()
+        return
+    except ValueError as exc:
+        await message.answer(str(exc), reply_markup=get_main_menu_inline_keyboard())
+        await state.clear()
+        return
+    except Exception as exc:
+        await message.answer(
+            "❌ Произошла ошибка при подготовке генерации. Попробуйте ещё раз.",
+            reply_markup=get_main_menu_inline_keyboard(),
+        )
+        await ErrorTracker.alog(
+            origin=BotErrorEvent.Origin.TELEGRAM,
+            severity=BotErrorEvent.Severity.ERROR,
+            handler="video_generation.handle_sora_webapp_data",
+            chat_id=message.chat.id,
+            payload={
+                "generation_type": generation_type,
+                "duration": duration_value,
+                "aspect_ratio": aspect_ratio,
+                "resolution": resolution,
+            },
+            exc=exc,
+        )
+        await state.clear()
+        return
+
+    await message.answer(
+        get_generation_start_message(
+            model=model.display_name,
+            mode=generation_type,
+            aspect_ratio=aspect_ratio,
+            resolution=resolution,
+            duration=duration_value,
+            prompt=prompt,
+        ),
+        reply_markup=get_main_menu_inline_keyboard()
+    )
+
+    generate_video_task.delay(gen_request.id)
+    await state.clear()
+
+
+async def _handle_kling_webapp_data_impl(message: Message, state: FSMContext, payload: dict):
+    """Принимаем данные Kling WebApp и запускаем генерацию."""
+    data = await state.get_data()
+    model_slug = payload.get("modelSlug") or data.get("model_slug") or data.get("selected_model") or "kling-v1"
+    try:
+        model = await sync_to_async(AIModel.objects.get)(slug=model_slug, is_active=True)
+    except AIModel.DoesNotExist:
+        await message.answer(
+            "Модель Kling недоступна. Выберите её заново из списка моделей.",
+            reply_markup=get_main_menu_inline_keyboard(),
+        )
+        await state.clear()
+        return
+    if model.provider != "kling":
+        await message.answer(
+            "Эта WebApp работает только с моделью Kling. Выберите её из списка моделей.",
+            reply_markup=get_main_menu_inline_keyboard(),
+        )
+        await state.clear()
+        return
+    await state.update_data(
+        model_id=int(model.id),
+        model_slug=str(model.slug),
+        model_provider=str(model.provider),
+        selected_model=str(model.slug),
+    )
+
+    prompt = (payload.get("prompt") or "").strip()
+    if not prompt:
+        await message.answer("Введите промт в окне Kling и отправьте ещё раз.", reply_markup=get_cancel_keyboard())
+        return
+    if len(prompt) > model.max_prompt_length:
+        await message.answer(
+            f"❌ Промт слишком длинный! Максимум {model.max_prompt_length} символов.",
+            reply_markup=get_cancel_keyboard(),
+        )
+        return
+
+    try:
+        user = await sync_to_async(TgUser.objects.get)(chat_id=message.from_user.id)
+    except TgUser.DoesNotExist:
+        await message.answer(
+            "Не удалось найти пользователя. Начните заново.",
+            reply_markup=get_main_menu_inline_keyboard(),
+        )
+        await state.clear()
+        return
+
+    try:
+        cost_tokens = await sync_to_async(get_base_price_tokens)(model)
+        can_generate, error_msg = await sync_to_async(BalanceService.check_can_generate)(
+            user,
+            model,
+            total_cost_tokens=cost_tokens,
+        )
+        if not can_generate:
+            await message.answer(
+                f"❌ {error_msg}",
+                reply_markup=get_main_menu_inline_keyboard(),
+            )
+            await state.clear()
+            return
+    except Exception:
+        # Проверку баланса пропускаем при ошибке — сервис проверит перед запуском задачи
+        pass
+
+    generation_type = (payload.get("generationType") or "text2video").lower()
+    if generation_type not in {"text2video", "image2video"}:
+        generation_type = "text2video"
+
+    try:
+        duration_raw = payload.get("duration")
+        duration_value = int(float(duration_raw))
+    except (TypeError, ValueError):
+        duration_value = 5
+    if duration_value not in {5, 10}:
+        duration_value = 5
+
+    cfg_scale_value = payload.get("cfgScale")
+    try:
+        cfg_scale_value = max(0.0, min(1.0, round(float(cfg_scale_value), 1)))
+    except (TypeError, ValueError):
+        cfg_scale_value = 0.5
+
+    defaults = model.default_params or {}
+    allowed_aspects = _extract_allowed_aspect_ratios(model) or ["16:9", "9:16", "1:1"]
+    requested_aspect = (
+        payload.get("aspectRatio")
+        or payload.get("aspect_ratio")
+        or defaults.get("aspect_ratio")
+        or "16:9"
+    )
+    fallback_aspect = defaults.get("aspect_ratio")
+    if fallback_aspect not in allowed_aspects:
+        fallback_aspect = allowed_aspects[0]
+    aspect_ratio = requested_aspect if requested_aspect in allowed_aspects else fallback_aspect
+
+    params = {
+        "duration": duration_value,
+        "cfg_scale": cfg_scale_value,
+        "aspect_ratio": aspect_ratio,
+    }
+
+    source_media = None
+
+    if generation_type == "image2video":
+        image_b64 = payload.get("imageData")
+        if not image_b64:
+            await message.answer(
+                "Загрузите изображение в WebApp для режима Image → Video.",
+                reply_markup=get_cancel_keyboard(),
+            )
+            return
+        try:
+            raw = base64.b64decode(image_b64)
+        except Exception:
+            await message.answer(
+                "Не удалось прочитать изображение. Загрузите файл ещё раз.",
+                reply_markup=get_cancel_keyboard(),
+            )
+            return
+
+        if len(raw) > MAX_KLING_IMAGE_BYTES:
+            await message.answer(
+                "Изображение слишком большое. Максимум 10 МБ.",
+                reply_markup=get_cancel_keyboard(),
+            )
+            return
+
+        mime = payload.get("imageMime") or "image/png"
+        file_name = payload.get("imageName") or "image.png"
+
+        png_bytes = _convert_to_png_bytes(raw, mime)
+        try:
+            upload_obj = await sync_to_async(supabase_upload_png)(png_bytes)
+        except Exception as exc:  # pragma: no cover - сеть/хранилище
+            await ErrorTracker.alog(
+                origin=BotErrorEvent.Origin.TELEGRAM,
+                severity=BotErrorEvent.Severity.WARNING,
+                handler="video_generation.handle_kling_webapp_data",
+                chat_id=message.chat.id,
+                payload={"reason": "supabase_upload_failed"},
+                exc=exc,
+            )
+            await message.answer(
+                "Не удалось загрузить изображение в хранилище. Попробуйте другой файл.",
+                reply_markup=get_cancel_keyboard(),
+            )
+            await state.clear()
+            return
+
+        image_url = _extract_public_url(upload_obj)
+        if not image_url:
+            await message.answer(
+                "Не удалось получить ссылку на изображение. Попробуйте снова.",
+                reply_markup=get_cancel_keyboard(),
+            )
+            await state.clear()
+            return
+
+        params["image_url"] = image_url
+        source_media = {
+            "file_name": file_name,
+            "mime_type": mime,
+            "storage_url": image_url,
+            "size_bytes": len(raw),
+            "source": "kling_webapp",
+        }
+
+    try:
+        gen_request = await sync_to_async(GenerationService.create_generation_request)(
+            user=user,
+            ai_model=model,
+            prompt=prompt,
+            quantity=1,
+            generation_type=generation_type,
+            generation_params=params,
+            duration=duration_value,
+            aspect_ratio=aspect_ratio,
+            source_media=source_media,
+        )
+    except InsufficientBalanceError as exc:
+        await message.answer(str(exc), reply_markup=get_main_menu_inline_keyboard())
+        await state.clear()
+        return
+    except ValueError as exc:
+        await message.answer(str(exc), reply_markup=get_main_menu_inline_keyboard())
+        await state.clear()
+        return
+    except Exception as exc:
+        await message.answer(
+            "❌ Произошла ошибка при подготовке генерации. Попробуйте ещё раз.",
+            reply_markup=get_main_menu_inline_keyboard(),
+        )
+        await ErrorTracker.alog(
+            origin=BotErrorEvent.Origin.TELEGRAM,
+            severity=BotErrorEvent.Severity.ERROR,
+            handler="video_generation.handle_kling_webapp_data",
+            chat_id=message.chat.id,
+            payload={
+                "generation_type": generation_type,
+                "duration": duration_value,
+                "aspect_ratio": aspect_ratio,
+            },
+            exc=exc,
+        )
+        await state.clear()
+        return
+
+    await message.answer(
+        get_generation_start_message(
+            model=model.display_name,
+            mode=generation_type,
+            aspect_ratio=aspect_ratio,
+            resolution=None,
+            duration=duration_value,
+            prompt=prompt,
+        ),
+        reply_markup=get_main_menu_inline_keyboard()
+    )
+
+    generate_video_task.delay(gen_request.id)
+    await state.clear()
+
+
+async def _handle_veo_webapp_data_impl(message: Message, state: FSMContext, payload: dict):
+    """Принимаем данные Veo WebApp и запускаем генерацию."""
+    data = await state.get_data()
+    model_slug = payload.get("modelSlug") or data.get("model_slug") or data.get("selected_model") or "veo3-fast"
+
+    try:
+        model = await sync_to_async(AIModel.objects.get)(slug=model_slug, is_active=True)
+    except AIModel.DoesNotExist:
+        await message.answer(
+            "Модель Veo недоступна. Выберите её заново из списка моделей.",
+            reply_markup=get_main_menu_inline_keyboard(),
+        )
+        await state.clear()
+        return
+
+    if model.provider != "veo":
+        await message.answer(
+            "Эта WebApp работает только с моделью Veo. Выберите её из списка моделей.",
+            reply_markup=get_main_menu_inline_keyboard(),
+        )
+        await state.clear()
+        return
+
+    await state.update_data(model_id=int(model.id), model_slug=str(model.slug), model_provider=str(model.provider))
+
+    params_payload = payload.get("params") if isinstance(payload.get("params"), dict) else {}
+
+    prompt = (payload.get("prompt") or params_payload.get("prompt") or "").strip()
+    if not prompt:
+        await message.answer("Введите промт в окне Veo и отправьте ещё раз.", reply_markup=get_cancel_keyboard())
+        return
+    if len(prompt) > model.max_prompt_length:
+        await message.answer(
+            f"❌ Промт слишком длинный! Максимум {model.max_prompt_length} символов.",
+            reply_markup=get_cancel_keyboard(),
+        )
+        return
+
+    mode_value = (payload.get("mode") or params_payload.get("mode") or "text2video").lower()
+    generation_type = "image2video" if mode_value == "image2video" else "text2video"
+
+    defaults = model.default_params or {}
+    aspect_ratio = (
+        params_payload.get("aspectRatio")
+        or params_payload.get("aspect_ratio")
+        or payload.get("aspectRatio")
+        or payload.get("aspect_ratio")
+        or data.get("default_aspect_ratio")
+        or defaults.get("aspect_ratio")
+        or "9:16"
+    )
+    allowed_ratios = _extract_allowed_aspect_ratios(model) or ["9:16", "16:9", "1:1"]
+    if aspect_ratio not in allowed_ratios:
+        aspect_ratio = allowed_ratios[0]
+
+    duration = data.get("default_duration") or defaults.get("duration") or 8
+    resolution = data.get("default_resolution") or defaults.get("resolution") or "720p"
+
+    input_images = []
+    final_frame = None
+
+    def _prepare_inline_image(raw_b64, mime, name):
+        if not raw_b64:
+            raise ValueError("missing")
+        try:
+            decoded = base64.b64decode(raw_b64)
+        except Exception as exc:
+            raise ValueError("decode") from exc
+        if len(decoded) > MAX_VEO_IMAGE_BYTES:
+            raise ValueError("too_large")
+        normalized = base64.b64encode(decoded).decode("ascii")
+        return {
+            "content_base64": normalized,
+            "mime_type": mime or "image/png",
+            "filename": name or "image.png",
+        }
+
+    if generation_type == "image2video":
+        start_raw = (
+            params_payload.get("startImage")
+            or params_payload.get("start_image")
+            or payload.get("startImage")
+            or payload.get("start_image")
+        )
+        start_mime = (
+            params_payload.get("startImageMime")
+            or params_payload.get("start_image_mime")
+            or payload.get("startImageMime")
+            or payload.get("start_image_mime")
+        )
+        start_name = (
+            params_payload.get("startImageName")
+            or params_payload.get("start_image_name")
+            or payload.get("startImageName")
+            or payload.get("start_image_name")
+        )
+
+        if not start_raw:
+            await message.answer("Загрузите начальный кадр (до 5 МБ).", reply_markup=get_cancel_keyboard())
+            return
+
+        try:
+            start_image = _prepare_inline_image(start_raw, start_mime, start_name)
+        except ValueError as exc:
+            reason = str(exc)
+            if reason == "too_large":
+                await message.answer(
+                    "Начальный кадр превышает 5 МБ. Загрузите файл поменьше.",
+                    reply_markup=get_cancel_keyboard(),
+                )
+            else:
+                await message.answer(
+                    "Не удалось прочитать начальный кадр. Попробуйте загрузить другое изображение.",
+                    reply_markup=get_cancel_keyboard(),
+                )
+            return
+
+        input_images.append(start_image)
+
+        end_raw = (
+            params_payload.get("endImage")
+            or params_payload.get("end_image")
+            or payload.get("endImage")
+            or payload.get("end_image")
+        )
+        if end_raw:
+            end_mime = (
+                params_payload.get("endImageMime")
+                or params_payload.get("end_image_mime")
+                or payload.get("endImageMime")
+                or payload.get("end_image_mime")
+            )
+            end_name = (
+                params_payload.get("endImageName")
+                or params_payload.get("end_image_name")
+                or payload.get("endImageName")
+                or payload.get("end_image_name")
+            )
+
+            try:
+                final_frame = _prepare_inline_image(end_raw, end_mime, end_name)
+            except ValueError as exc:
+                reason = str(exc)
+                if reason == "too_large":
+                    await message.answer(
+                        "Конечный кадр превышает 5 МБ. Загрузите файл поменьше или оставьте поле пустым.",
+                        reply_markup=get_cancel_keyboard(),
+                    )
+                else:
+                    await message.answer(
+                        "Не удалось прочитать конечный кадр. Попробуйте другой файл или оставьте поле пустым.",
+                        reply_markup=get_cancel_keyboard(),
+                    )
+                return
+
+    generation_params = {
+        "duration": duration,
+        "resolution": resolution,
+        "aspect_ratio": aspect_ratio,
+    }
+    if final_frame:
+        generation_params["final_frame"] = final_frame
+
+    try:
+        user = await sync_to_async(TgUser.objects.get)(chat_id=message.from_user.id)
+    except TgUser.DoesNotExist:
+        await message.answer(
+            "Не удалось найти пользователя. Начните заново.",
+            reply_markup=get_main_menu_inline_keyboard(),
+        )
+        await state.clear()
+        return
+
+    try:
+        _, cost_tokens = await sync_to_async(calculate_request_cost)(
+            model, quantity=1, duration=duration, params=generation_params
+        )
+        can_generate, error_msg = await sync_to_async(BalanceService.check_can_generate)(
+            user, model, quantity=1, total_cost_tokens=cost_tokens
+        )
+        if not can_generate:
+            await message.answer(
+                f"❌ {error_msg}",
+                reply_markup=get_main_menu_inline_keyboard(),
+            )
+            await state.clear()
+            return
+    except Exception as exc:
+        await message.answer(
+            "❌ Произошла ошибка при проверке баланса. Попробуйте позже.",
+            reply_markup=get_main_menu_inline_keyboard(),
+        )
+        await ErrorTracker.alog(
+            origin=BotErrorEvent.Origin.TELEGRAM,
+            severity=BotErrorEvent.Severity.WARNING,
+            handler="video_generation.handle_veo_webapp_data.balance_check",
+            chat_id=message.chat.id,
+            payload={"model": model.slug},
+            exc=exc,
+        )
+        await state.clear()
+        return
+
+    try:
+        gen_request = await sync_to_async(GenerationService.create_generation_request)(
+            user=user,
+            ai_model=model,
+            prompt=prompt,
+            quantity=1,
+            generation_type=generation_type,
+            input_images=input_images,
+            generation_params=generation_params,
+            duration=duration,
+            video_resolution=resolution,
+            aspect_ratio=aspect_ratio,
+        )
+    except InsufficientBalanceError as exc:
+        await message.answer(str(exc), reply_markup=get_main_menu_inline_keyboard())
+        await state.clear()
+        return
+    except ValueError as exc:
+        await message.answer(str(exc), reply_markup=get_main_menu_inline_keyboard())
+        await state.clear()
+        return
+    except Exception as exc:
+        await message.answer(
+            "❌ Произошла ошибка при подготовке генерации. Попробуйте ещё раз.",
+            reply_markup=get_main_menu_inline_keyboard(),
+        )
+        await ErrorTracker.alog(
+            origin=BotErrorEvent.Origin.TELEGRAM,
+            severity=BotErrorEvent.Severity.ERROR,
+            handler="video_generation.handle_veo_webapp_data",
+            chat_id=message.chat.id,
+            payload={
+                "generation_type": generation_type,
+                "duration": duration,
+                "aspect_ratio": aspect_ratio,
+            },
+            exc=exc,
+        )
+        await state.clear()
+        return
+
+    await message.answer(
+        get_generation_start_message(
+            model=model.display_name,
+            mode=generation_type,
+            aspect_ratio=aspect_ratio,
+            resolution=resolution,
+            duration=duration,
+            prompt=prompt,
+        ),
+        reply_markup=get_main_menu_inline_keyboard()
+    )
+
+    generate_video_task.delay(gen_request.id)
+    await state.clear()
 
 
 async def _prompt_user_for_description(
@@ -98,23 +899,26 @@ async def _prompt_user_for_description(
     is_sora: bool = False,
 ) -> None:
     """Отправить пользователю инструкции по вводу промта."""
-    intro = [f"Формат выбран: {aspect_ratio}"]
-    if duration:
-        intro.append(f"Длительность: {duration} сек.")
-    if resolution:
-        intro.append(f"Качество: {resolution.upper()}")
-    intro.append("Отправьте текстовое описание для генерации видео.")
     image_hint = _calculate_image_size_hint(
         supports_images=supports_images,
         is_sora=is_sora,
         resolution=resolution,
         aspect_ratio=aspect_ratio,
     )
-    if supports_images:
-        intro.append("Либо загрузите изображение и добавьте описание, чтобы использовать режим img2video.")
-        hint_text = _format_image_hint_text(image_hint)
-        if hint_text:
-            intro.append(hint_text)
+    size_hint = _format_image_hint_text(image_hint) if supports_images else ""
+
+    segments = [
+        "✍️  Напиши в чат промт для генерации видео из текста.",
+        "🖼 Если хотите сгенерировать видео из изображения, отправьте в чат одно изображение + текстовый промт."
+        f" {size_hint}".strip(),
+        f"Формат выбран: {aspect_ratio}",
+    ]
+    if duration:
+        segments.append(f"Длительность: {duration} сек.")
+    if resolution:
+        segments.append(f"Качество: {resolution.lower()}")
+
+    intro = ["\n\n".join(segments)]
 
     await message.answer(
         "\n".join(intro),
@@ -145,129 +949,11 @@ async def _maybe_prompt_resolution(message: Message, state: FSMContext) -> bool:
     return True
 
 
-@router.message(F.text == "🎬 Создать видео")
-async def create_video_start(message: Message, state: FSMContext):
-    """
-    Шаг 1: Выбор модели генерации видео
-    """
-    # Получаем активные модели для видео
-    models = await sync_to_async(list)(
-        AIModel.objects.filter(type='video', is_active=True).order_by('order')
-    )
+# Обработчик кнопки "🎬 Создать видео" перенесен в global_commands.py
+# чтобы работать из любого состояния
 
-    if not models:
-        await message.answer(
-            "😔 К сожалению, сейчас нет доступных моделей для генерации видео.\n"
-            "Попробуйте позже.",
-            reply_markup=get_main_menu_inline_keyboard()
-        )
-        return
-
-    # Отправляем список моделей с inline кнопкой меню
-    await message.answer(
-        "🎬 **Выберите модель для генерации видео:**",
-        reply_markup=get_video_models_keyboard(models),
-        parse_mode="Markdown"
-    )
-
-    # Устанавливаем состояние выбора модели
-    await state.set_state(BotStates.video_select_model)
-
-
-@router.callback_query(F.data.startswith("vid_model:"))
-async def select_video_model(callback: CallbackQuery, state: FSMContext):
-    """
-    Шаг 2: После выбора модели показываем информацию и ждем промт
-    """
-    await callback.answer()
-
-    # Получаем slug модели из callback data
-    model_slug = callback.data.split(":")[1]
-
-    # Получаем модель из БД
-    try:
-        model = await sync_to_async(AIModel.objects.get)(slug=model_slug, is_active=True)
-    except AIModel.DoesNotExist:
-        await callback.message.answer(
-            "❌ Модель не найдена или недоступна.",
-            reply_markup=get_main_menu_inline_keyboard()
-        )
-        return
-
-    # Сохраняем выбранную модель в состояние
-    await state.update_data(selected_model=model_slug, model_id=model.id)
-
-    # Проверяем баланс пользователя
-    user = await sync_to_async(TgUser.objects.get)(chat_id=callback.from_user.id)
-    balance = await sync_to_async(BalanceService.get_balance)(user)
-
-    model_cost = await sync_to_async(get_base_price_tokens)(model)
-
-    if balance < model_cost:
-        await callback.message.answer(
-            f"❌ **Недостаточно токенов**\n\n"
-            f"Ваш баланс: ⚡ {balance:.2f} токенов\n"
-            f"Стоимость генерации: ⚡ {model_cost:.2f} токенов\n\n"
-            f"Необходимо пополнить баланс на ⚡ {model_cost - balance:.2f} токенов",
-            parse_mode="Markdown",
-            reply_markup=get_main_menu_inline_keyboard()
-        )
-        await state.clear()
-        return
-
-    default_params = model.default_params or {}
-    duration_options = _extract_duration_options(model)
-    default_duration = default_params.get('duration', 8)
-    is_sora_model = model.slug == "sora2" or model.provider == "openai"
-    if duration_options and default_duration not in duration_options:
-        default_duration = min(duration_options, key=lambda x: abs(x - default_duration))
-    default_resolution = default_params.get('resolution', '720p')
-    default_aspect_ratio = default_params.get('aspect_ratio', '16:9')
-
-    sora_resolutions: List[str] = [default_resolution]
-    if is_sora_model:
-        duration_options = duration_options or [4, 8, 12]
-        default_duration = 8
-        default_aspect_ratio = "9:16"
-        default_resolution = "720p"
-        sora_resolutions = ["720p"]
-
-    resolution_options = sora_resolutions if is_sora_model else [default_resolution]
-    selected_resolution = sora_resolutions[0] if is_sora_model else default_resolution
-
-    info_message = (
-        f"Модель: {model.name}.\n"
-        f"Стоимость: ⚡{model_cost:.2f} токенов.\n"
-        f"Генерация видео в качестве {default_resolution} и до {default_duration} секунд."
-    )
-    if duration_options:
-        options_text = ", ".join(f"{value} сек" for value in duration_options)
-        info_message += f"\nДоступная длительность: {options_text}."
-    if is_sora_model:
-        info_message += "\nМаксимально доступное качество: 720p (ограничение OpenAI Sora)."
-
-    combined_message = f"{info_message}\n\nВыберите формат видео:"
-    await callback.message.answer(
-        combined_message,
-        reply_markup=get_video_format_keyboard()
-    )
-
-    await state.set_state(BotStates.video_select_format)
-    await state.update_data(
-        model_slug=model_slug,
-        model_id=model.id,
-        model_provider=model.provider,
-        is_sora=is_sora_model,
-        model_name=model.display_name,
-        supports_images=model.supports_image_input,
-        default_duration=default_duration,
-        default_resolution=default_resolution,
-        default_aspect_ratio=default_aspect_ratio,
-        duration_options=duration_options,
-        resolution_options=resolution_options,
-        selected_resolution=selected_resolution,
-        generation_type='text2video'
-    )
+# Обработчик выбора модели "vid_model:" также перенесен в global_commands.py
+# чтобы работать из любого состояния
 
 
 @router.message(BotStates.video_select_format)
@@ -303,7 +989,10 @@ async def wait_resolution_selection(message: Message, state: FSMContext):
     )
 
 
-@router.callback_query(BotStates.video_select_format, F.data.startswith("video_format:"))
+@router.callback_query(
+    StateFilter("*"),
+    F.data.startswith("video_format:"),
+)
 async def set_video_format(callback: CallbackQuery, state: FSMContext):
     """Сохраняем выбранное соотношение сторон и переходим к сбору промта."""
     await callback.answer()
@@ -312,6 +1001,14 @@ async def set_video_format(callback: CallbackQuery, state: FSMContext):
     aspect_ratio = ratio_raw.replace("_", ":") if "_" in ratio_raw else ratio_raw
 
     data = await state.get_data()
+    # Если стейт пустой (потерян), а пользователь нажал кнопку формата
+    if not data:
+        await callback.message.answer(
+            "⚠️ Сессия устарела. Пожалуйста, начните создание видео заново.",
+            reply_markup=get_main_menu_inline_keyboard()
+        )
+        return
+
     supports_images = data.get('supports_images', False)
     duration_options = data.get('duration_options') or []
     default_duration = data.get('default_duration')
@@ -350,12 +1047,22 @@ async def set_video_format(callback: CallbackQuery, state: FSMContext):
     await state.set_state(BotStates.video_wait_prompt)
 
 
-@router.callback_query(BotStates.video_select_duration, F.data.startswith("video_duration:"))
+@router.callback_query(
+    StateFilter("*"),
+    F.data.startswith("video_duration:"),
+)
 async def set_video_duration(callback: CallbackQuery, state: FSMContext):
     """Сохраняем выбранную длительность и переходим к сбору промта."""
     await callback.answer()
 
     data = await state.get_data()
+    if not data:
+        await callback.message.answer(
+            "⚠️ Сессия устарела. Пожалуйста, начните создание видео заново.",
+            reply_markup=get_main_menu_inline_keyboard()
+        )
+        return
+
     duration_options = data.get('duration_options') or []
     keyboard_options = duration_options or [data.get('default_duration', 8)]
 
@@ -396,12 +1103,22 @@ async def set_video_duration(callback: CallbackQuery, state: FSMContext):
     await state.set_state(BotStates.video_wait_prompt)
 
 
-@router.callback_query(BotStates.video_select_resolution, F.data.startswith("video_resolution:"))
+@router.callback_query(
+    StateFilter("*"),
+    F.data.startswith("video_resolution:"),
+)
 async def set_video_resolution(callback: CallbackQuery, state: FSMContext):
     """Сохраняем выбранное качество и переходим к сбору промта."""
     await callback.answer()
 
     data = await state.get_data()
+    if not data:
+         await callback.message.answer(
+            "⚠️ Сессия устарела. Пожалуйста, начните создание видео заново.",
+            reply_markup=get_main_menu_inline_keyboard()
+        )
+         return
+         
     options = [opt.lower() for opt in (data.get('resolution_options') or [])]
 
     try:
@@ -644,7 +1361,14 @@ async def handle_video_prompt(message: Message, state: FSMContext):
         return
 
     await message.answer(
-        get_generation_start_message(),
+        get_generation_start_message(
+            model=model.display_name,
+            mode=generation_type,
+            aspect_ratio=selected_aspect_ratio,
+            resolution=selected_resolution,
+            duration=selected_duration,
+            prompt=prompt,
+        ),
         reply_markup=get_main_menu_inline_keyboard()
     )
 
@@ -652,10 +1376,13 @@ async def handle_video_prompt(message: Message, state: FSMContext):
     await state.clear()
 
 
-@router.callback_query(F.data.startswith("extend_video:"))
+@router.callback_query(StateFilter("*"), F.data.startswith("extend_video:"))
 async def prompt_video_extension(callback: CallbackQuery, state: FSMContext):
     """Подготовить пользователя к продлению видео."""
     await callback.answer()
+    
+    # Очищаем стейт, так как это начало нового флоу (продления)
+    await state.clear()
 
     try:
         request_id = int(callback.data.split(":", maxsplit=1)[1])
@@ -853,7 +1580,14 @@ async def handle_video_extension_prompt(message: Message, state: FSMContext):
         return
 
     await message.answer(
-        get_generation_start_message(),
+        get_generation_start_message(
+            model=model.display_name if model else "—",
+            mode="image2video",
+            aspect_ratio=aspect_ratio,
+            resolution=resolution,
+            duration=8,
+            prompt=text,
+        ),
         reply_markup=get_main_menu_inline_keyboard()
     )
 
@@ -870,7 +1604,7 @@ async def remind_extension_prompt(message: Message):
     )
 
 
-@router.callback_query(F.data == "main_menu")
+@router.callback_query(StateFilter("*"), F.data == "main_menu")
 async def handle_main_menu_callback(callback: CallbackQuery, state: FSMContext):
     """
     Обработчик inline кнопки "Главное меню"
@@ -888,6 +1622,6 @@ async def handle_main_menu_callback(callback: CallbackQuery, state: FSMContext):
     PAYMENT_URL = getattr(settings, 'PAYMENT_MINI_APP_URL', 'https://example.com/payment')
 
     await callback.message.answer(
-        "Главное меню:",
+        "Выберите нужное  действие нажав на кнопку в меню 👇",
         reply_markup=get_main_menu_keyboard(PAYMENT_URL)
     )

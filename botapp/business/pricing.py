@@ -67,6 +67,24 @@ def _resolve_duration(
     return 1
 
 
+def _resolve_units(
+    ai_model: 'AIModel',
+    quantity: int = 1,
+    duration: Optional[int] = None,
+    params: Optional[Dict[str, object]] = None,
+) -> Decimal:
+    """
+    Возвращает количество единиц тарификации с учётом cost_unit модели.
+    """
+    cost_unit = getattr(ai_model, "cost_unit", None) or ai_model.CostUnit.GENERATION
+
+    if cost_unit == ai_model.CostUnit.IMAGE:
+        return Decimal(max(1, quantity))
+    if cost_unit == ai_model.CostUnit.SECOND:
+        return Decimal(max(1, _resolve_duration(ai_model, duration, params)))
+    return Decimal('1')
+
+
 def compute_seb(
     ai_model: 'AIModel',
     *,
@@ -99,13 +117,24 @@ def calculate_request_cost(
     """Возвращает пару (себестоимость USD, цена в токенах) для запроса."""
     seb = compute_seb(ai_model, quantity=quantity, duration=duration, params=params)
     tokens = usd_to_retail_tokens(seb)
+    units = _resolve_units(ai_model, quantity=quantity, duration=duration, params=params)
+
+    if seb == Decimal('0.0000'):
+        base_price_tokens = Decimal(str(getattr(ai_model, "price", 0) or 0))
+        if base_price_tokens > 0 and units > 0:
+            tokens = (base_price_tokens * units).quantize(TOKEN_QUANT, rounding=ROUND_HALF_UP)
+            settings = get_pricing_settings()
+            rate = settings.usd_to_token_rate * settings.markup_multiplier
+            if rate > 0:
+                seb = (tokens / rate).quantize(Decimal('0.0001'), rounding=ROUND_HALF_UP)
+
     return seb, tokens
 
 
 def get_base_price_tokens(ai_model: 'AIModel') -> Decimal:
     """Цена в токенах за базовую единицу (1 изображение или 1 секунду)."""
-    seb = compute_seb(ai_model, quantity=1)
-    return usd_to_retail_tokens(seb)
+    _, tokens = calculate_request_cost(ai_model, quantity=1, duration=None, params=None)
+    return tokens
 
 
 def format_price_for_display(tokens: Decimal) -> str:

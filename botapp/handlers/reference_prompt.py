@@ -7,14 +7,13 @@ import re
 from typing import List, Optional, Tuple
 
 from aiogram import F, Router
+from aiogram.filters import StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
-from django.conf import settings
 
 from botapp.error_tracker import ErrorTracker
 from botapp.keyboards import (
     get_cancel_keyboard,
-    get_main_menu_keyboard,
     get_reference_prompt_mods_keyboard,
     get_reference_prompt_models_keyboard,
 )
@@ -34,7 +33,6 @@ router = Router()
 service = ReferencePromptService()
 
 URL_RE = re.compile(r"(https?://[^\s]+|www\.[^\s]+)", re.IGNORECASE)
-PAYMENT_URL = getattr(settings, "PAYMENT_MINI_APP_URL", "https://example.com/payment")
 
 
 def _extract_urls(text: Optional[str]) -> List[str]:
@@ -130,33 +128,16 @@ def _collect_reference_payload(message: Message) -> Optional[ReferenceInputPaylo
     return None
 
 
-@router.message(F.text == "Промт по рефференсу")
-async def prompt_by_reference_entry(message: Message, state: FSMContext):
-    """Точка входа в сценарий генерации промта по референсу."""
-
-    await state.clear()
-
-    if not REFERENCE_PROMPT_MODELS:
-        await message.answer(
-            "😔 Сейчас нет доступных моделей для создания промта по референсу.",
-            reply_markup=get_cancel_keyboard(),
-        )
-        return
-
-    options: List[Tuple[str, str]] = [
-        (model.slug, model.title) for model in REFERENCE_PROMPT_MODELS.values()
-    ]
-
-    await message.answer(
-        "Выберите модель для которой нужно собрать JSON-промт:",
-        reply_markup=get_reference_prompt_models_keyboard(options),
-    )
-    await state.set_state(BotStates.reference_prompt_select_model)
+# Обработчик кнопки "Промт по референсу" перенесен в global_commands.py
+# чтобы работать из любого состояния
 
 
-@router.callback_query(BotStates.reference_prompt_select_model, F.data.startswith("ref_prompt_model:"))
+@router.callback_query(StateFilter("*"), F.data.startswith("ref_prompt_model:"))
 async def prompt_by_reference_select_model(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
+    
+    # Сбрасываем состояние
+    await state.clear()
 
     slug = callback.data.split(":", maxsplit=1)[1]
 
@@ -173,7 +154,7 @@ async def prompt_by_reference_select_model(callback: CallbackQuery, state: FSMCo
     await state.update_data(reference_prompt_model=model.slug)
 
     await callback.message.answer(
-        "Отправьте ссылку на рефференс или загрузите в чат видео/изображение и я создам промт для генерации точно такого же видео",
+        "Отправьте ссылку на референс или загрузите в чат видео/изображение и я создам промт для генерации точно такого же видео",
         reply_markup=get_cancel_keyboard(),
     )
 
@@ -201,14 +182,14 @@ async def prompt_by_reference_collect(message: Message, state: FSMContext):
     await state.set_state(BotStates.reference_prompt_confirm_mods)
 
 
-@router.callback_query(BotStates.reference_prompt_confirm_mods, F.data == "ref_prompt_mods:edit")
+@router.callback_query(F.data == "ref_prompt_mods:edit")
 async def prompt_by_reference_mods_yes(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
     await callback.message.answer("Напиши правки одним сообщением 🔧")
     await state.set_state(BotStates.reference_prompt_wait_mods)
 
 
-@router.callback_query(BotStates.reference_prompt_confirm_mods, F.data == "ref_prompt_mods:skip")
+@router.callback_query(F.data == "ref_prompt_mods:skip")
 async def prompt_by_reference_mods_skip(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
     await _start_prompt_generation(callback.message, state, modifications=None)
@@ -240,7 +221,10 @@ async def _start_prompt_generation(message: Message, state: FSMContext, modifica
 
     reference_payload = ReferenceInputPayload.from_state(payload_data)
 
-    await message.answer("Собираю JSON-промт…", reply_markup=get_cancel_keyboard())
+    await message.answer(
+        "Создаю промт для генерация видео по указанному референсу, ожидайте пару минут ⏳",
+        reply_markup=get_cancel_keyboard(),
+    )
     await state.set_state(BotStates.reference_prompt_processing)
 
     try:
@@ -280,15 +264,5 @@ async def _start_prompt_generation(message: Message, state: FSMContext, modifica
     for chunk in result.chunks:
         await message.answer(chunk, parse_mode="Markdown")
 
-    await message.answer(
-        f"Код диалога: `{result.dialogue_code}`",
-        parse_mode="Markdown",
-    )
-
     await state.clear()
     await state.set_state(BotStates.main_menu)
-
-    await message.answer(
-        "Главное меню:",
-        reply_markup=get_main_menu_keyboard(PAYMENT_URL),
-    )

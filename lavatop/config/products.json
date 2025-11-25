@@ -23,15 +23,17 @@
       "currency": "USD",
       "name": "200 Tokens",
       "description": "Popular package - 200 tokens with no expiration",
-      "active": false,
-      "lava_product_id": null,
+      "active": true,
+      "lava_product_id": "3e358e3a-f98b-4122-a493-e62db627a326",
       "features": [
         "Generate up to 40 images",
         "Create 5-6 short videos",
         "Standard quality",
         "No expiration"
       ],
-      "offer_id": null
+      "offer_id": "5e5b1e71-60ed-48a5-806e-7b9a32ad9660",
+      "payment_method": "UNLIMINT",
+      "buyer_language": "EN"
     },
     {
       "tokens": 500,
@@ -39,15 +41,17 @@
       "currency": "USD",
       "name": "500 Tokens",
       "description": "Pro package - Best value for regular users",
-      "active": false,
-      "lava_product_id": null,
+      "active": true,
+      "lava_product_id": "72278989-6f24-4b67-8b59-e1fb2a477677",
       "features": [
         "Generate up to 100 images",
         "Create 12-15 videos",
         "Priority processing",
         "Premium support"
       ],
-      "offer_id": null
+      "offer_id": "b9a3c87c-1a63-44ef-9597-d5ed6c1d78dc",
+      "payment_method": "UNLIMINT",
+      "buyer_language": "EN"
     },
     {
       "tokens": 1000,
@@ -55,8 +59,8 @@
       "currency": "USD",
       "name": "1000 Tokens",
       "description": "Enterprise package - Maximum tokens for power users",
-      "active": false,
-      "lava_product_id": null,
+      "active": true,
+      "lava_product_id": "b5e02e69-dde4-4968-abf7-fd3e8903b55b",
       "features": [
         "Generate up to 200 images",
         "Create 25-30 videos",
@@ -64,7 +68,9 @@
         "Dedicated support",
         "Bulk operations"
       ],
-      "offer_id": null
+      "offer_id": "268ded37-79ce-4a3f-af5f-6f03213ba982",
+      "payment_method": "UNLIMINT",
+      "buyer_language": "EN"
     }
   ],
   "settings": {

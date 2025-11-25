@@ -362,7 +362,7 @@ class BalanceService:
     def add_referral_bonus(referrer: TgUser, referred: TgUser) -> Tuple[Transaction, Transaction]:
         """Начисляет бонусы за приглашение друга."""
         referrer_balance = BalanceService.ensure_balance(referrer, for_update=True)
-        referred_balance = BalanceService.ensure_balance(referred, for_update=True)
+        BalanceService.ensure_balance(referred, for_update=True)
 
         referrer_tx = BalanceService.create_transaction(
             referrer,

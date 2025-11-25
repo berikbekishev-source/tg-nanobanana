@@ -2,6 +2,7 @@
 Обработчики платежей и пополнения баланса
 """
 from aiogram import Router, F
+from aiogram.filters import StateFilter
 from aiogram.types import Message, CallbackQuery, PreCheckoutQuery
 from aiogram.fsm.context import FSMContext
 from decimal import Decimal
@@ -11,15 +12,23 @@ from asgiref.sync import sync_to_async
 
 from botapp.states import BotStates
 from botapp.keyboards import (
-    get_back_to_menu_keyboard,
     get_cancel_keyboard,
     get_main_menu_inline_keyboard,
+    get_main_menu_keyboard,
     format_balance
 )
 from botapp.models import TgUser, Transaction, Promocode
 from botapp.business.balance import BalanceService
 
 router = Router()
+_configured_payment_url = getattr(settings, 'PAYMENT_MINI_APP_URL', None)
+_public_base_url = getattr(settings, 'PUBLIC_BASE_URL', '')
+if _configured_payment_url:
+    PAYMENT_URL = _configured_payment_url
+elif _public_base_url:
+    PAYMENT_URL = f"{_public_base_url.rstrip('/')}/miniapp/"
+else:
+    PAYMENT_URL = 'https://example.com/miniapp/'
 
 
 def _format_tokens(amount: Decimal) -> str:
@@ -115,7 +124,17 @@ async def _process_promocode_activation(
     return True
 
 
-@router.message(F.text == "💳 Пополнить баланс")
+async def _ask_for_promocode(message: Message, state: FSMContext) -> None:
+    """Переводит пользователя в режим ввода промокода и выводит подсказку."""
+    await state.clear()
+    await state.set_state(BotStates.payment_enter_promocode)
+    await message.answer(
+        "Введите промокод в чат👇",
+        reply_markup=get_cancel_keyboard(),
+    )
+
+
+@router.message(StateFilter("*"), F.text == "💳 Пополнить баланс")
 async def deposit_from_menu(message: Message, state: FSMContext):
     """
     Обработчик кнопки "Пополнить баланс" из главного меню
@@ -124,7 +143,12 @@ async def deposit_from_menu(message: Message, state: FSMContext):
     # Формируем URL с параметрами пользователя
     user_id = message.from_user.id
     username = message.from_user.username or ""
-    payment_url = getattr(settings, 'PAYMENT_MINI_APP_URL', 'https://example.com/payment')
+    configured_payment_url = getattr(settings, "PAYMENT_MINI_APP_URL", None)
+    if configured_payment_url:
+        payment_url = configured_payment_url
+    else:
+        public_base = getattr(settings, "PUBLIC_BASE_URL", "")
+        payment_url = f"{public_base.rstrip('/')}/miniapp/" if public_base else "https://example.com/miniapp/"
     payment_url_with_params = f"{payment_url}?user_id={user_id}&username={username}"
 
     # Создаем inline кнопку для открытия Mini App
@@ -135,6 +159,11 @@ async def deposit_from_menu(message: Message, state: FSMContext):
     builder.button(
         text="💳 Открыть страницу оплаты",
         web_app=WebAppInfo(url=payment_url_with_params)
+    )
+    # Фолбек: обычная ссылка, если WebApp заблокирован Телеграмом
+    builder.button(
+        text="🌐 Открыть в браузере",
+        url=payment_url_with_params
     )
 
     await message.answer(
@@ -151,11 +180,11 @@ async def deposit_from_menu(message: Message, state: FSMContext):
     # Отправляем кнопку главного меню
     await message.answer(
         "Или вернитесь в меню:",
-        reply_markup=get_back_to_menu_keyboard()
+        reply_markup=get_main_menu_keyboard(PAYMENT_URL)
     )
 
 
-@router.callback_query(F.data.startswith("payment_success:"))
+@router.callback_query(StateFilter("*"), F.data.startswith("payment_success:"))
 async def handle_payment_success(callback: CallbackQuery, state: FSMContext):
     """
     Обработчик успешной оплаты через Mini App
@@ -216,7 +245,7 @@ async def handle_payment_success(callback: CallbackQuery, state: FSMContext):
         )
 
 
-@router.callback_query(F.data.startswith("payment_failed:"))
+@router.callback_query(StateFilter("*"), F.data.startswith("payment_failed:"))
 async def handle_payment_failed(callback: CallbackQuery, state: FSMContext):
     """
     Обработчик неудачной оплаты через Mini App
@@ -303,33 +332,28 @@ async def handle_pre_checkout(pre_checkout_query: PreCheckoutQuery):
     await pre_checkout_query.answer(ok=True)
 
 
-@router.message(F.text.startswith("PROMO"))
+@router.message(StateFilter("*"), F.text.startswith("PROMO"))
+@router.message(StateFilter("*"), F.text == "🎁 Ввести промокод")
 async def handle_promocode(message: Message, state: FSMContext):
     """
-    Обработчик промокодов (формат: PROMOXXXX).
-    Промокод может начислить фиксированное количество токенов.
+    Обработчик промокодов (формат: PROMOXXXX) и входа в меню промокодов.
     """
-    user = await sync_to_async(TgUser.objects.get)(chat_id=message.from_user.id)
+    # Если это кнопка меню - просто переводим в состояние
+    if message.text == "🎁 Ввести промокод":
+        await _ask_for_promocode(message, state)
+        return
 
-    await _process_promocode_activation(
+    # Если это сам промокод (начинается с PROMO)
+    user = await sync_to_async(TgUser.objects.get)(chat_id=message.from_user.id)
+    success = await _process_promocode_activation(
         message,
         user=user,
         promo_code_raw=message.text,
         success_markup=get_main_menu_inline_keyboard(),
         failure_markup=get_main_menu_inline_keyboard(),
     )
-
-
-@router.callback_query(F.data == "enter_promocode")
-async def prompt_promocode_input(callback: CallbackQuery, state: FSMContext):
-    """Запрос ввода промокода из раздела баланса."""
-    await callback.answer()
-    await state.set_state(BotStates.payment_enter_promocode)
-
-    await callback.message.answer(
-        "Введите промокод в чат.",
-        reply_markup=get_cancel_keyboard(),
-    )
+    if success:
+        await state.clear()
 
 
 @router.message(BotStates.payment_enter_promocode)
@@ -349,7 +373,17 @@ async def process_promocode_input(message: Message, state: FSMContext):
         await state.set_state(BotStates.main_menu)
 
 
-@router.callback_query(F.data == "main_menu")
+@router.callback_query(StateFilter("*"), F.data == "enter_promocode")
+async def handle_promocode_callback(callback: CallbackQuery, state: FSMContext):
+    """
+    Обработчик inline-кнопки "Ввести промокод" из раздела баланса.
+    Настраиваем поведение так же, как у кнопки в клавиатуре.
+    """
+    await callback.answer()
+    await _ask_for_promocode(callback.message, state)
+
+
+@router.callback_query(StateFilter("*"), F.data == "main_menu")
 async def handle_main_menu_callback(callback: CallbackQuery, state: FSMContext):
     """
     Обработчик inline кнопки "Главное меню"
@@ -360,13 +394,7 @@ async def handle_main_menu_callback(callback: CallbackQuery, state: FSMContext):
     await state.clear()
     await state.set_state(BotStates.main_menu)
 
-    # Импортируем функцию главного меню
-    from django.conf import settings
-    from botapp.keyboards import get_main_menu_keyboard
-
-    PAYMENT_URL = getattr(settings, 'PAYMENT_MINI_APP_URL', 'https://example.com/payment')
-
     await callback.message.answer(
-        "Главное меню:",
+        "Выберите нужное  действие нажав на кнопку в меню 👇",
         reply_markup=get_main_menu_keyboard(PAYMENT_URL)
     )
