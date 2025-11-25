@@ -4,6 +4,7 @@
 """
 from typing import List, Tuple
 from urllib.parse import quote_plus
+from decimal import Decimal
 
 from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
