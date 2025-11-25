@@ -313,6 +313,13 @@ class KlingVideoProvider(BaseVideoProvider):
             except (TypeError, ValueError):
                 pass
 
+        aspect_ratio = (
+            effective_params.get("aspect_ratio")
+            or effective_params.get("aspectRatio")
+        )
+        if aspect_ratio:
+            payload["aspect_ratio"] = str(aspect_ratio)
+
         kling_opts = effective_params.get("kling_options")
         if isinstance(kling_opts, dict):
             payload.update(kling_opts)
