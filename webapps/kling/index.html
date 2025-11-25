@@ -434,7 +434,7 @@
 
         function setError(text) {
             if (tg) {
-                tg.showAlert(text);
+                if (text) tg.showAlert(text);
             } else {
                 els.error.textContent = text;
                 els.error.style.display = text ? "block" : "none";
@@ -624,7 +624,6 @@
                     }
                 };
                 reader.onerror = (e) => {
-                    console.error("FileReader error:", e);
                     setError("Не удалось прочитать файл. Попробуйте другое изображение.");
                     resetImage();
                 };
