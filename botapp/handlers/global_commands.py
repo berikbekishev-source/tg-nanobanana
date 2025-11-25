@@ -44,11 +44,20 @@ async def global_back_to_main_menu(message: Message, state: FSMContext):
     Этот обработчик работает независимо от текущего состояния FSM.
     Поддерживает оба варианта написания (с пробелом и без).
     """
+    current_state = await state.get_state()
     await state.clear()
     await state.set_state(BotStates.main_menu)
 
+    reference_flow_states = {
+        BotStates.reference_prompt_wait_reference.state,
+        BotStates.reference_prompt_confirm_mods.state,
+        BotStates.reference_prompt_wait_mods.state,
+    }
+
     await message.answer(
-        "Выберите нужное действие нажав на кнопку в меню 👇",
+        "Режим промта по референсу отменён. Главное меню ниже."
+        if current_state in reference_flow_states
+        else "Выберите нужное действие нажав на кнопку в меню 👇",
         reply_markup=get_main_menu_keyboard(PAYMENT_URL)
     )
 
@@ -232,10 +241,10 @@ async def global_create_video_start(message: Message, state: FSMContext):
     await state.set_state(BotStates.video_select_model)
 
 
-@router.message(StateFilter("*"), F.text.in_({"Промт по рефференсу", "📲Промт по рефференсу"}))
+@router.message(StateFilter("*"), F.text.in_({"Промт по референсу", "📲 Промт по референсу"}))
 async def global_prompt_by_reference_entry(message: Message, state: FSMContext):
     """
-    Обработчик кнопки 'Промт по рефференсу' - работает из любого состояния.
+    Обработчик кнопки 'Промт по референсу' - работает из любого состояния.
     Автоматически выбирает первую доступную модель.
     """
     await state.clear()
