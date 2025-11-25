@@ -570,7 +570,7 @@ async def handle_nanobanana_webapp_data(message: Message, state: FSMContext):
         await state.clear()
         return
 
-    allowed_aspects = {"1:1", "2:3", "3:2", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9"}
+    allowed_aspects = {"1:1", "2:3", "3:2", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9"}
     aspect_ratio = (
         payload.get("aspectRatio")
         or payload.get("aspect_ratio")
