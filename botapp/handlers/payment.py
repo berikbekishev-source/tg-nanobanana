@@ -390,11 +390,22 @@ async def handle_main_menu_callback(callback: CallbackQuery, state: FSMContext):
     """
     await callback.answer()
 
-    # Очищаем состояние
+    current_state = await state.get_state()
     await state.clear()
     await state.set_state(BotStates.main_menu)
 
+    reply_text = (
+        "Режим промта по референсу отменён. Главное меню ниже."
+        if current_state
+        in {
+            BotStates.reference_prompt_wait_reference.state,
+            BotStates.reference_prompt_confirm_mods.state,
+            BotStates.reference_prompt_wait_mods.state,
+        }
+        else "Выберите нужное  действие нажав на кнопку в меню 👇"
+    )
+
     await callback.message.answer(
-        "Выберите нужное  действие нажав на кнопку в меню 👇",
+        reply_text,
         reply_markup=get_main_menu_keyboard(PAYMENT_URL)
     )
