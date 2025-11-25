@@ -190,10 +190,16 @@ async def cmd_help(message: Message):
 # чтобы работать из любого состояния
 
 
-@router.message(BotStates.main_menu, ~F.text.in_(MAIN_MENU_ACTIONS))
-async def handle_free_text_in_main_menu(message: Message):
-    """Ответ на произвольный текст в главном меню"""
+@router.message(
+    StateFilter("*"),
+    ~StateFilter(BotStates.payment_enter_promocode),
+    F.text,
+    ~F.text.in_(MAIN_MENU_ACTIONS),
+    ~F.text.startswith("/"),
+)
+async def handle_free_text_any_state(message: Message):
+    """Ответ на произвольный текст в любом состоянии, кроме ввода промокода."""
     await message.answer(
-        "Для начала работы пожалуйста выберите нужное действие нажав на кнопку в меню 👇",
+        "Пожалуйста выберите нужное действие нажав на кнопку в меню 👇",
         reply_markup=get_main_menu_keyboard(PAYMENT_URL)
     )
