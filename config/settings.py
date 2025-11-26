@@ -191,8 +191,6 @@ if PUBLIC_BASE_URL:
     if public_origin and public_origin not in CSRF_TRUSTED_ORIGINS:
         CSRF_TRUSTED_ORIGINS.append(public_origin)
 GEMINI_API_KEY     = os.getenv("GEMINI_API_KEY")
-GEMINI_IMAGE_MODEL = os.getenv("GEMINI_IMAGE_MODEL", "gemini-2.5-flash-image")
-GEMINI_IMAGE_MODEL_FALLBACK = os.getenv("GEMINI_IMAGE_MODEL_FALLBACK", "gemini-2.5-flash-image-preview")
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
 SUPABASE_BUCKET = os.getenv("SUPABASE_BUCKET", "bot-images")
@@ -206,8 +204,6 @@ GCP_LOCATION = os.getenv("GCP_LOCATION", "us-central1")
 VERTEX_PROJECT_ID = os.getenv("VERTEX_PROJECT_ID", GCP_PROJECT_ID)
 VERTEX_LOCATION = os.getenv("VERTEX_LOCATION", GCP_LOCATION or "us-central1")
 NANO_BANANA_API_KEY = os.getenv("NANO_BANANA_API_KEY")
-NANO_BANANA_GEMINI_MODEL = os.getenv("NANO_BANANA_GEMINI_MODEL")
-NANO_BANANA_PRO_MODEL = os.getenv("NANO_BANANA_PRO_MODEL", "publishers/google/models/gemini-3.0-pro-image-preview")
 
 # --- OpenAI Sora ---
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
