@@ -6,6 +6,7 @@ from django.db.models import Count
 from django.urls import path, reverse
 from django.shortcuts import get_object_or_404
 from django.template.response import TemplateResponse
+from django.core.paginator import Paginator
 from .models import (
     TgUser, GenRequest, UserBalance, AIModel,
     Transaction, UserSettings, Promocode, PricingSettings,
