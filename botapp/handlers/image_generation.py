@@ -673,9 +673,9 @@ async def handle_nanobanana_webapp_data(message: Message, state: FSMContext):
         prompt,
     )
 
-    await message.answer(
+    await _send_start_message_with_delay(
+        message,
         start_message,
-        reply_markup=get_main_menu_inline_keyboard(),
         parse_mode=None,
     )
 
@@ -816,10 +816,10 @@ async def _start_generation(message: Message, state: FSMContext, prompt: str):
         )
 
         # Отправляем информационное сообщение с деталями
-        await message.answer(
+        await _send_start_message_with_delay(
+            message,
             start_message,
             parse_mode=None,
-            reply_markup=get_main_menu_inline_keyboard()
         )
 
         # Запускаем задачу генерации
