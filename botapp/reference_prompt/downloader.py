@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+import base64
+import functools
 import os
 import re
 import tempfile
@@ -36,6 +38,29 @@ class DownloadedMedia:
     height: Optional[int]
 
 
+@functools.lru_cache(maxsize=1)
+def _resolve_cookiefile() -> Optional[str]:
+    """Возвращает путь к файлу с cookies для yt_dlp, если он передан через окружение."""
+
+    env_path = os.getenv("YTDLP_COOKIES_FILE")
+    if env_path:
+        path = os.path.expanduser(env_path)
+        if os.path.exists(path):
+            return path
+
+    env_b64 = os.getenv("YTDLP_COOKIES_BASE64")
+    if not env_b64:
+        return None
+
+    try:
+        data = base64.b64decode(env_b64)
+        with tempfile.NamedTemporaryFile(prefix="yt_cookies_", suffix=".txt", delete=False) as tmp:
+            tmp.write(data)
+            return tmp.name
+    except Exception:
+        return None
+
+
 def _select_mime(ext: Optional[str]) -> str:
     if not ext:
         return "video/mp4"
@@ -57,6 +82,7 @@ def _download_sync(url: str) -> DownloadedMedia:
             return dd_result
 
     with tempfile.TemporaryDirectory(prefix="ref_prompt_") as tmpdir:
+        cookiefile = _resolve_cookiefile()
         ydl_opts: Dict[str, object] = {
             "format": "mp4/best",
             "noplaylist": True,
@@ -66,6 +92,14 @@ def _download_sync(url: str) -> DownloadedMedia:
             "retries": 2,
             "outtmpl": os.path.join(tmpdir, "%(id)s.%(ext)s"),
         }
+
+        if cookiefile:
+            ydl_opts["cookiefile"] = cookiefile
+            ydl_opts["force_ip_resolve"] = "ipv4"
+            ydl_opts.setdefault("extractor_args", {}).setdefault("youtube", {})["player_client"] = [
+                "android",
+                "web",
+            ]
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=True)
