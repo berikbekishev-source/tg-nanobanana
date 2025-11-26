@@ -1,6 +1,7 @@
 """
 Обработчики генерации видео
 """
+import asyncio
 import base64
 import json
 from io import BytesIO
@@ -32,6 +33,18 @@ from botapp.services import supabase_upload_png
 from botapp.error_tracker import ErrorTracker
 
 router = Router()
+START_MESSAGE_DELAY = 0.6
+
+
+async def _send_generation_start_message(
+    message: Message,
+    text: str,
+    *,
+    delay: float = START_MESSAGE_DELAY,
+) -> None:
+    """Отправляет стартовое сообщение с задержкой, чтобы успело закрыться WebApp."""
+    await asyncio.sleep(delay)
+    await message.answer(text, reply_markup=get_main_menu_inline_keyboard())
 
 
 def _extract_duration_options(model: AIModel) -> Optional[List[int]]:

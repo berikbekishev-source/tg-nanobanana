@@ -36,6 +36,23 @@ from botapp.generation_text import (
 
 router = Router()
 logger = logging.getLogger(__name__)
+START_MESSAGE_DELAY = 0.6
+
+
+async def _send_start_message_with_delay(
+    message: Message,
+    text: str,
+    *,
+    parse_mode: Optional[str] = None,
+    delay: float = START_MESSAGE_DELAY,
+) -> None:
+    """Отправляет стартовое сообщение после небольшой задержки."""
+    await asyncio.sleep(delay)
+    await message.answer(
+        text,
+        parse_mode=parse_mode,
+        reply_markup=get_main_menu_inline_keyboard(),
+    )
 
 
 # Обработчик кнопки "🎨 Создать изображение" перенесен в global_commands.py
