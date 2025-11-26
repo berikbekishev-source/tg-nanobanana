@@ -72,7 +72,15 @@
             <button type="button" class="filter-pill" data-message-filter="outgoing">Бот</button>
         </div>
         <div class="toolbar-meta">
-            Сообщений: {{ messages_total }}
+            Показано {{ messages_shown }} из {{ messages_total }} (стр. {{ messages_page }})
+        </div>
+        <div class="pagination-controls">
+            {% if messages_has_newer %}
+                <a class="ghost-button small" href="?page={{ messages_newer_page }}">← Новее</a>
+            {% endif %}
+            {% if messages_has_older %}
+                <a class="ghost-button small" href="?page={{ messages_older_page }}">Старее →</a>
+            {% endif %}
         </div>
     </div>
 

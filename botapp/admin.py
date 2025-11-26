@@ -479,8 +479,13 @@ class ChatThreadAdmin(admin.ModelAdmin):
 
     def dialog_view(self, request, thread_id: int):
         thread = get_object_or_404(ChatThread.objects.select_related('user'), pk=thread_id)
-        messages_qs = thread.messages.select_related('user').order_by('message_date')
-        chat_messages = self._prepare_messages(messages_qs)
+        messages_qs = thread.messages.select_related('user').order_by('-message_date', '-id')
+
+        paginator = Paginator(messages_qs, 200)
+        page_number = request.GET.get('page') or 1
+        page_obj = paginator.get_page(page_number)
+
+        chat_messages = list(reversed(self._prepare_messages(page_obj.object_list)))
 
         display_name = (thread.user.first_name or thread.user.username or "").strip()
         if not display_name:
@@ -492,7 +497,13 @@ class ChatThreadAdmin(admin.ModelAdmin):
             **self.admin_site.each_context(request),
             "thread": thread,
             "chat_messages": chat_messages,
-            "messages_total": len(chat_messages),
+            "messages_total": paginator.count,
+            "messages_shown": len(chat_messages),
+            "messages_page": page_obj.number,
+            "messages_has_older": page_obj.has_next(),
+            "messages_has_newer": page_obj.has_previous(),
+            "messages_older_page": page_obj.next_page_number() if page_obj.has_next() else None,
+            "messages_newer_page": page_obj.previous_page_number() if page_obj.has_previous() else None,
             "user_display_name": display_name,
             "user_avatar": avatar_letter,
             "bot_display_name": "NanoBanana бот",
