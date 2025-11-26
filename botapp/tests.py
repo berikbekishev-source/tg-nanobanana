@@ -635,7 +635,7 @@ class GeminiVertexFallbackTests(TestCase):
 
         session.post.side_effect = [vertex_response, gl_response]
 
-        images = gemini_vertex_generate("test prompt", 1)
+        images = gemini_vertex_generate("test prompt", 1, model_name="gemini-3-pro-image-preview")
         self.assertEqual(images, [b"ok"])
         self.assertEqual(session.post.call_count, 2)
         second_call_url = session.post.call_args_list[1].args[0]
@@ -665,7 +665,7 @@ class GeminiVertexApiKeyTests(TestCase):
         }
         http_post.return_value = response
 
-        imgs = gemini_vertex_generate("prompt", 1)
+        imgs = gemini_vertex_generate("prompt", 1, model_name="gemini-3-pro-image-preview")
 
         self.assertEqual(imgs, [b"img"])
         http_post.assert_called_once()
@@ -698,6 +698,7 @@ class GeminiVertexApiKeyTests(TestCase):
             "prompt",
             1,
             input_images=[{"content": b"raw", "mime_type": "image/png"}],
+            model_name="gemini-3-pro-image-preview",
         )
 
         self.assertEqual(imgs, [b"edit"])

@@ -171,10 +171,18 @@ def vertex_edit_images(
             results.append(base64.b64decode(b64_data))
     return results
 
-def gemini_generate_images(prompt: str, quantity: int, params: Optional[Dict[str, Any]] = None) -> List[bytes]:
+def gemini_generate_images(
+    prompt: str,
+    quantity: int,
+    params: Optional[Dict[str, Any]] = None,
+    *,
+    model_name: Optional[str] = None,
+) -> List[bytes]:
     """Возвращает список байтов изображений (разбираем inlineData или fileUri)."""
-    model = settings.GEMINI_IMAGE_MODEL or "gemini-2.5-flash-image"
-    url = GEMINI_URL_TMPL.format(model=model)
+    if not model_name:
+        raise ValueError("model_name обязателен для Gemini image генерации и должен приходить из AIModel.api_model_name")
+    model_id = _gemini_model_name(model_name)
+    url = GEMINI_URL_TMPL.format(model=model_id)
     headers = {"x-goog-api-key": settings.GEMINI_API_KEY, "Content-Type": "application/json"}
     payload = {"contents": [{"parts": [{"text": prompt}]}]}
     if params:
@@ -541,7 +549,12 @@ def generate_images_for_model(
     elif provider == "gemini":
         if generation_type == "image2image":
             return vertex_edit_images(prompt, quantity, input_images or [], merged_params, image_mode=image_mode)
-        return gemini_generate_images(prompt, quantity, params=merged_params)
+        return gemini_generate_images(
+            prompt,
+            quantity,
+            params=merged_params,
+            model_name=getattr(model, "api_model_name", None),
+        )
     elif provider == "gemini_vertex":
         if generation_type == "image2image":
             return gemini_vertex_edit(
@@ -566,23 +579,12 @@ def generate_images_for_model(
             input_images=input_images or [],
         )
 
-    use_vertex = getattr(settings, 'USE_VERTEX_AI', False)
-    if use_vertex:
-        if generation_type == "image2image":
-            return vertex_edit_images(prompt, quantity, input_images or [], merged_params, image_mode=image_mode)
-        return vertex_generate_images(prompt, quantity, params=merged_params)
-
-    if generation_type == "image2image":
-        raise ValueError("Выбранная модель не поддерживает режим image2image.")
-    return gemini_generate_images(prompt, quantity, params=merged_params)
+    raise ValueError(f"Провайдер {provider or 'unknown'} не поддерживает генерацию изображений.")
 
 
 def generate_images(prompt: str, quantity: int) -> List[bytes]:
-    """Старый интерфейс для обратной совместимости (использует глобальные настройки)."""
-    use_vertex = getattr(settings, 'USE_VERTEX_AI', False)
-    if use_vertex:
-        return vertex_generate_images(prompt, quantity)
-    return gemini_generate_images(prompt, quantity)
+    """Старый интерфейс для обратной совместимости (использует модель из аргумента, а не из env)."""
+    raise ValueError("generate_images требует явного указания модели через AIModel; используйте generate_images_for_model.")
 
 def supabase_upload_png(content: bytes) -> str:
     """Загружает PNG в Supabase Storage и возвращает ПУБЛИЧНЫЙ URL."""
@@ -1116,8 +1118,9 @@ def gemini_vertex_edit(
     if not input_images:
         raise ValueError("Для режима image2image необходимо загрузить изображение.")
 
-    # Используем переданный model_name или дефолтный из настроек
-    model_path = _vertex_model_path(model_name or getattr(settings, "NANO_BANANA_GEMINI_MODEL", None))
+    if not model_name:
+        raise ValueError("model_name обязателен для Gemini Vertex image2image и должен приходить из AIModel.api_model_name")
+    model_path = _vertex_model_path(model_name)
     
     # Разделяем ключи:
     vertex_api_key = getattr(settings, "NANO_BANANA_API_KEY", None)
@@ -1237,8 +1240,9 @@ def gemini_vertex_generate(
     """
     Генерация изображений через Vertex AI (Gemini image) без фоллбэков.
     """
-    # Используем переданный model_name или дефолтный из настроек
-    model_path = _vertex_model_path(model_name or getattr(settings, "NANO_BANANA_GEMINI_MODEL", None))
+    if not model_name:
+        raise ValueError("model_name обязателен для Gemini Vertex image2image и должен приходить из AIModel.api_model_name")
+    model_path = _vertex_model_path(model_name)
     
     # Разделяем ключи:
     # - NANO_BANANA_API_KEY (Vertex AI key, формат AQ.xxx) - только для Vertex AI
