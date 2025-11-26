@@ -177,21 +177,51 @@ def gemini_generate_images(
     params: Optional[Dict[str, Any]] = None,
     *,
     model_name: Optional[str] = None,
+    generation_type: str = "text2image",
+    input_images: Optional[List[Dict[str, Any]]] = None,
+    image_mode: Optional[str] = None,
 ) -> List[bytes]:
-    """Возвращает список байтов изображений (разбираем inlineData или fileUri)."""
+    """Возвращает список байтов изображений через публичный Gemini API."""
     if not model_name:
         raise ValueError("model_name обязателен для Gemini image генерации и должен приходить из AIModel.api_model_name")
+
+    if generation_type == "image2image" and not input_images:
+        raise ValueError("Для режима image2image необходимо передать хотя бы одно изображение.")
+
     model_id = _gemini_model_name(model_name)
+
     url = GEMINI_URL_TMPL.format(model=model_id)
     headers = {"x-goog-api-key": settings.GEMINI_API_KEY, "Content-Type": "application/json"}
-    payload = {"contents": [{"parts": [{"text": prompt}]}]}
+
+    parts: List[Dict[str, Any]] = [{"text": prompt}]
+    for img in (input_images or []):
+        content = img.get("content")
+        if not content:
+            continue
+        parts.append(
+            {
+                "inlineData": {
+                    "mimeType": img.get("mime_type", "image/png"),
+                    "data": base64.b64encode(content).decode(),
+                }
+            }
+        )
+
+    payload: Dict[str, Any] = {"contents": [{"role": "user", "parts": parts}]}
+
+    generation_config: Dict[str, Any] = {"responseMimeType": "image/png"}
     if params:
-        generation_config = {}
         for key in ("temperature", "top_p", "top_k"):
             if key in params:
                 generation_config[key] = params[key]
-        if generation_config:
-            payload["generationConfig"] = generation_config
+        aspect_ratio = params.get("aspect_ratio") or params.get("aspectRatio")
+        image_size = params.get("image_size") or params.get("imageSize")
+        if aspect_ratio:
+            generation_config["aspectRatio"] = str(aspect_ratio)
+        if image_size:
+            generation_config["imageSize"] = str(image_size)
+    if generation_config:
+        payload["generationConfig"] = generation_config
 
     imgs: List[bytes] = []
     with httpx.Client(timeout=120) as client:
@@ -199,20 +229,17 @@ def gemini_generate_images(
             r = client.post(url, headers=headers, json=payload)
             r.raise_for_status()
             data = r.json()
-            parts = (data.get("candidates") or [{}])[0].get("content", {}).get("parts", [])  # inlineData | fileData
-            # 1) inlineData
-            inline = next((p.get("inlineData", {}).get("data") for p in parts if p.get("inlineData")), None)
+            parts_resp = (data.get("candidates") or [{}])[0].get("content", {}).get("parts", [])
+            inline = next((p.get("inlineData", {}).get("data") for p in parts_resp if p.get("inlineData")), None)
             if inline:
                 imgs.append(base64.b64decode(inline))
                 continue
-            # 2) fileUri
-            file_uri = next((p.get("fileData", {}).get("fileUri") for p in parts if p.get("fileData")), None)
+            file_uri = next((p.get("fileData", {}).get("fileUri") for p in parts_resp if p.get("fileData")), None)
             if file_uri:
                 fr = client.get(file_uri)
                 fr.raise_for_status()
                 imgs.append(fr.content)
                 continue
-            # иначе пустой ответ — пропускаем
     return imgs
 
 def openai_generate_images(
@@ -528,10 +555,6 @@ def generate_images_for_model(
     if params:
         merged_params.update(params)
 
-    # Для Nano Banana Pro используем только публичный Gemini, без Vertex.
-    if slug.startswith("nano-banana-pro") and provider == "gemini_vertex":
-        provider = "gemini"
-
     if provider == "openai_image":
         return openai_generate_images(
             prompt,
@@ -542,34 +565,20 @@ def generate_images_for_model(
             input_images=input_images,
             image_mode=image_mode,
         )
-    elif provider == "vertex":
-        if generation_type == "image2image":
-            return vertex_edit_images(prompt, quantity, input_images or [], merged_params, image_mode=image_mode)
-        return vertex_generate_images(prompt, quantity, params=merged_params)
-    elif provider == "gemini":
-        if generation_type == "image2image":
-            return vertex_edit_images(prompt, quantity, input_images or [], merged_params, image_mode=image_mode)
+    elif provider in {"gemini", "gemini_vertex"}:
         return gemini_generate_images(
             prompt,
             quantity,
             params=merged_params,
             model_name=getattr(model, "api_model_name", None),
+            generation_type=generation_type,
+            input_images=input_images or [],
+            image_mode=image_mode,
         )
-    elif provider == "gemini_vertex":
+    elif provider == "vertex":
         if generation_type == "image2image":
-            return gemini_vertex_edit(
-                prompt, 
-                quantity, 
-                input_images or [], 
-                merged_params,
-                model_name=model.api_model_name,
-            )
-        return gemini_vertex_generate(
-            prompt, 
-            quantity, 
-            params=merged_params,
-            model_name=model.api_model_name,
-        )
+            return vertex_edit_images(prompt, quantity, input_images or [], merged_params, image_mode=image_mode)
+        return vertex_generate_images(prompt, quantity, params=merged_params)
     elif provider == "midjourney":
         return midjourney_generate_images(
             prompt,

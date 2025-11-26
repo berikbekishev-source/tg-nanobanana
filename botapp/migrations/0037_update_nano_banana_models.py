@@ -7,10 +7,10 @@ def forward(apps, schema_editor):
     # Отключаем старую Nano Banana (Gemini 2.5 Flash)
     AIModel.objects.filter(slug="nano-banana").update(is_active=False)
 
-    # Приводим Nano Banana Pro к актуальной модели Gemini 3 Pro Preview
+    # Приводим Nano Banana Pro к актуальной модели Gemini 3 Pro Preview и работаем через публичный Gemini API
     AIModel.objects.filter(slug="nano-banana-pro").update(
         api_model_name="publishers/google/models/gemini-3-pro-image-preview",
-        provider="gemini_vertex",
+        provider="gemini",
         is_active=True,
         supports_image_input=True,
     )
@@ -21,6 +21,7 @@ def backward(apps, schema_editor):
     AIModel.objects.filter(slug="nano-banana").update(is_active=True)
     AIModel.objects.filter(slug="nano-banana-pro").update(
         api_model_name="publishers/google/models/gemini-3.0-pro-image-preview",
+        provider="gemini_vertex",
     )
 
 
