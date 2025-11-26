@@ -549,6 +549,12 @@ def generate_images_for_model(
     """Вызывает подходящего провайдера генерации на основе модели."""
     provider = getattr(model, "provider", None)
     slug = getattr(model, "slug", "")
+    supports_image_input = bool(getattr(model, "supports_image_input", False))
+    if generation_type == "image2image" and not supports_image_input:
+        raise ValueError(f"Модель {slug or provider or 'unknown'} не поддерживает загрузку изображений.")
+    if generation_type == "image2image" and not input_images:
+        raise ValueError("Для режима image2image необходимо передать хотя бы одно изображение.")
+
     merged_params: Dict[str, Any] = {}
     if getattr(model, "default_params", None):
         merged_params.update(model.default_params)
@@ -565,7 +571,7 @@ def generate_images_for_model(
             input_images=input_images,
             image_mode=image_mode,
         )
-    elif provider in {"gemini", "gemini_vertex"}:
+    elif provider == "gemini":
         return gemini_generate_images(
             prompt,
             quantity,
@@ -574,6 +580,21 @@ def generate_images_for_model(
             generation_type=generation_type,
             input_images=input_images or [],
             image_mode=image_mode,
+        )
+    elif provider == "gemini_vertex":
+        if generation_type == "image2image":
+            return gemini_vertex_edit(
+                prompt,
+                quantity,
+                input_images=input_images or [],
+                params=merged_params,
+                model_name=getattr(model, "api_model_name", None),
+            )
+        return gemini_vertex_generate(
+            prompt,
+            quantity,
+            params=merged_params,
+            model_name=getattr(model, "api_model_name", None),
         )
     elif provider == "vertex":
         if generation_type == "image2image":

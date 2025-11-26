@@ -589,6 +589,89 @@ class OpenAIImageGenerationTests(TestCase):
             input_images=[],
         )
 
+    @patch("botapp.services.gemini_vertex_generate", return_value=[b"ok"])
+    def test_generate_images_for_model_gemini_vertex_text2image(self, vertex_gen_mock: MagicMock):
+        model = AIModel.objects.create(
+            slug="nano-banana-pro",
+            name="Nano Banana Pro",
+            display_name="Nano Banana Pro",
+            type="image",
+            provider="gemini_vertex",
+            description="",
+            short_description="",
+            price=Decimal("2.50"),
+            unit_cost_usd=_cost_from_price(Decimal("2.50")),
+            base_cost_usd=_cost_from_price(Decimal("2.50")),
+            cost_unit=AIModel.CostUnit.IMAGE,
+            api_endpoint="https://generativelanguage.googleapis.com",
+            api_model_name="publishers/google/models/gemini-3-pro-image-preview",
+            max_prompt_length=2000,
+            supports_image_input=True,
+            max_input_images=4,
+            default_params={"top_p": 0.9, "image_size": "1K"},
+            allowed_params={},
+            max_quantity=4,
+            cooldown_seconds=0,
+        )
+
+        imgs = generate_images_for_model(
+            model,
+            "prompt",
+            1,
+            {"image_size": "2K", "aspect_ratio": "16:9"},
+            generation_type="text2image",
+        )
+
+        self.assertEqual(imgs, [b"ok"])
+        vertex_gen_mock.assert_called_once()
+        call_kwargs = vertex_gen_mock.call_args.kwargs
+        self.assertEqual(call_kwargs["model_name"], "publishers/google/models/gemini-3-pro-image-preview")
+        self.assertEqual(call_kwargs["params"]["top_p"], 0.9)
+        self.assertEqual(call_kwargs["params"]["image_size"], "2K")
+        self.assertEqual(call_kwargs["params"]["aspect_ratio"], "16:9")
+
+    @patch("botapp.services.gemini_vertex_edit", return_value=[b"ok"])
+    def test_generate_images_for_model_gemini_vertex_image2image(self, vertex_edit_mock: MagicMock):
+        model = AIModel.objects.create(
+            slug="nano-banana-pro",
+            name="Nano Banana Pro",
+            display_name="Nano Banana Pro",
+            type="image",
+            provider="gemini_vertex",
+            description="",
+            short_description="",
+            price=Decimal("2.50"),
+            unit_cost_usd=_cost_from_price(Decimal("2.50")),
+            base_cost_usd=_cost_from_price(Decimal("2.50")),
+            cost_unit=AIModel.CostUnit.IMAGE,
+            api_endpoint="https://generativelanguage.googleapis.com",
+            api_model_name="publishers/google/models/gemini-3-pro-image-preview",
+            max_prompt_length=2000,
+            supports_image_input=True,
+            max_input_images=4,
+            default_params={"top_k": 40},
+            allowed_params={},
+            max_quantity=4,
+            cooldown_seconds=0,
+        )
+
+        imgs = generate_images_for_model(
+            model,
+            "prompt",
+            1,
+            {"image_size": "4K"},
+            generation_type="image2image",
+            input_images=[{"content": b"raw", "mime_type": "image/png"}],
+        )
+
+        self.assertEqual(imgs, [b"ok"])
+        vertex_edit_mock.assert_called_once()
+        call_kwargs = vertex_edit_mock.call_args.kwargs
+        self.assertEqual(call_kwargs["model_name"], "publishers/google/models/gemini-3-pro-image-preview")
+        self.assertEqual(call_kwargs["params"]["top_k"], 40)
+        self.assertEqual(call_kwargs["params"]["image_size"], "4K")
+        self.assertEqual(call_kwargs["input_images"][0]["mime_type"], "image/png")
+
 class ReferenceMimeDetectionTests(TestCase):
     def test_detect_png_signature_when_header_generic(self):
         png_bytes = b"\x89PNG\r\n\x1a\n" + b"\x00" * 10
