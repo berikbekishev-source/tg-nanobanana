@@ -171,9 +171,20 @@ def vertex_edit_images(
             results.append(base64.b64decode(b64_data))
     return results
 
-def gemini_generate_images(prompt: str, quantity: int, params: Optional[Dict[str, Any]] = None) -> List[bytes]:
+def gemini_generate_images(
+    prompt: str,
+    quantity: int,
+    params: Optional[Dict[str, Any]] = None,
+    *,
+    model_name: Optional[str] = None,
+) -> List[bytes]:
     """Возвращает список байтов изображений (разбираем inlineData или fileUri)."""
-    model = settings.GEMINI_IMAGE_MODEL or "gemini-2.5-flash-image"
+    model = (
+        model_name
+        or (params or {}).get("model")
+        or settings.GEMINI_IMAGE_MODEL
+        or "gemini-2.5-flash-image"
+    )
     url = GEMINI_URL_TMPL.format(model=model)
     headers = {"x-goog-api-key": settings.GEMINI_API_KEY, "Content-Type": "application/json"}
     payload = {"contents": [{"parts": [{"text": prompt}]}]}
@@ -539,9 +550,14 @@ def generate_images_for_model(
             return vertex_edit_images(prompt, quantity, input_images or [], merged_params, image_mode=image_mode)
         return vertex_generate_images(prompt, quantity, params=merged_params)
     elif provider == "gemini":
+        model_name = (
+            merged_params.get("model")
+            or getattr(model, "api_model_name", None)
+            or ("gemini-3-pro-image-preview" if slug.startswith("nano-banana-pro") else None)
+        )
         if generation_type == "image2image":
             return vertex_edit_images(prompt, quantity, input_images or [], merged_params, image_mode=image_mode)
-        return gemini_generate_images(prompt, quantity, params=merged_params)
+        return gemini_generate_images(prompt, quantity, params=merged_params, model_name=model_name)
     elif provider == "gemini_vertex":
         if generation_type == "image2image":
             return gemini_vertex_edit(
