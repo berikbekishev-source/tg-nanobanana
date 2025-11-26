@@ -84,7 +84,9 @@ def _download_sync(url: str) -> DownloadedMedia:
     with tempfile.TemporaryDirectory(prefix="ref_prompt_") as tmpdir:
         cookiefile = _resolve_cookiefile()
         ydl_opts: Dict[str, object] = {
-            "format": "mp4/best",
+            # Разрешаем любые контейнеры: берем лучшую пару видео+аудио либо best.
+            "format": "bestvideo*+bestaudio/best",
+            "merge_output_format": "mp4",
             "noplaylist": True,
             "quiet": True,
             "no_warnings": True,
