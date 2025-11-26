@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from typing import Dict, Optional
 
 import yt_dlp
+from yt_dlp.utils import DownloadError
 import httpx
 
 
@@ -83,29 +84,50 @@ def _download_sync(url: str) -> DownloadedMedia:
 
     with tempfile.TemporaryDirectory(prefix="ref_prompt_") as tmpdir:
         cookiefile = _resolve_cookiefile()
-        ydl_opts: Dict[str, object] = {
-            # Берем лучший доступный поток; без строгого mp4 (Shorts часто только HLS).
-            "format": "best/bestvideo+bestaudio",
-            "hls_prefer_native": True,
+        base_opts: Dict[str, object] = {
             "noplaylist": True,
             "quiet": True,
             "no_warnings": True,
             "skip_download": False,
             "retries": 2,
+            "hls_prefer_native": True,
             "outtmpl": os.path.join(tmpdir, "%(id)s.%(ext)s"),
         }
 
         if cookiefile:
-            ydl_opts["cookiefile"] = cookiefile
-            ydl_opts["force_ip_resolve"] = "ipv4"
-            ydl_opts.setdefault("extractor_args", {}).setdefault("youtube", {})["player_client"] = [
+            base_opts["cookiefile"] = cookiefile
+            base_opts["force_ip_resolve"] = "ipv4"
+            base_opts.setdefault("extractor_args", {}).setdefault("youtube", {})["player_client"] = [
                 "android",
                 "web",
+                "ios",
             ]
 
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(url, download=True)
-            filepath = ydl.prepare_filename(info)
+        attempts = [
+            # Shorts чаще всего HLS, поэтому берем best без требований к контейнеру.
+            {"format": "best/bestvideo+bestaudio"},
+            # Альтернативная связка с merge в mp4 на всякий случай.
+            {"format": "bestvideo*+bestaudio/best", "merge_output_format": "mp4"},
+        ]
+
+        info = None
+        filepath = None
+        last_exc: Optional[Exception] = None
+
+        for extra_opts in attempts:
+            opts = dict(base_opts)
+            opts.update(extra_opts)
+            try:
+                with yt_dlp.YoutubeDL(opts) as ydl:
+                    info = ydl.extract_info(url, download=True)
+                    filepath = ydl.prepare_filename(info)
+                break
+            except DownloadError as exc:
+                last_exc = exc
+                continue
+
+        if last_exc and (info is None or filepath is None):
+            raise last_exc
 
         if not os.path.exists(filepath):
             raise FileNotFoundError("Не удалось скачать видео по ссылке")
