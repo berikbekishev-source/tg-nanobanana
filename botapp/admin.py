@@ -487,6 +487,7 @@ class ChatThreadAdmin(admin.ModelAdmin):
 
         chat_messages = list(reversed(self._prepare_messages(page_obj.object_list)))
 
+
         display_name = (thread.user.first_name or thread.user.username or "").strip()
         if not display_name:
             display_name = f"ID {thread.user.chat_id}"
