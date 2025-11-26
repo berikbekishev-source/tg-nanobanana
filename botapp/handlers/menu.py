@@ -202,6 +202,7 @@ async def cmd_help(message: Message):
     ~StateFilter(BotStates.reference_prompt_confirm_mods),
     ~StateFilter(BotStates.reference_prompt_wait_mods),
     ~StateFilter(BotStates.reference_prompt_processing),
+    ~StateFilter(BotStates.video_extend_prompt),
     F.text,
     ~F.text.in_(MAIN_MENU_ACTIONS),
     ~F.text.startswith("/"),

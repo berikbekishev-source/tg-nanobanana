@@ -1,6 +1,7 @@
 """
 Обработчики генерации видео
 """
+import asyncio
 import base64
 import json
 from io import BytesIO
@@ -32,6 +33,18 @@ from botapp.services import supabase_upload_png
 from botapp.error_tracker import ErrorTracker
 
 router = Router()
+START_MESSAGE_DELAY = 0.6
+
+
+async def _send_generation_start_message(
+    message: Message,
+    text: str,
+    *,
+    delay: float = START_MESSAGE_DELAY,
+) -> None:
+    """Отправляет стартовое сообщение с задержкой, чтобы успело закрыться WebApp."""
+    await asyncio.sleep(delay)
+    await message.answer(text, reply_markup=get_main_menu_inline_keyboard())
 
 
 def _extract_duration_options(model: AIModel) -> Optional[List[int]]:
@@ -388,7 +401,8 @@ async def _handle_sora_webapp_data_impl(message: Message, state: FSMContext, pay
         await state.clear()
         return
 
-    await message.answer(
+    await _send_generation_start_message(
+        message,
         get_generation_start_message(
             model=model.display_name,
             mode=generation_type,
@@ -397,7 +411,6 @@ async def _handle_sora_webapp_data_impl(message: Message, state: FSMContext, pay
             duration=duration_value,
             prompt=prompt,
         ),
-        reply_markup=get_main_menu_inline_keyboard()
     )
 
     generate_video_task.delay(gen_request.id)
@@ -613,7 +626,8 @@ async def _handle_kling_webapp_data_impl(message: Message, state: FSMContext, pa
         await state.clear()
         return
 
-    await message.answer(
+    await _send_generation_start_message(
+        message,
         get_generation_start_message(
             model=model.display_name,
             mode=generation_type,
@@ -622,7 +636,6 @@ async def _handle_kling_webapp_data_impl(message: Message, state: FSMContext, pa
             duration=duration_value,
             prompt=prompt,
         ),
-        reply_markup=get_main_menu_inline_keyboard()
     )
 
     generate_video_task.delay(gen_request.id)
@@ -873,7 +886,8 @@ async def _handle_veo_webapp_data_impl(message: Message, state: FSMContext, payl
         await state.clear()
         return
 
-    await message.answer(
+    await _send_generation_start_message(
+        message,
         get_generation_start_message(
             model=model.display_name,
             mode=generation_type,
@@ -882,7 +896,6 @@ async def _handle_veo_webapp_data_impl(message: Message, state: FSMContext, payl
             duration=duration,
             prompt=prompt,
         ),
-        reply_markup=get_main_menu_inline_keyboard()
     )
 
     generate_video_task.delay(gen_request.id)
@@ -1360,7 +1373,8 @@ async def handle_video_prompt(message: Message, state: FSMContext):
         await state.clear()
         return
 
-    await message.answer(
+    await _send_generation_start_message(
+        message,
         get_generation_start_message(
             model=model.display_name,
             mode=generation_type,
@@ -1369,7 +1383,6 @@ async def handle_video_prompt(message: Message, state: FSMContext):
             duration=selected_duration,
             prompt=prompt,
         ),
-        reply_markup=get_main_menu_inline_keyboard()
     )
 
     generate_video_task.delay(gen_request.id)
@@ -1579,7 +1592,8 @@ async def handle_video_extension_prompt(message: Message, state: FSMContext):
         await state.clear()
         return
 
-    await message.answer(
+    await _send_generation_start_message(
+        message,
         get_generation_start_message(
             model=model.display_name if model else "—",
             mode="image2video",
@@ -1588,7 +1602,6 @@ async def handle_video_extension_prompt(message: Message, state: FSMContext):
             duration=8,
             prompt=text,
         ),
-        reply_markup=get_main_menu_inline_keyboard()
     )
 
     extend_video_task.delay(gen_request.id)
