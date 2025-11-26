@@ -513,11 +513,16 @@ def generate_images_for_model(
 ) -> List[bytes]:
     """Вызывает подходящего провайдера генерации на основе модели."""
     provider = getattr(model, "provider", None)
+    slug = getattr(model, "slug", "")
     merged_params: Dict[str, Any] = {}
     if getattr(model, "default_params", None):
         merged_params.update(model.default_params)
     if params:
         merged_params.update(params)
+
+    # Для Nano Banana Pro используем только публичный Gemini, без Vertex.
+    if slug.startswith("nano-banana-pro") and provider == "gemini_vertex":
+        provider = "gemini"
 
     if provider == "openai_image":
         return openai_generate_images(
