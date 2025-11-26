@@ -121,6 +121,18 @@
     color: #475569;
 }
 
+.pagination-controls {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.ghost-button.small {
+    padding: 6px 12px;
+    font-size: 13px;
+}
+
 .message-row {
     display: flex;
     gap: 14px;
@@ -401,6 +413,12 @@ body.model-chatthread.change-list #result_list td.field-user_dialog_link {
     .chat-toolbar {
         flex-direction: column;
         align-items: flex-start;
+    }
+    .pagination-controls {
+        width: 100%;
+    }
+    .ghost-button.small {
+        width: fit-content;
     }
     .message-meta {
         font-size: 12px;
