@@ -177,6 +177,7 @@ def gemini_generate_images(
     params: Optional[Dict[str, Any]] = None,
     *,
     model_name: Optional[str] = None,
+<<<<<<< HEAD
     generation_type: str = "text2image",
     input_images: Optional[List[Dict[str, Any]]] = None,
     image_mode: Optional[str] = None,
@@ -188,6 +189,12 @@ def gemini_generate_images(
     if generation_type == "image2image" and not input_images:
         raise ValueError("Для режима image2image необходимо передать хотя бы одно изображение.")
 
+=======
+) -> List[bytes]:
+    """Возвращает список байтов изображений (разбираем inlineData или fileUri)."""
+    if not model_name:
+        raise ValueError("model_name обязателен для Gemini image генерации и должен приходить из AIModel.api_model_name")
+>>>>>>> origin/staging
     model_id = _gemini_model_name(model_name)
     url = GEMINI_URL_TMPL.format(model=model_id)
     headers = {"x-goog-api-key": settings.GEMINI_API_KEY, "Content-Type": "application/json"}
