@@ -62,7 +62,16 @@ def send_telegram_photo(
 
     with httpx.Client(timeout=30) as client:
         resp = client.post(url, files=files, data=data)
-        resp.raise_for_status()
+        try:
+            resp.raise_for_status()
+        except httpx.HTTPStatusError:
+            # Логируем тело ответа, чтобы понимать причину 4xx от Telegram
+            logger.warning(
+                "Telegram sendDocument failed: status=%s body=%s",
+                resp.status_code,
+                resp.text[:500],
+            )
+            raise
         payload = resp.json()
         ChatLogger.log_outgoing_from_payload(payload.get("result"))
         return payload
@@ -82,7 +91,15 @@ def send_telegram_video(chat_id: int, video_bytes: bytes, caption: str, reply_ma
 
     with httpx.Client(timeout=120) as client:
         resp = client.post(url, files=files, data=data)
-        resp.raise_for_status()
+        try:
+            resp.raise_for_status()
+        except httpx.HTTPStatusError:
+            logger.warning(
+                "Telegram sendDocument failed: status=%s body=%s",
+                resp.status_code,
+                resp.text[:500],
+            )
+            raise
         payload = resp.json()
         ChatLogger.log_outgoing_from_payload(payload.get("result"))
         return payload
