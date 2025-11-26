@@ -1,3 +1,5 @@
+import mimetypes
+
 from django.contrib import admin
 from django.utils.html import format_html
 from django.db.models import Count
@@ -423,12 +425,21 @@ class PromocodeAdmin(admin.ModelAdmin):
 
 @admin.register(ChatThread)
 class ChatThreadAdmin(admin.ModelAdmin):
-    list_display = ('user', 'last_message_preview', 'last_message_direction',
+    list_display = ('user_dialog_link', 'last_message_preview', 'last_message_direction',
                     'last_message_at', 'unread_count', 'dialog_link')
+    list_display_links = ('user_dialog_link',)
     search_fields = ('user__username', 'user__chat_id', 'user__first_name', 'user__last_name')
     ordering = ('-last_message_at',)
     readonly_fields = ('created_at', 'updated_at')
     raw_id_fields = ('user',)
+    WEBAPP_LABELS = {
+        "midjourney_settings": "Midjourney",
+        "gpt_image_settings": "GPT Image",
+        "nano_banana_settings": "Nano Banana",
+        "kling_settings": "Kling",
+        "veo_video_settings": "Veo",
+        "sora2_settings": "Sora 2",
+    }
 
     @staticmethod
     def last_message_preview(obj):
@@ -440,6 +451,20 @@ class ChatThreadAdmin(admin.ModelAdmin):
         url = reverse('admin:botapp_chatthread_dialog', args=[obj.pk])
         return format_html('<a class="button" href="{}">История</a>', url)
     dialog_link.short_description = 'Диалог'
+
+    def user_dialog_link(self, obj):
+        url = reverse('admin:botapp_chatthread_dialog', args=[obj.pk])
+        label = obj.user.username or obj.user.first_name or obj.user.last_name or f"ID {obj.user.chat_id}"
+        subtitle = f"ID {obj.user.chat_id}"
+        return format_html(
+            '<div class="user-dialog-cell"><a class="user-dialog-link" href="{}">{}</a>'
+            '<div class="user-dialog-sub">{}</div></div>',
+            url,
+            label,
+            subtitle,
+        )
+    user_dialog_link.short_description = "Пользователь"
+    user_dialog_link.admin_order_field = 'user__username'
 
     def get_urls(self):
         urls = super().get_urls()
@@ -455,7 +480,7 @@ class ChatThreadAdmin(admin.ModelAdmin):
     def dialog_view(self, request, thread_id: int):
         thread = get_object_or_404(ChatThread.objects.select_related('user'), pk=thread_id)
         messages_qs = thread.messages.select_related('user').order_by('message_date')
-        chat_messages = list(messages_qs)
+        chat_messages = self._prepare_messages(messages_qs)
 
         display_name = (thread.user.first_name or thread.user.username or "").strip()
         if not display_name:
@@ -475,6 +500,59 @@ class ChatThreadAdmin(admin.ModelAdmin):
             "title": f"Диалог с {thread.user.username or thread.user.chat_id}",
         }
         return TemplateResponse(request, "admin/botapp/chatthread/dialog.html", context)
+
+    @classmethod
+    def _prepare_messages(cls, messages_qs):
+        prepared = []
+        for msg in messages_qs:
+            media_kind = cls._detect_media_kind(msg)
+            webapp_label = cls._extract_webapp_label(msg)
+            display_text = (msg.text or "").strip()
+            if not display_text and webapp_label:
+                display_text = f"Отправлен запрос на генерацию через Webapp {webapp_label}"
+            msg.media_kind = media_kind
+            msg.webapp_label = webapp_label
+            msg.display_text = display_text
+            prepared.append(msg)
+        return prepared
+
+    @staticmethod
+    def _detect_media_kind(message):
+        mime = (message.media_mime_type or "").lower()
+        if mime.startswith("image/"):
+            return "image"
+        if mime.startswith("video/"):
+            return "video"
+
+        if message.media_file_name:
+            guessed, _ = mimetypes.guess_type(message.media_file_name)
+            if guessed:
+                guessed = guessed.lower()
+                if guessed.startswith("image/"):
+                    return "image"
+                if guessed.startswith("video/"):
+                    return "video"
+        return "file"
+
+    @classmethod
+    def _extract_webapp_label(cls, message):
+        payload = message.payload if isinstance(message.payload, dict) else {}
+        webapp_payload = payload.get("web_app") or {}
+        label = webapp_payload.get("label") or payload.get("web_app_label")
+        kind = webapp_payload.get("kind") or payload.get("web_app_kind")
+        model_slug = webapp_payload.get("model_slug") or payload.get("model_slug")
+
+        if not label and kind:
+            label = cls.WEBAPP_LABELS.get(kind)
+
+        if not label and model_slug:
+            normalized = str(model_slug).replace("_", " ").replace("-", " ").strip()
+            if normalized:
+                label = normalized.title()
+
+        if not label and payload.get("content_type") == "web_app_data":
+            label = "WebApp"
+        return label
 
 
 @admin.register(ChatMessage)

@@ -99,8 +99,8 @@
                         <span class="message-time">{{ message.message_date|date:"d.m.Y H:i" }}</span>
                     </div>
 
-                    {% if message.text %}
-                        <div class="message-text">{{ message.text|linebreaksbr }}</div>
+                    {% if message.display_text %}
+                        <div class="message-text">{{ message.display_text|linebreaksbr }}</div>
                     {% endif %}
 
                     {% if message.payload.inline_keyboard %}
@@ -118,31 +118,27 @@
                     {% endif %}
 
                     {% if message.media_file_id %}
-                        {% with mime=message.media_mime_type|default:"" %}
-                        <div class="message-media {% if mime|slice:":5" == "image" %}image{% else %}file{% endif %}">
-                            {% if mime|slice:":5" == "image" %}
+                        <div class="message-media {% if message.media_kind == 'image' %}image{% elif message.media_kind == 'video' %}video{% else %}file{% endif %}">
+                            {% if message.media_kind == 'image' %}
                                 <a href="{% url 'dashboard:message_media' message.pk %}" target="_blank" rel="noopener">
                                     <img src="{% url 'dashboard:message_media' message.pk %}" alt="media preview">
                                 </a>
+                            {% elif message.media_kind == 'video' %}
+                                <video controls playsinline preload="metadata">
+                                    <source src="{% url 'dashboard:message_media' message.pk %}" type="{{ message.media_mime_type|default:'video/mp4' }}">
+                                    Ваш браузер не поддерживает воспроизведение видео.
+                                </video>
                             {% else %}
                                 <a href="{% url 'dashboard:message_media' message.pk %}" target="_blank" rel="noopener">
                                     <div class="file-icon">📎</div>
                                     <div class="file-info">
                                         <div class="file-name">{{ message.media_file_name|default:"Вложение" }}</div>
-                                        <div class="file-meta">{{ mime|default:"файл" }}</div>
+                                        <div class="file-meta">{{ message.media_mime_type|default:"файл" }}</div>
                                     </div>
                                 </a>
                             {% endif %}
                         </div>
-                        {% endwith %}
                     {% endif %}
-
-                    <div class="message-tags">
-                        <span class="badge">{{ message.get_message_type_display }}</span>
-                        <span class="badge badge-direction">
-                            {% if message.direction == 'outgoing' %}Исходящее{% else %}Входящее{% endif %}
-                        </span>
-                    </div>
 
                     {% if message.payload %}
                         {% if message.payload.button_text or message.payload.button_data %}
