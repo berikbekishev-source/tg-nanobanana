@@ -187,6 +187,7 @@ async def global_create_video_start(message: Message, state: FSMContext):
 
     kling_webapps = {}
     veo_webapps = {}
+    midjourney_video_webapps = {}
     if PUBLIC_BASE_URL:
         for model in models:
             if model.provider == "kling":
@@ -211,6 +212,13 @@ async def global_create_video_start(message: Message, state: FSMContext):
                     f"{PUBLIC_BASE_URL}/veo/?"
                     f"model={quote_plus(model.slug)}&price={quote_plus(price_label)}"
                 )
+            if model.provider == "midjourney":
+                cost = await sync_to_async(get_base_price_tokens)(model)
+                price_label = f"⚡{cost:.2f} токенов"
+                midjourney_video_webapps[model.slug] = (
+                    f"{PUBLIC_BASE_URL}/midjourney_video/?"
+                    f"model={quote_plus(model.slug)}&price={quote_plus(price_label)}"
+                )
 
 
     sora_webapps = {}
@@ -233,6 +241,7 @@ async def global_create_video_start(message: Message, state: FSMContext):
             kling_webapps=kling_webapps,
             veo_webapps=veo_webapps,
             sora_webapps=sora_webapps,
+            midjourney_video_webapps=midjourney_video_webapps,
         )
     )
 
