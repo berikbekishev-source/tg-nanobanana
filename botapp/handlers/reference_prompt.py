@@ -311,6 +311,7 @@ async def _build_video_models_keyboard() -> Optional[InlineKeyboardMarkup]:
                 veo_webapps[model.slug] = (
                     f"{public_base_url}/veo/?"
                     f"model={quote_plus(model.slug)}&price={quote_plus(price_label)}"
+                    f"&max_prompt={quote_plus(str(model.max_prompt_length))}"
                 )
 
             if model.provider == "openai" and model.slug.startswith("sora"):
