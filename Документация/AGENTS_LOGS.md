@@ -1,3 +1,17 @@
+## [2025-11-28] Kling WebApp: корректная цена на кнопке
+
+**Агент:** Codex  
+**Ветка:** feature/kling_token  
+**PR:** #407 (MERGED)
+
+### Выполненные действия:
+1. Передаю в ссылку Kling WebApp `price_base_duration` (беру duration из `default_params` или 10), чтобы цена в кнопке считалась за базовую длительность 5/10 сек.
+2. Обновил ветку на свежий `origin/staging`, прошёл CI/fast-merge, автослияние в `staging`.
+3. Убедился, что `CI` и `Staging Health Check` для `staging` прошли успешно; Railway контекст `staging` доступен через CLI.
+
+### Результат:
+✅ Цена в Kling WebApp отображается корректно (5 с — 8.40 ток, 10 с — 16.80 ток); staging деплой успешно завершён.
+
 ## [2025-11-25] Kling WebApp: фикс формата img2img
 
 **Агент:** Codex  
