@@ -686,43 +686,22 @@ class ReferenceMimeDetectionTests(TestCase):
 
 @unittest.skipIf(SKIP_VERTEX_TESTS, "Vertex AI интеграционные тесты отключены в CI")
 class GeminiVertexFallbackTests(TestCase):
-    @patch("botapp.services._authorized_vertex_session")
-    @patch("botapp.services._load_service_account_info")
-    def test_generate_falls_back_to_generative_language_api(self, load_info: MagicMock, auth_session: MagicMock):
-        load_info.return_value = {"project_id": "demo-project"}
-        session = MagicMock()
-        auth_session.return_value = session
+    @patch("botapp.services.httpx.post")
+    @patch("botapp.services._vertex_auth_headers", return_value=({"Authorization": "Bearer token"}, {"project_id": "demo-project"}))
+    def test_generate_does_not_fallback(self, auth_headers: MagicMock, http_post: MagicMock):
+        response = MagicMock()
+        response.status_code = 404
+        response.text = "Publisher Model not found"
+        response.json.side_effect = ValueError("invalid json")
+        http_post.return_value = response
 
-        vertex_response = MagicMock()
-        vertex_response.status_code = 404
-        vertex_response.text = "Publisher Model not found"
-        vertex_response.json.return_value = {"error": {"message": "not found"}}
+        with self.assertRaises(ValueError):
+            gemini_vertex_generate("test prompt", 1, model_name="gemini-3-pro-image-preview")
 
-        gl_response = MagicMock()
-        gl_response.status_code = 200
-        gl_response.json.return_value = {
-            "candidates": [
-                {
-                    "content": {
-                        "parts": [
-                            {
-                                "inlineData": {
-                                    "data": base64.b64encode(b"ok").decode(),
-                                }
-                            }
-                        ]
-                    }
-                }
-            ]
-        }
-
-        session.post.side_effect = [vertex_response, gl_response]
-
-        images = gemini_vertex_generate("test prompt", 1, model_name="gemini-3-pro-image-preview")
-        self.assertEqual(images, [b"ok"])
-        self.assertEqual(session.post.call_count, 2)
-        second_call_url = session.post.call_args_list[1].args[0]
-        self.assertIn("generativelanguage.googleapis.com", second_call_url)
+        http_post.assert_called_once()
+        called_url = http_post.call_args.args[0]
+        self.assertIn("aiplatform.googleapis.com", called_url)
+        auth_headers.assert_called_once()
 
 
 @unittest.skipIf(SKIP_VERTEX_TESTS, "Vertex AI интеграционные тесты отключены в CI")
@@ -734,15 +713,10 @@ class GeminiVertexApiKeyTests(TestCase):
         response = MagicMock()
         response.status_code = 200
         response.json.return_value = {
-            "candidates": [
+            "predictions": [
                 {
-                    "content": {
-                        "parts": [
-                            {
-                                "inlineData": {"data": base64.b64encode(b"img").decode()}
-                            }
-                        ]
-                    }
+                    "bytesBase64Encoded": base64.b64encode(b"img").decode(),
+                    "mimeType": "image/png",
                 }
             ]
         }
@@ -763,15 +737,10 @@ class GeminiVertexApiKeyTests(TestCase):
         response = MagicMock()
         response.status_code = 200
         response.json.return_value = {
-            "candidates": [
+            "predictions": [
                 {
-                    "content": {
-                        "parts": [
-                            {
-                                "inlineData": {"data": base64.b64encode(b"edit").decode()}
-                            }
-                        ]
-                    }
+                    "bytesBase64Encoded": base64.b64encode(b"edit").decode(),
+                    "mimeType": "image/png",
                 }
             ]
         }
