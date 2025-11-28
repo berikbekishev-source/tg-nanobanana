@@ -278,7 +278,7 @@ async def global_prompt_by_reference_entry(message: Message, state: FSMContext):
     await state.update_data(reference_prompt_model=default_model.slug)
 
     await message.answer(
-        "🔍 Скиньте в бота ссылку на любой Reels, Shorts, TikTok или загрузите в чат видео/изображение и получите промт для генерации точно такого же видео!",
+        "🔗 Скиньте в бота ссылку на любой Reels, Shorts, TikTok или загрузите в чат видео и получите промт для создания точно такого же видео!",
         reply_markup=get_cancel_keyboard(),
     )
     await state.set_state(BotStates.reference_prompt_wait_reference)
