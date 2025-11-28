@@ -188,13 +188,18 @@ def gemini_generate_images(
     if generation_type == "image2image" and not input_images:
         raise ValueError("Для режима image2image необходимо передать хотя бы одно изображение.")
 
+    params = params or {}
     model_id = _gemini_model_name(model_name)
 
     url = GEMINI_URL_TMPL.format(model=model_id)
-    headers = {"x-goog-api-key": settings.GEMINI_API_KEY, "Content-Type": "application/json"}
+    api_key = getattr(settings, "GEMINI_API_KEY", None)
+    if not api_key:
+        raise ValueError("GEMINI_API_KEY не настроен для Gemini image генерации")
+    headers = {"x-goog-api-key": api_key, "Content-Type": "application/json"}
 
     parts: List[Dict[str, Any]] = [{"text": prompt}]
-    for img in (input_images or []):
+    # Gemini 3 Pro Image Preview поддерживает до 14 референсов.
+    for img in (input_images or [])[:14]:
         content = img.get("content")
         if not content:
             continue
@@ -209,19 +214,23 @@ def gemini_generate_images(
 
     payload: Dict[str, Any] = {"contents": [{"role": "user", "parts": parts}]}
 
-    generation_config: Dict[str, Any] = {"responseMimeType": "image/png"}
-    if params:
-        for key in ("temperature", "top_p", "top_k"):
-            if key in params:
-                generation_config[key] = params[key]
-        aspect_ratio = params.get("aspect_ratio") or params.get("aspectRatio")
-        image_size = params.get("image_size") or params.get("imageSize")
-        if aspect_ratio:
-            generation_config["aspectRatio"] = str(aspect_ratio)
-        if image_size:
-            generation_config["imageSize"] = str(image_size)
-    if generation_config:
-        payload["generationConfig"] = generation_config
+    generation_config: Dict[str, Any] = {"responseModalities": ["IMAGE"]}
+    image_config: Dict[str, Any] = {}
+
+    for key in ("temperature", "top_p", "top_k"):
+        if key in params:
+            generation_config[key] = params[key]
+
+    aspect_ratio = params.get("aspect_ratio") or params.get("aspectRatio")
+    image_size = params.get("image_size") or params.get("imageSize")
+    if aspect_ratio:
+        image_config["aspectRatio"] = str(aspect_ratio)
+    if image_size:
+        image_config["imageSize"] = str(image_size).upper()
+    if image_config:
+        generation_config["imageConfig"] = image_config
+
+    payload["generationConfig"] = generation_config
 
     imgs: List[bytes] = []
     with httpx.Client(timeout=120) as client:
@@ -571,7 +580,7 @@ def generate_images_for_model(
             input_images=input_images,
             image_mode=image_mode,
         )
-    elif provider == "gemini":
+    elif provider in {"gemini", "gemini_vertex"}:
         return gemini_generate_images(
             prompt,
             quantity,
@@ -580,21 +589,6 @@ def generate_images_for_model(
             generation_type=generation_type,
             input_images=input_images or [],
             image_mode=image_mode,
-        )
-    elif provider == "gemini_vertex":
-        if generation_type == "image2image":
-            return gemini_vertex_edit(
-                prompt,
-                quantity,
-                input_images=input_images or [],
-                params=merged_params,
-                model_name=getattr(model, "api_model_name", None),
-            )
-        return gemini_vertex_generate(
-            prompt,
-            quantity,
-            params=merged_params,
-            model_name=getattr(model, "api_model_name", None),
         )
     elif provider == "vertex":
         if generation_type == "image2image":
