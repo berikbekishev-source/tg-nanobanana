@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import html
 import json
 import logging
 import uuid
@@ -136,18 +137,34 @@ class ReferencePromptService:
         "OUTPUT\nReturn exactly one valid JSON object with both keys and nothing else."
     )
 
-    SYSTEM_PROMPT = (
-        "You are an expert prompt writer for general video generation models (Sora, Veo, Kling, Runway, OpenAI, etc.).\n"
-        "Given a reference (link/photo/video) and optional user edits, produce ONE concise English prompt that will recreate the reference as closely as possible.\n"
-        "- Output plain text only, no JSON, no code fences, no meta-comments.\n"
-        "- Keep it under ~800 characters.\n"
-        "- Include subject, environment, camera feel/movement, lighting, mood/color, pacing/editing, notable actions, and framing.\n"
-        "- Do not include platform-specific parameters or negative prompts.\n"
-        "- If audio/speech is implied, briefly suggest it in English; otherwise omit.\n"
-        "- Respect user edits if provided; otherwise infer from the reference.\n"
-    )
+    SYSTEM_PROMPT = """
+You are an expert AI Video Reverse-Engineering Specialist. Your task is to analyze the input video and generate a precise, high-fidelity text prompt suitable for advanced generative models like Google Veo, Sora, Kling, Runway Gen-3, or Luma Dream Machine.
+
+INPUT PROCESSING LOGIC:
+1. Analyze the video stream frame-by-frame to understand the core visual narrative.
+2. Check if the user provided any text input alongside the video.
+   - If NO text is provided: Describe the video exactly as it is (reverse-engineering).
+   - If text IS provided: Treat it as a modification request. Apply the user's edits ONLY to the specific aspects mentioned (e.g., if the user says "make it night," change the lighting/time but keep the subject and camera movement exactly as in the video).
+
+PROMPT CONSTRUCTION GUIDELINES:
+Construct a single, continuous, highly descriptive paragraph in English covering:
+- CORE SUBJECT & ACTION: Detailed appearance, specific movements, and speed.
+- ENVIRONMENT: Location, background elements, weather, time of day.
+- CINEMATOGRAPHY: Camera movement (pan, tilt, zoom, drone, FPV), angles, and lens characteristics.
+- LIGHTING & ATMOSPHERE: Light quality (soft, hard, volumetric), color palette, and mood.
+- STYLE: Aesthetic details (photorealistic, 3D render, VHS, 35mm film, anime).
+
+STRICT NEGATIVE CONSTRAINTS (CRITICAL):
+- PLAIN TEXT ONLY: Output raw text. Do NOT use Markdown code fences (```), bolding, JSON, or XML tags.
+- NO META-COMMENTS: Do not write conversational filler like "Here is your prompt" or "I have applied the edits." Output ONLY the prompt itself.
+- NO PLATFORM PARAMETERS: Do NOT include technical flags like --ar, --video, --v, --motion, or aspect ratios.
+- NO NEGATIVE PROMPTS: Do not include a "Negative Prompt" section. Focus only on positive description.
+
+Your output must be the final English prompt text, ready for immediate generation.
+"""
 
     MAX_INLINE_BYTES = 14 * 1024 * 1024  # 14 MB ограничение для Gemini inline_data
+    FILES_API_MAX_BYTES = 200 * 1024 * 1024  # предел для загрузки через Files API
 
     def __init__(self, *, model: Optional[ReferencePromptModel] = None) -> None:
         self._default_model = model
@@ -166,73 +183,84 @@ class ReferencePromptService:
         model = self._default_model or get_reference_prompt_model(model_slug)
 
         media_bytes: Optional[bytes] = None
+        file_uri: Optional[str] = None
 
         source_url: Optional[str] = None
         if reference.urls:
             source_url = next((u for u in reference.urls if is_supported_url(u)), None)
+
+        is_youtube = bool(source_url) and ("youtube.com" in source_url.lower() or "youtu.be" in source_url.lower())
 
         if source_url:
             reference.source_url = reference.source_url or source_url
             try:
                 download_result = await download_video(source_url)
             except Exception as exc:  # noqa: BLE001 - обернули внешний загрузчик
-                logger.exception("Failed to download reference media from %s: %s", source_url, exc)
-                raise ValueError(
-                    "Не удалось скачать видео по ссылке. Отправьте файл напрямую или попробуйте другую ссылку."
-                ) from exc
+                if is_youtube:
+                    logger.warning(
+                        "Failed to download reference media from %s, will fallback to Gemini file_uri: %s",
+                        source_url,
+                        exc,
+                    )
+                else:
+                    logger.exception("Failed to download reference media from %s: %s", source_url, exc)
+                    raise ValueError(
+                        "Не удалось скачать видео по ссылке. Отправьте файл напрямую или попробуйте другую ссылку."
+                    ) from exc
+            else:
+                media_bytes = download_result.content
+                reference.input_type = "video"
+                reference.mime_type = download_result.mime_type
+                reference.file_size = len(download_result.content)
+                reference.duration = download_result.duration or reference.duration
+                reference.width = download_result.width or reference.width
+                reference.height = download_result.height or reference.height
+                reference.source_title = reference.source_title or download_result.title
+                reference.source_description = reference.source_description or download_result.description
 
-            media_bytes = download_result.content
-            reference.input_type = "video"
-            reference.mime_type = download_result.mime_type
-            reference.file_size = len(download_result.content)
-            reference.duration = download_result.duration or reference.duration
-            reference.width = download_result.width or reference.width
-            reference.height = download_result.height or reference.height
-            reference.source_title = reference.source_title or download_result.title
-            reference.source_description = reference.source_description or download_result.description
+                if download_result.title and (
+                    not reference.text or reference.text.strip() in {"", source_url.strip()}
+                ):
+                    reference.text = download_result.title
 
-            if download_result.title and (
-                not reference.text or reference.text.strip() in {"", source_url.strip()}
-            ):
-                reference.text = download_result.title
-
-            if download_result.description and (
-                not reference.caption or reference.caption.strip() in {"", source_url.strip()}
-            ):
-                reference.caption = download_result.description
-
-            if len(media_bytes) > self.MAX_INLINE_BYTES:
-                size_mb = len(media_bytes) / (1024 * 1024)
-                raise ValueError(
-                    f"Скачанное видео весит {size_mb:.1f} MB — это больше лимита 14 MB."
-                )
+                if download_result.description and (
+                    not reference.caption or reference.caption.strip() in {"", source_url.strip()}
+                ):
+                    reference.caption = download_result.description
 
         if media_bytes is None and reference.file_id and reference.input_type in {"photo", "video"}:
             media_bytes = await self._download_file(bot, reference.file_id)
             reference.file_size = len(media_bytes)
-            if len(media_bytes) > self.MAX_INLINE_BYTES:
-                size_mb = len(media_bytes) / (1024 * 1024)
-                raise ValueError(
-                    f"Размер файла ({size_mb:.1f} MB) превышает допустимый предел для анализа."
-                )
 
-        if media_bytes is None and source_url:
-            raise ValueError(
-                "Не удалось обработать ссылку. Загрузите видео или изображение напрямую."
+        if media_bytes is None and source_url and is_youtube:
+            # fallback: отправляем ссылку в Gemini без загрузки на нашу сторону
+            file_uri = source_url
+
+        if media_bytes is None and source_url and not file_uri:
+            raise ValueError("Не удалось обработать ссылку. Загрузите видео или изображение напрямую.")
+
+        file_part: Optional[Dict[str, Any]] = None
+        if media_bytes and reference.mime_type:
+            media_size = len(media_bytes)
+            if media_size > self.FILES_API_MAX_BYTES:
+                size_mb = media_size / (1024 * 1024)
+                raise ValueError(f"Видео слишком большое ({size_mb:.1f} MB). Загрузите укороченную версию.")
+
+            display_name = reference.file_name or f"reference-{uuid.uuid4().hex[:8]}"
+            file_uri = await self._upload_video_file(
+                media_bytes,
+                reference.mime_type,
+                display_name=display_name,
             )
+            file_part = {"file_data": {"file_uri": file_uri, "mime_type": reference.mime_type}}
+        elif file_uri:
+            file_part = {"file_data": {"file_uri": file_uri, "mime_type": reference.mime_type or "video/mp4"}}
 
         prompt_text = self._build_user_prompt(reference, modifications)
-        parts = [{"text": prompt_text}]
-
-        if media_bytes and reference.mime_type:
-            parts.append(
-                {
-                    "inline_data": {
-                        "mime_type": reference.mime_type,
-                        "data": base64.b64encode(media_bytes).decode("utf-8"),
-                    }
-                }
-            )
+        parts: List[Dict[str, Any]] = []
+        if file_part:
+            parts.append(file_part)
+        parts.append({"text": prompt_text})
 
         payload = {
             "systemInstruction": {
@@ -256,7 +284,7 @@ class ReferencePromptService:
         prompt_out = self._extract_text_response(response_json)
         dialogue_code = uuid.uuid4().hex[:12]
 
-        chunks = [f"✅Ваш промт готов:\n{prompt_out}"]
+        chunks = self._format_chunks(prompt_out)
 
         return ReferencePromptResult(
             prompt_text=prompt_out,
@@ -544,8 +572,11 @@ class ReferencePromptService:
         total = len(chunks_raw)
         formatted: List[str] = []
         for idx, chunk in enumerate(chunks_raw, start=1):
-            header = "*Veo 3 request*" if total == 1 else f"*Veo 3 request — часть {idx} из {total}*"
-            formatted.append(f"{header}\n```json\n{chunk}\n```")
+            header = "✅Ваш промт готов" if total == 1 else f"✅Ваш промт готов — часть {idx} из {total}"
+            cta = 'Скопируйте промт, нажмите в меню "Создать видео", вставьте этот промт и получите похожее видео'
+            formatted.append(
+                f"<b>{header}</b>\n<pre><code class=\"language-json\">{html.escape(chunk)}</code></pre>\n{cta}",
+            )
         return formatted
 
     @staticmethod
