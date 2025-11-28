@@ -154,7 +154,7 @@ async def prompt_by_reference_select_model(callback: CallbackQuery, state: FSMCo
     await state.update_data(reference_prompt_model=model.slug)
 
     await callback.message.answer(
-        "Отправьте ссылку на референс или загрузите в чат видео/изображение и я создам промт для генерации точно такого же видео",
+        "🔗 Скиньте в бота ссылку на любой Reels, Shorts, TikTok или загрузите в чат видео и получите промт для создания точно такого же видео!",
         reply_markup=get_cancel_keyboard(),
     )
 
@@ -175,10 +175,9 @@ async def prompt_by_reference_collect(message: Message, state: FSMContext):
     await state.update_data(reference_payload=payload.as_state())
 
     await message.answer(
-        "✅ Референс получен.\n\nХотите внести правки перед сборкой промта?",
+        '✅ Референс получен.\n\nЕсли вы хотите получить промт для генерации точно такого же видео то нажмите кнопку "Без правок"\n\nЕсли хотите внести изменения в видео нажмите кнопку "Внести правки".',
         reply_markup=get_reference_prompt_mods_keyboard(),
     )
-
     await state.set_state(BotStates.reference_prompt_confirm_mods)
 
 
@@ -262,7 +261,7 @@ async def _start_prompt_generation(message: Message, state: FSMContext, modifica
         return
 
     for chunk in result.chunks:
-        await message.answer(chunk, parse_mode="Markdown")
+        await message.answer(chunk, parse_mode="HTML")
 
     await state.clear()
     await state.set_state(BotStates.main_menu)
