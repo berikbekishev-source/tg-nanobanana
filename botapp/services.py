@@ -929,12 +929,17 @@ def _normalize_imagen_size(raw_size: Optional[Any]) -> Optional[str]:
     return None
 
 
-def _build_imagen_parameters(quantity: int, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+def _build_imagen_parameters(
+    quantity: int,
+    params: Optional[Dict[str, Any]] = None,
+    *,
+    force_aspect_ratio: Optional[str] = None,
+) -> Dict[str, Any]:
     """Готовит объект parameters для Imagen predict согласно документации."""
     parameters: Dict[str, Any] = {"sampleCount": max(1, min(quantity, 4))}
     params = params or {}
 
-    aspect_ratio = params.get("aspect_ratio") or params.get("aspectRatio")
+    aspect_ratio = force_aspect_ratio or params.get("aspect_ratio") or params.get("aspectRatio")
     allowed_aspects = {"1:1", "2:3", "3:2", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9"}
     if aspect_ratio in allowed_aspects:
         parameters["aspectRatio"] = aspect_ratio
@@ -1120,7 +1125,14 @@ def gemini_vertex_edit(
 
     image_mode = params.get("image_mode")
     reference_images, has_mask = _build_imagen_reference_images(input_images, params, image_mode)
-    parameters = _build_imagen_parameters(quantity, params)
+
+    # Ограничение Imagen: для нес квадратных аспектов нельзя больше 2 reference images.
+    # Если пользователь прислал >2 изображений, принудительно используем 1:1, чтобы не падать 400.
+    force_aspect_ratio: Optional[str] = None
+    if len(reference_images) > 2:
+        force_aspect_ratio = "1:1"
+
+    parameters = _build_imagen_parameters(quantity, params, force_aspect_ratio=force_aspect_ratio)
     if has_mask:
         parameters["editMode"] = params.get("edit_mode") or "EDIT_MODE_INPAINT_INSERTION"
 
