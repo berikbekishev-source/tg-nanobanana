@@ -332,7 +332,7 @@
     <script>
         const tg = window.Telegram?.WebApp;
         const params = new URLSearchParams(window.location.search);
-        const MAX_PROMPT = 1000;
+        const MAX_PROMPT = Number(params.get("max_prompt") || params.get("maxPrompt")) || 4000;
         const MAX_BYTES = 5 * 1024 * 1024;
 
         const state = {
@@ -367,6 +367,13 @@
         function setActive(container, target) {
             container.querySelectorAll(".chip, .pill").forEach(btn => btn.classList.remove("active"));
             target.classList.add("active");
+        }
+
+        // Применяем динамический лимит промта из параметров, если указан
+        const effectiveMaxPrompt = Number.isFinite(MAX_PROMPT) ? MAX_PROMPT : 5000;
+        if (els.prompt) {
+            els.prompt.setAttribute("maxlength", effectiveMaxPrompt);
+            els.promptCount.textContent = `0/${Number.isFinite(MAX_PROMPT) ? MAX_PROMPT : "∞"}`;
         }
 
         function showAlert(text) {

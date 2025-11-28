@@ -243,9 +243,9 @@
         <div class="section">
             <p class="section-title">Промт</p>
             <p class="label">Текстовый запрос</p>
-            <textarea id="prompt" placeholder="Опишите движение и стиль..." maxlength="2000" enterkeyhint="done"
+            <textarea id="prompt" placeholder="Опишите движение и стиль..." maxlength="5000" enterkeyhint="done"
                 inputmode="text"></textarea>
-            <div class="count" id="promptCount">0/2000</div>
+            <div class="count" id="promptCount">0/—</div>
 
             <div class="upload">
                 <p class="label" style="margin:0 0 6px;">Загрузите изображение (JPG/PNG/WebP, до 10 МБ)</p>
@@ -278,6 +278,7 @@
     <script>
         const tg = window.Telegram?.WebApp;
         const params = new URLSearchParams(window.location.search);
+        const MAX_PROMPT = Number(params.get("max_prompt") || params.get("maxPrompt")) || 4000;
         const MAX_IMAGE_SIZE = 10 * 1024 * 1024; // 10 MB
         const allowedRatios = ["16:9", "9:16", "1:1", "2:1", "1:2", "4:3", "3:4"];
 
@@ -309,6 +310,13 @@
         function setActive(container, target) {
             container.querySelectorAll(".pill").forEach(btn => btn.classList.remove("active"));
             target.classList.add("active");
+        }
+
+        // Применяем лимит промта из параметров (если передан)
+        const effectiveMaxPrompt = Number.isFinite(MAX_PROMPT) ? MAX_PROMPT : 5000;
+        if (els.prompt) {
+            els.prompt.setAttribute("maxlength", effectiveMaxPrompt);
+            els.promptCount.textContent = `0/${Number.isFinite(MAX_PROMPT) ? MAX_PROMPT : "∞"}`;
         }
 
         function setError(text) {
@@ -347,7 +355,7 @@
 
         function updateCounts() {
             state.prompt = els.prompt.value.trim();
-            els.promptCount.textContent = `${state.prompt.length}/2000`;
+            els.promptCount.textContent = `${state.prompt.length}/${Number.isFinite(MAX_PROMPT) ? MAX_PROMPT : "∞"}`;
             updateButtonVisibility();
         }
 

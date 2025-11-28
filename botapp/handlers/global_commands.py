@@ -211,6 +211,7 @@ async def global_create_video_start(message: Message, state: FSMContext):
                 veo_webapps[model.slug] = (
                     f"{PUBLIC_BASE_URL}/veo/?"
                     f"model={quote_plus(model.slug)}&price={quote_plus(price_label)}"
+                    f"&max_prompt={quote_plus(str(model.max_prompt_length))}"
                 )
             if model.provider == "midjourney":
                 cost = await sync_to_async(get_base_price_tokens)(model)
@@ -218,6 +219,7 @@ async def global_create_video_start(message: Message, state: FSMContext):
                 midjourney_video_webapps[model.slug] = (
                     f"{PUBLIC_BASE_URL}/midjourney_video/?"
                     f"model={quote_plus(model.slug)}&price={quote_plus(price_label)}"
+                    f"&max_prompt={quote_plus(str(model.max_prompt_length))}"
                 )
 
 
