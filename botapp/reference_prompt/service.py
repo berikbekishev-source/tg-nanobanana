@@ -7,6 +7,7 @@ import base64
 import html
 import json
 import logging
+import time
 import uuid
 from dataclasses import dataclass
 from typing import Any, Dict, Iterable, List, Optional, Tuple
@@ -164,7 +165,7 @@ STRICT NEGATIVE CONSTRAINTS (CRITICAL):
 Your output must be the final English prompt text, ready for immediate generation.
 """
 
-    MAX_INLINE_BYTES = 14 * 1024 * 1024  # 14 MB ограничение для Gemini inline_data
+    INLINE_MAX_BYTES = 20 * 1024 * 1024  # <=20MB отправляем inline_data
     FILES_API_MAX_BYTES = 200 * 1024 * 1024  # предел для загрузки через Files API
 
     def __init__(self, *, model: Optional[ReferencePromptModel] = None) -> None:
@@ -241,26 +242,38 @@ Your output must be the final English prompt text, ready for immediate generatio
             raise ValueError("Не удалось обработать ссылку. Загрузите видео или изображение напрямую.")
 
         file_part: Optional[Dict[str, Any]] = None
+        inline_part: Optional[Dict[str, Any]] = None
         if media_bytes and reference.mime_type:
             media_size = len(media_bytes)
-            if media_size > self.FILES_API_MAX_BYTES:
-                size_mb = media_size / (1024 * 1024)
-                raise ValueError(f"Видео слишком большое ({size_mb:.1f} MB). Загрузите укороченную версию.")
+            if media_size <= self.INLINE_MAX_BYTES:
+                inline_part = {
+                    "inline_data": {
+                        "mime_type": reference.mime_type,
+                        "data": base64.b64encode(media_bytes).decode("utf-8"),
+                    }
+                }
+            else:
+                if media_size > self.FILES_API_MAX_BYTES:
+                    size_mb = media_size / (1024 * 1024)
+                    raise ValueError(f"Видео слишком большое ({size_mb:.1f} MB). Загрузите укороченную версию.")
 
-            display_name = reference.file_name or f"reference-{uuid.uuid4().hex[:8]}"
-            file_uri = await self._upload_video_file(
-                media_bytes,
-                reference.mime_type,
-                display_name=display_name,
-            )
-            file_part = {"file_data": {"file_uri": file_uri, "mime_type": reference.mime_type}}
+                display_name = reference.file_name or f"reference-{uuid.uuid4().hex[:8]}"
+                file_uri = await self._upload_video_file(
+                    media_bytes,
+                    reference.mime_type,
+                    display_name=display_name,
+                )
+                await self._wait_for_file_active(file_uri)
+                file_part = {"fileData": {"fileUri": file_uri, "mimeType": reference.mime_type}}
         elif file_uri:
-            file_part = {"file_data": {"file_uri": file_uri, "mime_type": reference.mime_type or "video/mp4"}}
+            file_part = {"fileData": {"fileUri": file_uri, "mimeType": reference.mime_type or "video/mp4"}}
 
         prompt_text = self._build_user_prompt(reference, modifications)
         parts: List[Dict[str, Any]] = []
         if file_part:
             parts.append(file_part)
+        if inline_part:
+            parts.append(inline_part)
         parts.append({"text": prompt_text})
 
         payload = {
@@ -416,6 +429,40 @@ Your output must be the final English prompt text, ready for immediate generatio
                 raise ValueError("Не удалось получить file_uri из Gemini Files API")
 
             return file_uri
+
+    async def _wait_for_file_active(self, file_uri: str, *, timeout: float = 30.0, interval: float = 2.0) -> None:
+        """Дожидается, пока файл в Gemini Files API станет ACTIVE."""
+
+        api_key = settings.GEMINI_API_KEY
+        if not api_key:
+            raise ValueError("GEMINI_API_KEY не задан")
+
+        path = file_uri
+        if not file_uri.startswith("http"):
+            path = file_uri.lstrip("/")
+            url = f"https://generativelanguage.googleapis.com/v1beta/{path}"
+        else:
+            url = file_uri
+
+        file_id = path.rsplit("/", 1)[-1]
+        deadline = time.monotonic() + timeout
+
+        timeout_cfg = httpx.Timeout(60.0, connect=10.0)
+        async with httpx.AsyncClient(timeout=timeout_cfg) as client:
+            while True:
+                resp = await client.get(url, params={"key": api_key})
+                resp.raise_for_status()
+                data = resp.json()
+                status = data.get("state") or data.get("status")
+                logger.info("Gemini file %s status=%s", file_id, status)
+
+                if status == "ACTIVE":
+                    return
+
+                if time.monotonic() >= deadline:
+                    raise ValueError(f"Файл Gemini {file_id} не стал ACTIVE (статус {status})")
+
+                await asyncio.sleep(interval)
 
     def _extract_json_response(self, response: Dict[str, Any]) -> Dict[str, Any]:
         candidates = response.get("candidates") or []
@@ -629,7 +676,7 @@ Your output must be the final English prompt text, ready for immediate generatio
         formatted: List[str] = []
         for idx, chunk in enumerate(chunks_raw, start=1):
             header = "✅Ваш промт готов" if total == 1 else f"✅Ваш промт готов — часть {idx} из {total}"
-            cta = 'Скопируйте промт, нажмите в меню "Создать видео", вставьте этот промт и получите похожее видео'
+            cta = "👆Нажмите на текст чтобы скопировать промт.\n\nВыберите модель для генерации видео 👇"
             formatted.append(
                 f"<b>{header}</b>\n<pre><code class=\"language-json\">{html.escape(chunk)}</code></pre>\n{cta}",
             )
