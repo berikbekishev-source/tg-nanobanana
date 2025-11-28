@@ -192,9 +192,17 @@ async def global_create_video_start(message: Message, state: FSMContext):
             if model.provider == "kling":
                 cost = await sync_to_async(get_base_price_tokens)(model)
                 price_label = f"⚡{cost:.2f} токенов"
+                default_duration = None
+                if isinstance(model.default_params, dict):
+                    try:
+                        default_duration = int(model.default_params.get("duration") or 0)
+                    except (TypeError, ValueError):
+                        default_duration = None
+                base_duration = default_duration if default_duration and default_duration > 0 else 10
                 kling_webapps[model.slug] = (
                     f"{PUBLIC_BASE_URL}/kling/?"
                     f"model={quote_plus(model.slug)}&price={quote_plus(price_label)}"
+                    f"&price_base_duration={quote_plus(str(base_duration))}"
                 )
             if model.provider == "veo" or model.slug.startswith("veo"):
                 cost = await sync_to_async(get_base_price_tokens)(model)
@@ -460,7 +468,17 @@ async def global_select_video_model(callback: CallbackQuery, state: FSMContext):
     if model.provider == "kling":
         price_label = f"⚡{model_cost:.2f} токенов"
         base = PUBLIC_BASE_URL or "https://example.com"
-        webapp_url = f"{base}/kling/?price={quote_plus(price_label)}"
+        default_duration = None
+        if isinstance(model.default_params, dict):
+            try:
+                default_duration = int(model.default_params.get("duration") or 0)
+            except (TypeError, ValueError):
+                default_duration = None
+        base_duration = default_duration if default_duration and default_duration > 0 else 10
+        webapp_url = (
+            f"{base}/kling/?price={quote_plus(price_label)}"
+            f"&price_base_duration={quote_plus(str(base_duration))}"
+        )
         try:
             await callback.answer(url=webapp_url)
         except Exception:
