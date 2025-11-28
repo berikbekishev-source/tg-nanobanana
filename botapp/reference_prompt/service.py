@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import html
 import json
@@ -358,7 +359,12 @@ Your output must be the final English prompt text, ready for immediate generatio
         timeout = httpx.Timeout(120.0, connect=20.0)
         async with httpx.AsyncClient(timeout=timeout) as client:
             response = await client.post(url, headers=headers, json=payload)
-            response.raise_for_status()
+            try:
+                response.raise_for_status()
+            except httpx.HTTPStatusError as exc:  # хотим видеть тело ошибки
+                detail = exc.response.text
+                logger.error("Gemini API error %s: %s", exc.response.status_code, detail)
+                raise ValueError(f"Gemini API error {exc.response.status_code}: {detail}") from exc
             return response.json()
 
     async def _upload_video_file(self, media_bytes: bytes, mime_type: str, *, display_name: str) -> str:
