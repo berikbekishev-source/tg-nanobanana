@@ -676,7 +676,7 @@ Your output must be the final English prompt text, ready for immediate generatio
         formatted: List[str] = []
         for idx, chunk in enumerate(chunks_raw, start=1):
             header = "✅Ваш промт готов" if total == 1 else f"✅Ваш промт готов — часть {idx} из {total}"
-            cta = 'Скопируйте промт, нажмите в меню "Создать видео", вставьте этот промт и получите похожее видео'
+            cta = "👆Нажмите на текст чтобы скопировать промт.\n\nВыберите модель для генерации видео 👇"
             formatted.append(
                 f"<b>{header}</b>\n<pre><code class=\"language-json\">{html.escape(chunk)}</code></pre>\n{cta}",
             )
