@@ -361,6 +361,56 @@ Your output must be the final English prompt text, ready for immediate generatio
             response.raise_for_status()
             return response.json()
 
+    async def _upload_video_file(self, media_bytes: bytes, mime_type: str, *, display_name: str) -> str:
+        """Загружает видео в Gemini Files API и возвращает file_uri."""
+
+        api_key = settings.GEMINI_API_KEY
+        if not api_key:
+            raise ValueError("GEMINI_API_KEY не задан")
+
+        start_headers = {
+            "X-Goog-Upload-Protocol": "resumable",
+            "X-Goog-Upload-Command": "start",
+            "X-Goog-Upload-Header-Content-Length": str(len(media_bytes)),
+            "X-Goog-Upload-Header-Content-Type": mime_type,
+            "Content-Type": "application/json",
+        }
+
+        timeout = httpx.Timeout(300.0, connect=30.0)
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            start_resp = await client.post(
+                "https://generativelanguage.googleapis.com/upload/v1beta/files",
+                params={"key": api_key},
+                headers=start_headers,
+                json={"file": {"display_name": display_name}},
+            )
+            start_resp.raise_for_status()
+
+            upload_url = start_resp.headers.get("X-Goog-Upload-URL") or start_resp.headers.get(
+                "x-goog-upload-url"
+            )
+            if not upload_url:
+                raise ValueError("Не удалось получить upload URL от Gemini Files API")
+
+            upload_headers = {
+                "Content-Length": str(len(media_bytes)),
+                "X-Goog-Upload-Offset": "0",
+                "X-Goog-Upload-Command": "upload, finalize",
+            }
+            upload_resp = await client.post(upload_url, headers=upload_headers, content=media_bytes)
+            upload_resp.raise_for_status()
+
+            try:
+                file_info = upload_resp.json()
+            except json.JSONDecodeError as exc:  # pragma: no cover
+                raise ValueError(f"Gemini Files API вернул неожиданный ответ: {upload_resp.text}") from exc
+
+            file_uri = (file_info.get("file") or {}).get("uri")
+            if not file_uri:
+                raise ValueError("Не удалось получить file_uri из Gemini Files API")
+
+            return file_uri
+
     def _extract_json_response(self, response: Dict[str, Any]) -> Dict[str, Any]:
         candidates = response.get("candidates") or []
         if not candidates:
