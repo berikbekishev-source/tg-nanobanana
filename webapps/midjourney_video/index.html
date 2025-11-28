@@ -448,14 +448,21 @@
                     tg.MainButton.showProgress();
                 } catch (_) { }
 
-                fetch('/api/midjourney_video/webapp/submit', {
+                const fetchPromise = fetch('/api/midjourney_video/webapp/submit', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         user_id: userId,
                         data: payload,
                     }),
-                })
+                    keepalive: false,
+                });
+
+                const timeoutPromise = new Promise((_, reject) =>
+                    setTimeout(() => reject(new Error("Timeout")), 30000)
+                );
+
+                Promise.race([fetchPromise, timeoutPromise])
                     .then((response) => {
                         if (response.ok) {
                             tg.close();
