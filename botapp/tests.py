@@ -31,6 +31,7 @@ from botapp.providers.video.openai_sora import OpenAISoraProvider
 from botapp.media_utils import detect_reference_mime
 from botapp.services import (
     openai_generate_images,
+    gemini_generate_images,
     gemini_vertex_generate,
     gemini_vertex_edit,
     generate_images_for_model,
@@ -589,8 +590,8 @@ class OpenAIImageGenerationTests(TestCase):
             input_images=[],
         )
 
-    @patch("botapp.services.gemini_vertex_generate", return_value=[b"ok"])
-    def test_generate_images_for_model_gemini_vertex_text2image(self, vertex_gen_mock: MagicMock):
+    @patch("botapp.services.gemini_generate_images", return_value=[b"ok"])
+    def test_generate_images_for_model_gemini_vertex_text2image(self, gemini_mock: MagicMock):
         model = AIModel.objects.create(
             slug="nano-banana-pro",
             name="Nano Banana Pro",
@@ -623,15 +624,15 @@ class OpenAIImageGenerationTests(TestCase):
         )
 
         self.assertEqual(imgs, [b"ok"])
-        vertex_gen_mock.assert_called_once()
-        call_kwargs = vertex_gen_mock.call_args.kwargs
+        gemini_mock.assert_called_once()
+        call_kwargs = gemini_mock.call_args.kwargs
         self.assertEqual(call_kwargs["model_name"], "publishers/google/models/gemini-3-pro-image-preview")
         self.assertEqual(call_kwargs["params"]["top_p"], 0.9)
         self.assertEqual(call_kwargs["params"]["image_size"], "2K")
         self.assertEqual(call_kwargs["params"]["aspect_ratio"], "16:9")
 
-    @patch("botapp.services.gemini_vertex_edit", return_value=[b"ok"])
-    def test_generate_images_for_model_gemini_vertex_image2image(self, vertex_edit_mock: MagicMock):
+    @patch("botapp.services.gemini_generate_images", return_value=[b"ok"])
+    def test_generate_images_for_model_gemini_vertex_image2image(self, gemini_mock: MagicMock):
         model = AIModel.objects.create(
             slug="nano-banana-pro",
             name="Nano Banana Pro",
@@ -665,12 +666,58 @@ class OpenAIImageGenerationTests(TestCase):
         )
 
         self.assertEqual(imgs, [b"ok"])
-        vertex_edit_mock.assert_called_once()
-        call_kwargs = vertex_edit_mock.call_args.kwargs
+        gemini_mock.assert_called_once()
+        call_kwargs = gemini_mock.call_args.kwargs
         self.assertEqual(call_kwargs["model_name"], "publishers/google/models/gemini-3-pro-image-preview")
         self.assertEqual(call_kwargs["params"]["top_k"], 40)
         self.assertEqual(call_kwargs["params"]["image_size"], "4K")
         self.assertEqual(call_kwargs["input_images"][0]["mime_type"], "image/png")
+
+class GeminiGenerateImagesPayloadTests(TestCase):
+    @override_settings(GEMINI_API_KEY="test-key")
+    @patch("botapp.services.httpx.Client")
+    def test_payload_matches_gemini_image_config(self, client_cls: MagicMock):
+        post_resp = MagicMock()
+        post_resp.raise_for_status.return_value = None
+        post_resp.json.return_value = {
+            "candidates": [
+                {"content": {"parts": [{"inlineData": {"data": base64.b64encode(b"img").decode(), "mimeType": "image/png"}}]}}
+            ]
+        }
+
+        client = MagicMock()
+        client.post.return_value = post_resp
+        client.get.return_value = MagicMock()
+
+        client_ctx = client_cls.return_value
+        client_ctx.__enter__.return_value = client
+        client_ctx.__exit__.return_value = False
+
+        imgs = gemini_generate_images(
+            "prompt text",
+            1,
+            params={"aspect_ratio": "16:9", "image_size": "4K", "temperature": 0.7},
+            model_name="publishers/google/models/gemini-3-pro-image-preview",
+            generation_type="image2image",
+            input_images=[{"content": b"ref", "mime_type": "image/jpeg"}],
+        )
+
+        self.assertEqual(imgs, [b"img"])
+        client.post.assert_called_once()
+        called_headers = client.post.call_args.kwargs["headers"]
+        self.assertEqual(called_headers["x-goog-api-key"], "test-key")
+
+        payload = client.post.call_args.kwargs["json"]
+        generation_config = payload["generationConfig"]
+        self.assertEqual(generation_config["responseModalities"], ["IMAGE"])
+        self.assertEqual(generation_config["temperature"], 0.7)
+        self.assertEqual(generation_config["imageConfig"]["aspectRatio"], "16:9")
+        self.assertEqual(generation_config["imageConfig"]["imageSize"], "4K")
+
+        parts = payload["contents"][0]["parts"]
+        self.assertEqual(parts[0]["text"], "prompt text")
+        self.assertEqual(parts[1]["inlineData"]["mimeType"], "image/jpeg")
+
 
 class ReferenceMimeDetectionTests(TestCase):
     def test_detect_png_signature_when_header_generic(self):
