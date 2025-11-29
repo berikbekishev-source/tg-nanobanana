@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import base64
-import html
 import json
 import logging
 import time
@@ -683,14 +682,17 @@ Your output must be the final prompt text ready for generation.
         return params
 
     def _format_chunks(self, pretty: str) -> List[str]:
-        chunks_raw = chunk_text(pretty, 3500) or [pretty]
+        # Оставляем запас под markdown-обертку и клавиатуру
+        chunks_raw = chunk_text(pretty, 3000) or [pretty]
         total = len(chunks_raw)
         formatted: List[str] = []
         for idx, chunk in enumerate(chunks_raw, start=1):
             header = "✅Ваш промт готов" if total == 1 else f"✅Ваш промт готов — часть {idx} из {total}"
             cta = "👆Нажмите на текст чтобы скопировать промт.\n\nВыберите модель для генерации видео 👇"
+            # Telegram на iOS корректнее копирует содержимое markdown-кодблоков, чем HTML <code>
+            safe_chunk = chunk.replace("```", "`` `")
             formatted.append(
-                f"<b>{header}</b>\n<pre><code class=\"language-json\">{html.escape(chunk)}</code></pre>\n{cta}",
+                f"*{header}*\n```json\n{safe_chunk}\n```\n{cta}"
             )
         return formatted
 
