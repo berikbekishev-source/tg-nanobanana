@@ -690,7 +690,7 @@ Your output must be the final prompt text ready for generation.
             header = "✅Ваш промт готов" if total == 1 else f"✅Ваш промт готов — часть {idx} из {total}"
             cta = "👆Нажмите на текст чтобы скопировать промт.\n\nВыберите модель для генерации видео 👇"
             formatted.append(
-                f"<b>{header}</b>\n<pre><code class=\"language-json\">{html.escape(chunk)}</code></pre>\n{cta}",
+                f"<b>{header}</b>\n<pre>{html.escape(chunk)}</pre>\n{cta}",
             )
         return formatted
 
