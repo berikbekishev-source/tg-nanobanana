@@ -41,6 +41,15 @@ def _shorten_caption(text: str, limit: int = MAX_TELEGRAM_CAPTION) -> str:
     return text[: limit - 1] + "…"
 
 
+def _log_bot_api_result(result) -> None:
+    """Логирует результат Telegram Bot API, корректно обрабатывая списки (media group)."""
+    if isinstance(result, list):
+        for item in result:
+            ChatLogger.log_outgoing_from_payload(item)
+    else:
+        ChatLogger.log_outgoing_from_payload(result)
+
+
 def send_telegram_photo(
     chat_id: int,
     photo_bytes: bytes,
@@ -73,12 +82,7 @@ def send_telegram_photo(
             )
             raise
         payload = resp.json()
-        result = payload.get("result")
-        if isinstance(result, list):
-            for item in result:
-                ChatLogger.log_outgoing_from_payload(item)
-        else:
-            ChatLogger.log_outgoing_from_payload(result)
+        _log_bot_api_result(payload.get("result"))
         return payload
 
 
@@ -106,7 +110,7 @@ def send_telegram_video(chat_id: int, video_bytes: bytes, caption: str, reply_ma
             )
             raise
         payload = resp.json()
-        ChatLogger.log_outgoing_from_payload(payload.get("result"))
+        _log_bot_api_result(payload.get("result"))
         return payload
 
 
@@ -144,7 +148,7 @@ def send_telegram_album(
         )
         resp.raise_for_status()
         payload = resp.json()
-        ChatLogger.log_outgoing_from_payload(payload.get("result"))
+        _log_bot_api_result(payload.get("result"))
         return payload
 
 
@@ -164,7 +168,7 @@ def send_telegram_message(chat_id: int, text: str, reply_markup: Optional[Dict] 
         resp = client.post(url, json=data)
         resp.raise_for_status()
         payload = resp.json()
-        ChatLogger.log_outgoing_from_payload(payload.get("result"))
+        _log_bot_api_result(payload.get("result"))
         return payload
 
 
