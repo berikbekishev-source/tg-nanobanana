@@ -340,17 +340,10 @@
                 <div class="chip" data-type="mj_img2img">Изображение → Изображение</div>
             </div>
 
-            <p class="label" style="margin-top: 12px;">Скорость</p>
-            <div class="chip-toggle" id="speedToggle" style="grid-template-columns: repeat(3, 1fr);">
-                <div class="chip" data-speed="relaxed">relaxed</div>
-                <div class="chip active" data-speed="fast">fast</div>
-                <div class="chip" data-speed="turbo">turbo</div>
-            </div>
-
             <p class="label" style="margin-top: 14px;">Текстовый запрос</p>
-            <textarea id="prompt" placeholder="Опишите, что нужно сгенерировать..." maxlength="2000" enterkeyhint="done"
+            <textarea id="prompt" placeholder="Опишите, что нужно сгенерировать..." maxlength="4000" enterkeyhint="done"
                 inputmode="text"></textarea>
-            <div class="count" id="promptCount">0/2000</div>
+            <div class="count" id="promptCount">0/4000</div>
 
             <div class="upload" id="imgBlock">
                 <p class="label" style="margin:0 0 6px;">Изображение для img2img</p>
@@ -438,9 +431,8 @@
         const tg = window.Telegram?.WebApp;
         const params = new URLSearchParams(window.location.search);
         const state = {
-            modelSlug: params.get("model") || "midjourney-v6",
+            modelSlug: params.get("model") || "midjourney-v7-fast",
             taskType: "mj_txt2img",
-            speed: "fast",
             prompt: "",
             aspectRatio: "1:1",
             version: "7",
@@ -455,7 +447,6 @@
 
         const els = {
             typeToggle: document.getElementById("typeToggle"),
-            speedToggle: document.getElementById("speedToggle"),
             ratioGrid: document.getElementById("ratioGrid"),
             prompt: document.getElementById("prompt"),
             promptCount: document.getElementById("promptCount"),
@@ -479,7 +470,7 @@
 
         function updateCounts() {
             state.prompt = els.prompt.value.trim();
-            els.promptCount.textContent = `${state.prompt.length}/2000`;
+            els.promptCount.textContent = `${state.prompt.length}/4000`;
 
             if (tg?.MainButton) {
                 if (state.prompt.length > 0) {
@@ -517,14 +508,14 @@
                     return;
                 }
 
-                const payload = {
-                    kind: "midjourney_settings",
-                    taskType: state.taskType,
-                    prompt: state.prompt,
-                    speed: state.speed,
-                    aspectRatio: state.aspectRatio,
-                    version: state.version,
-                    stylization: state.stylization,
+            const payload = {
+                kind: "midjourney_settings",
+                taskType: state.taskType,
+                prompt: state.prompt,
+                speed: "fast",
+                aspectRatio: state.aspectRatio,
+                version: state.version,
+                stylization: state.stylization,
                     weirdness: state.weirdness,
                     variety: state.variety,
                     modelSlug: state.modelSlug,
@@ -598,13 +589,6 @@
             setActive(els.typeToggle, btn);
             state.taskType = btn.dataset.type;
             els.imgBlock.style.display = state.taskType === "mj_img2img" ? "block" : "none";
-        });
-
-        els.speedToggle.addEventListener("click", (e) => {
-            const btn = e.target.closest(".chip");
-            if (!btn) return;
-            setActive(els.speedToggle, btn);
-            state.speed = btn.dataset.speed;
         });
 
         els.ratioGrid.addEventListener("click", (e) => {

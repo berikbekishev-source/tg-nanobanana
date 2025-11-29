@@ -97,7 +97,7 @@ async def handle_midjourney_webapp_data(message: Message, state: FSMContext):
     data = await state.get_data()
 
     # Получаем slug модели из payload с fallback на состояние и дефолт
-    model_slug = payload.get("modelSlug") or data.get("model_slug") or data.get("selected_model") or "midjourney-v6"
+    model_slug = payload.get("modelSlug") or data.get("model_slug") or data.get("selected_model") or "midjourney-v7-fast"
     logging.info(f"[MIDJOURNEY_WEBAPP] Model slug: {model_slug} (source: {'payload' if payload.get('modelSlug') else 'state/default'})")
 
     # Проверяем, что не пытаемся использовать не-midjourney провайдера

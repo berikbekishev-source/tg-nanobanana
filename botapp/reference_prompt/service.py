@@ -6,6 +6,7 @@ import asyncio
 import base64
 import json
 import logging
+from html import escape
 import time
 import uuid
 from dataclasses import dataclass
@@ -194,6 +195,15 @@ Your output must be the final prompt text ready for generation.
         """Формирует текстовый промт на основе входных данных пользователя."""
 
         model = self._default_model or get_reference_prompt_model(model_slug)
+        logger.info(
+            "reference_prompt: start generation slug=%s gemini_model=%s input_type=%s has_urls=%s has_file=%s mods=%s",
+            model.slug,
+            model.gemini_model,
+            reference.input_type,
+            bool(reference.urls),
+            bool(reference.file_id),
+            bool(modifications),
+        )
 
         media_bytes: Optional[bytes] = None
         file_uri: Optional[str] = None
@@ -206,6 +216,7 @@ Your output must be the final prompt text ready for generation.
 
         if source_url:
             reference.source_url = reference.source_url or source_url
+            logger.info("reference_prompt: downloading reference url=%s", source_url)
             try:
                 download_result = await download_video(source_url)
             except Exception as exc:  # noqa: BLE001 - обернули внешний загрузчик
@@ -242,6 +253,11 @@ Your output must be the final prompt text ready for generation.
                     reference.caption = download_result.description
 
         if media_bytes is None and reference.file_id and reference.input_type in {"photo", "video"}:
+            logger.info(
+                "reference_prompt: downloading telegram file input_type=%s file_id=%s",
+                reference.input_type,
+                reference.file_id,
+            )
             media_bytes = await self._download_file(bot, reference.file_id)
             reference.file_size = len(media_bytes)
 
@@ -257,6 +273,7 @@ Your output must be the final prompt text ready for generation.
         if media_bytes and reference.mime_type:
             media_size = len(media_bytes)
             if media_size <= self.INLINE_MAX_BYTES:
+                logger.info("reference_prompt: using inline media size_bytes=%s mime=%s", media_size, reference.mime_type)
                 inline_part = {
                     "inline_data": {
                         "mime_type": reference.mime_type,
@@ -269,6 +286,12 @@ Your output must be the final prompt text ready for generation.
                     raise ValueError(f"Видео слишком большое ({size_mb:.1f} MB). Загрузите укороченную версию.")
 
                 display_name = reference.file_name or f"reference-{uuid.uuid4().hex[:8]}"
+                logger.info(
+                    "reference_prompt: uploading via Files API size_bytes=%s mime=%s display_name=%s",
+                    media_size,
+                    reference.mime_type,
+                    display_name,
+                )
                 file_uri = await self._upload_video_file(
                     media_bytes,
                     reference.mime_type,
@@ -305,6 +328,14 @@ Your output must be the final prompt text ready for generation.
             },
         }
 
+        logger.info(
+            "reference_prompt: calling gemini model=%s url=%s parts=%s",
+            model.gemini_model,
+            GEMINI_URL_TMPL.format(
+                model=model.gemini_model.split("/", 1)[1] if model.gemini_model.startswith("models/") else model.gemini_model
+            ),
+            [list(part.keys())[0] for part in parts],
+        )
         response_json = await self._call_gemini(model.gemini_model, payload)
         prompt_out = self._extract_text_response(response_json)
         dialogue_code = uuid.uuid4().hex[:12]
@@ -387,8 +418,16 @@ Your output must be the final prompt text ready for generation.
                 response.raise_for_status()
             except httpx.HTTPStatusError as exc:  # хотим видеть тело ошибки
                 detail = exc.response.text
-                logger.error("Gemini API error %s: %s", exc.response.status_code, detail)
-                raise ValueError(f"Gemini API error {exc.response.status_code}: {detail}") from exc
+                logger.error(
+                    "Gemini API error %s (model=%s url=%s): %s",
+                    exc.response.status_code,
+                    model_name,
+                    url,
+                    detail,
+                )
+                raise ValueError(
+                    f"Gemini API error {exc.response.status_code} (model={model_name} url={url}): {detail}"
+                ) from exc
             return response.json()
 
     async def _upload_video_file(self, media_bytes: bytes, mime_type: str, *, display_name: str) -> str:
@@ -682,18 +721,12 @@ Your output must be the final prompt text ready for generation.
         return params
 
     def _format_chunks(self, pretty: str) -> List[str]:
-        # Оставляем запас под markdown-обертку и клавиатуру
         chunks_raw = chunk_text(pretty, 3000) or [pretty]
-        total = len(chunks_raw)
         formatted: List[str] = []
-        for idx, chunk in enumerate(chunks_raw, start=1):
-            header = "✅Ваш промт готов" if total == 1 else f"✅Ваш промт готов — часть {idx} из {total}"
-            cta = "👆Нажмите на текст чтобы скопировать промт.\n\nВыберите модель для генерации видео 👇"
-            # Telegram на iOS корректнее копирует содержимое markdown-кодблоков, чем HTML <code>
-            safe_chunk = chunk.replace("```", "`` `")
-            formatted.append(
-                f"*{header}*\n```json\n{safe_chunk}\n```\n{cta}"
-            )
+        for chunk in chunks_raw:
+            header = "<b>✅ Ваш промт готов:</b>"
+            safe_chunk = escape(chunk)
+            formatted.append(f"{header}\n\n{safe_chunk}")
         return formatted
 
     @staticmethod

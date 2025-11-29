@@ -225,6 +225,15 @@ async def _start_prompt_generation(message: Message, state: FSMContext, modifica
 
     reference_payload = ReferenceInputPayload.from_state(payload_data)
 
+    logger.info(
+        "reference_prompt: handler start chat_id=%s user_id=%s model=%s input_type=%s mods=%s",
+        message.chat.id,
+        message.from_user.id if message.from_user else None,
+        model_slug,
+        reference_payload.input_type,
+        bool(modifications),
+    )
+
     await message.answer(
         "Создаю промт для генерация видео по указанному референсу, ожидайте пару минут ⏳",
         reply_markup=get_cancel_keyboard(),
@@ -267,7 +276,7 @@ async def _start_prompt_generation(message: Message, state: FSMContext, modifica
         return
 
     for chunk in result.chunks:
-        await message.answer(chunk, parse_mode="Markdown", reply_markup=video_keyboard)
+        await message.answer(chunk, parse_mode="HTML", reply_markup=video_keyboard)
 
     await state.clear()
     await state.set_state(BotStates.main_menu)

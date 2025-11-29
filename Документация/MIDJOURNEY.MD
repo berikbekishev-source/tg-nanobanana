@@ -1,6 +1,6 @@
 # Интеграция Midjourney (через KIE.AI)
 
-Мы используем KIE.AI как прокси к Midjourney. Тот же API и ключ, что и для Kling, позволяет запускать text2image и image2image задания. В рамках проекта добавлена модель `midjourney-v6` (провайдер `midjourney`), она появляется в списке доступных AI-моделей автоматически после применения миграций.
+Мы используем KIE.AI как прокси к Midjourney. Тот же API и ключ, что и для Kling, позволяет запускать text2image и image2image задания. В рамках проекта добавлена модель `midjourney-v7-fast` (провайдер `midjourney`), она появляется в списке доступных AI-моделей автоматически после применения миграций.
 
 ## Переменные окружения
 
@@ -56,7 +56,7 @@
 Миграция `0026_alter_aimodel_provider.py` создаёт AI-модель:
 
 ```
-Slug: midjourney-v6
+Slug: midjourney-v7-fast
 Name: Midjourney V6
 Provider: midjourney
 Supports image input: yes (1 файл)
@@ -81,4 +81,3 @@ Supports image input: yes (1 файл)
 3. Убедитесь, что Supabase buckets `images` и `videos` доступны (для загрузки исходников/результатов).
 4. Активируйте модель `Midjourney V6` в админке, задайте цену/порядок.
 5. Протестируйте оба режима: text2image и image2image (добавьте фотографию + промт).
-

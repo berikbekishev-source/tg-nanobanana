@@ -237,7 +237,7 @@
         <div class="section">
             <p class="section-title">Режим</p>
             <div class="chip">Image → Video</div>
-            <p class="muted">Загрузите одно изображение и добавьте контекст движения. Длительность ролика ~10 секунд.</p>
+            <p class="muted">Загрузите одно изображение и добавьте контекст движения. Длительность ролика по умолчанию ~5 секунд.</p>
         </div>
 
         <div class="section">
@@ -252,16 +252,6 @@
                 <input type="file" id="imgInput" accept="image/*">
                 <div class="preview" id="imgPreview">Файл не выбран</div>
             </div>
-        </div>
-
-        <div class="section">
-            <p class="section-title">Формат кадра</p>
-            <div class="grid" id="ratioGrid">
-                <div class="pill active" data-ratio="16:9">16:9</div>
-                <div class="pill" data-ratio="9:16">9:16</div>
-                <div class="pill" data-ratio="1:1">1:1</div>
-            </div>
-            <p class="muted" style="margin-top:10px;">Выберите соотношение сторон итогового видео.</p>
         </div>
 
         <div class="section">
@@ -280,12 +270,10 @@
         const params = new URLSearchParams(window.location.search);
         const MAX_PROMPT = Number(params.get("max_prompt") || params.get("maxPrompt")) || 4000;
         const MAX_IMAGE_SIZE = 10 * 1024 * 1024; // 10 MB
-        const allowedRatios = ["16:9", "9:16", "1:1", "2:1", "1:2", "4:3", "3:4"];
 
         const state = {
             modelSlug: params.get("model") || "midjourney-video",
             prompt: "",
-            aspectRatio: "16:9",
             imageData: null,
             imageMime: null,
             imageName: null,
@@ -298,19 +286,8 @@
             promptCount: document.getElementById("promptCount"),
             imgInput: document.getElementById("imgInput"),
             imgPreview: document.getElementById("imgPreview"),
-            ratioGrid: document.getElementById("ratioGrid"),
             error: document.getElementById("error"),
         };
-
-        function sanitizeRatio(value) {
-            const v = String(value || "").trim();
-            return allowedRatios.includes(v) ? v : "16:9";
-        }
-
-        function setActive(container, target) {
-            container.querySelectorAll(".pill").forEach(btn => btn.classList.remove("active"));
-            target.classList.add("active");
-        }
 
         // Применяем лимит промта из параметров (если передан)
         const effectiveMaxPrompt = Number.isFinite(MAX_PROMPT) ? MAX_PROMPT : 5000;
@@ -412,13 +389,6 @@
             }
         });
 
-        els.ratioGrid.addEventListener("click", (e) => {
-            const btn = e.target.closest(".pill");
-            if (!btn) return;
-            setActive(els.ratioGrid, btn);
-            state.aspectRatio = sanitizeRatio(btn.dataset.ratio);
-        });
-
         function sendData() {
             try {
                 els.prompt.blur();
@@ -439,7 +409,6 @@
                     kind: "midjourney_video_settings",
                     modelSlug: state.modelSlug,
                     prompt: state.prompt,
-                    aspectRatio: state.aspectRatio,
                     version: state.version,
                     imageData: state.imageData,
                     imageMime: state.imageMime,
