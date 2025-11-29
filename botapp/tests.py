@@ -593,7 +593,7 @@ class OpenAIImageGenerationTests(TestCase):
     @patch("botapp.services.gemini_generate_images", return_value=[b"ok"])
     def test_generate_images_for_model_gemini_vertex_text2image(self, gemini_mock: MagicMock):
         model = AIModel.objects.create(
-            slug="nano-banana-pro",
+            slug="nano-banana-pro-test-text",
             name="Nano Banana Pro",
             display_name="Nano Banana Pro",
             type="image",
@@ -634,7 +634,7 @@ class OpenAIImageGenerationTests(TestCase):
     @patch("botapp.services.gemini_generate_images", return_value=[b"ok"])
     def test_generate_images_for_model_gemini_vertex_image2image(self, gemini_mock: MagicMock):
         model = AIModel.objects.create(
-            slug="nano-banana-pro",
+            slug="nano-banana-pro-test-image",
             name="Nano Banana Pro",
             display_name="Nano Banana Pro",
             type="image",
@@ -888,7 +888,7 @@ class ChatLoggerTests(TestCase):
 
         asyncio.run(ChatLogger.log_incoming(message))
 
-        stored_message = ChatMessage.objects.get()
+        stored_message = ChatMessage.objects.order_by("id").last()
         self.assertIn("Webapp", stored_message.text)
         self.assertIn("Kling", stored_message.text)
         self.assertEqual(stored_message.message_type, ChatMessage.MessageType.TEXT)
