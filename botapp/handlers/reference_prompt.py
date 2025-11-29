@@ -10,7 +10,7 @@ from urllib.parse import quote_plus
 from aiogram import F, Router
 from aiogram.filters import StateFilter
 from aiogram.fsm.context import FSMContext
-from aiogram.types import CallbackQuery, Message, InlineKeyboardMarkup, BufferedInputFile
+from aiogram.types import CallbackQuery, Message, InlineKeyboardMarkup
 from asgiref.sync import sync_to_async
 from django.conf import settings
 
@@ -266,16 +266,8 @@ async def _start_prompt_generation(message: Message, state: FSMContext, modifica
         await state.set_state(BotStates.reference_prompt_wait_reference)
         return
 
-    prompt_text = result.prompt_text or ""
-    # Если промт длиннее лимитов Telegram (4096), отправляем полную версию файлом
-    if len(prompt_text) > 3500:
-        header = "<b>✅Ваш промт готов</b>\nПолный текст во вложении (prompt.txt)"
-        await message.answer(header, parse_mode="HTML", reply_markup=video_keyboard)
-        prompt_file = BufferedInputFile(prompt_text.encode("utf-8"), filename="prompt.txt")
-        await message.answer_document(prompt_file, caption="Скопируйте промт из файла и вставьте в выбранную модель.", reply_markup=video_keyboard)
-    else:
-        for chunk in result.chunks:
-            await message.answer(chunk, parse_mode="HTML", reply_markup=video_keyboard)
+    for chunk in result.chunks:
+        await message.answer(chunk, parse_mode="HTML", reply_markup=video_keyboard)
 
     await state.clear()
     await state.set_state(BotStates.main_menu)
