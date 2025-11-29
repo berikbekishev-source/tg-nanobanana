@@ -276,6 +276,8 @@ async def _start_prompt_generation(message: Message, state: FSMContext, modifica
     else:
         for chunk in result.chunks:
             await message.answer(chunk, parse_mode="HTML", reply_markup=video_keyboard)
+        # Дублируем промт обычным текстом, чтобы копирование на мобильных не обрезало содержимое
+        await message.answer(prompt_text, reply_markup=video_keyboard)
 
     await state.clear()
     await state.set_state(BotStates.main_menu)
