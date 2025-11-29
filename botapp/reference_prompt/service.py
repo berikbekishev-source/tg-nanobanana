@@ -6,6 +6,7 @@ import asyncio
 import base64
 import json
 import logging
+from html import escape
 import time
 import uuid
 from dataclasses import dataclass
@@ -721,12 +722,11 @@ Your output must be the final prompt text ready for generation.
 
     def _format_chunks(self, pretty: str) -> List[str]:
         chunks_raw = chunk_text(pretty, 3000) or [pretty]
-        total = len(chunks_raw)
         formatted: List[str] = []
-        for idx, chunk in enumerate(chunks_raw, start=1):
-            header = "✅Ваш промт готов"
-            numbering = f"{idx}/{total}"
-            formatted.append(f"{header}\n{numbering}\n\n{chunk}")
+        for chunk in chunks_raw:
+            header = "<b>✅ Ваш промт готов:</b>"
+            safe_chunk = escape(chunk)
+            formatted.append(f"{header}\n\n{safe_chunk}")
         return formatted
 
     @staticmethod
