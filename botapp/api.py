@@ -162,6 +162,29 @@ try:
             logger.error(f"[WEBAPP_REST] Error: {e}", exc_info=True)
             return JsonResponse({"ok": False, "error": str(e)}, status=500)
 
+    @api.post("/midjourney_video/webapp/submit")
+    async def midjourney_video_webapp_submit(request):
+        """
+        Endpoint для Midjourney Video WebApp: прокидывает payload в aiogram как web_app_data.
+        """
+        try:
+            payload = json.loads(request.body.decode("utf-8"))
+            user_id = payload.get("user_id")
+            data = payload.get("data")
+
+            logger.info(f"[WEBAPP_REST][MIDJOURNEY_VIDEO] Received submission for user {user_id}")
+
+            if not user_id or not data:
+                return JsonResponse({"ok": False, "error": "Missing user_id or data"}, status=400)
+
+            await _feed_webapp_update(int(user_id), data)
+            logger.info(f"[WEBAPP_REST][MIDJOURNEY_VIDEO] Update fed to dispatcher for user {user_id}")
+
+            return JsonResponse({"ok": True})
+        except Exception as exc:
+            logger.error(f"[WEBAPP_REST][MIDJOURNEY_VIDEO] Error: {exc}", exc_info=True)
+            return JsonResponse({"ok": False, "error": str(exc)}, status=500)
+
     @api.post("/veo/webapp/submit")
     async def veo_webapp_submit(request):
         """
