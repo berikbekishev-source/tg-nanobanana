@@ -1,3 +1,17 @@
+## [2025-11-29] Видео отправляются файлом
+
+**Агент:** Codex  
+**Ветка:** release/staging-main  
+**PR:** #440 (MERGED)
+
+### Выполненные действия:
+1. В `send_telegram_video` отправляю видео как `sendDocument` с `application/octet-stream` и `disable_content_type_detection`, чтобы Telegram не конвертировал ролики в медиа.
+2. Обновил ветку на свежий `origin/staging`, прошёл CI/fast-merge, автослияние в `staging`.
+3. Проверил Railway staging: деплой `web/worker/beat` успешен (commit `6a090cb8fe2b09097d96605a18f49b7298fc0edc`).
+
+### Результат:
+✅ Сгенерированные видео доставляются в бота строго как файл-документ; деплой на staging завершён успешно.
+
 ## [2025-11-28] Kling WebApp: корректная цена на кнопке
 
 **Агент:** Codex  
