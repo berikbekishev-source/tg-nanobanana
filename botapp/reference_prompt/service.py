@@ -417,8 +417,16 @@ Your output must be the final prompt text ready for generation.
                 response.raise_for_status()
             except httpx.HTTPStatusError as exc:  # хотим видеть тело ошибки
                 detail = exc.response.text
-                logger.error("Gemini API error %s: %s", exc.response.status_code, detail)
-                raise ValueError(f"Gemini API error {exc.response.status_code}: {detail}") from exc
+                logger.error(
+                    "Gemini API error %s (model=%s url=%s): %s",
+                    exc.response.status_code,
+                    model_name,
+                    url,
+                    detail,
+                )
+                raise ValueError(
+                    f"Gemini API error {exc.response.status_code} (model={model_name} url={url}): {detail}"
+                ) from exc
             return response.json()
 
     async def _upload_video_file(self, media_bytes: bytes, mime_type: str, *, display_name: str) -> str:
