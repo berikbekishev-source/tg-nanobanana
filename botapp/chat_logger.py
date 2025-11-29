@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import mimetypes
 from dataclasses import dataclass
 from typing import Optional, List
@@ -88,6 +89,14 @@ class ChatLogger:
         inline_keyboard = ChatLogger._extract_inline_keyboard(message)
         if inline_keyboard:
             payload['inline_keyboard'] = inline_keyboard
+
+        web_app_info = ChatLogger._extract_webapp_info(message)
+        if web_app_info:
+            payload['web_app'] = web_app_info
+            if not text:
+                text = ChatLogger._render_webapp_text(web_app_info.get("label"))
+            if message_type == ChatMessage.MessageType.OTHER:
+                message_type = ChatMessage.MessageType.TEXT
 
         if message.message_id:
             exists = ChatMessage.objects.filter(
@@ -334,3 +343,77 @@ class ChatLogger:
                 if data and button.callback_data == data:
                     return button.text
         return None
+
+    @staticmethod
+    def _parse_webapp_payload(raw: str) -> Optional[dict]:
+        if not raw:
+            return None
+        current = raw
+        for _ in range(2):
+            try:
+                parsed = json.loads(current)
+            except Exception:
+                return None
+            if isinstance(parsed, str):
+                current = parsed
+                continue
+            if isinstance(parsed, dict):
+                return parsed
+            return None
+        return None
+
+    @staticmethod
+    def _humanize_webapp(kind: str, model_slug: str) -> str:
+        mapping = {
+            "midjourney_settings": "Midjourney",
+            "gpt_image_settings": "GPT Image",
+            "nano_banana_settings": "Nano Banana",
+            "kling_settings": "Kling",
+            "veo_video_settings": "Veo",
+            "sora2_settings": "Sora 2",
+        }
+        if kind and kind in mapping:
+            return mapping[kind]
+        if model_slug:
+            normalized = model_slug.replace("_", " ").replace("-", " ").strip()
+            if normalized:
+                return normalized.title()
+        return "WebApp"
+
+    @staticmethod
+    def _extract_webapp_info(message: Message) -> dict:
+        web_app = getattr(message, "web_app_data", None)
+        data = getattr(web_app, "data", None) if web_app else None
+        if not data:
+            return {}
+
+        parsed = ChatLogger._parse_webapp_payload(data)
+        if not parsed:
+            return {"label": "WebApp"}
+
+        kind = (parsed.get("kind") or "").strip()
+        model_slug = (
+            parsed.get("modelSlug")
+            or parsed.get("model")
+            or parsed.get("model_slug")
+            or ""
+        ).strip()
+        label = (
+            parsed.get("webappName")
+            or parsed.get("appName")
+            or parsed.get("title")
+            or ChatLogger._humanize_webapp(kind, model_slug)
+        )
+
+        info = {
+            "kind": kind or None,
+            "model_slug": model_slug or None,
+            "label": label or None,
+            "task_type": parsed.get("taskType") or None,
+        }
+        return {k: v for k, v in info.items() if v}
+
+    @staticmethod
+    def _render_webapp_text(label: Optional[str]) -> str:
+        readable = (label or "WebApp").strip() or "WebApp"
+        return f"Отправлен запрос на генерацию через Webapp {readable}"

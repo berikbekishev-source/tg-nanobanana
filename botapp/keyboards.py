@@ -122,12 +122,14 @@ def get_video_models_keyboard(
     kling_webapps: Optional[dict] = None,
     veo_webapps: Optional[dict] = None,
     sora_webapps: Optional[dict] = None,
+    midjourney_video_webapps: Optional[dict] = None,
 ) -> InlineKeyboardMarkup:
     """Шаг 1: Выбор модели для видео"""
     builder = InlineKeyboardBuilder()
     kling_webapps = kling_webapps or {}
     veo_webapps = veo_webapps or {}
     sora_webapps = sora_webapps or {}
+    midjourney_video_webapps = midjourney_video_webapps or {}
 
     for model in models:
         if model.type == 'video' and model.is_active:
@@ -146,6 +148,11 @@ def get_video_models_keyboard(
                     text=model.display_name,
                     web_app=WebAppInfo(url=sora_webapps[model.slug]),
                 )
+            elif model.provider == "midjourney" and midjourney_video_webapps.get(model.slug):
+                builder.button(
+                    text=model.display_name,
+                    web_app=WebAppInfo(url=midjourney_video_webapps[model.slug]),
+                )
             else:
                 builder.button(
                     text=model.display_name,
@@ -155,7 +162,6 @@ def get_video_models_keyboard(
     builder.adjust(1)
 
     return builder.as_markup()
-
 
 def get_video_format_keyboard() -> InlineKeyboardMarkup:
     """Клавиатура выбора формата видео."""
@@ -312,7 +318,7 @@ def get_image_mode_keyboard() -> InlineKeyboardMarkup:
 MODEL_PRICE_PRESETS: List[Tuple[str, str]] = [
     ("⚡ Veo 3.1 Fast", "veo3-fast"),
     ("🍌 Nano Banana", "nano-banana"),
-    ("Ⓜ️ Midjourney", "midjourney-v6"),
+    ("Ⓜ️ Midjourney", "midjourney-v7-fast"),
     ("🌀 Kling v1", "kling-v1"),
     ("🖼️ GPT Image 1", "gpt-image-1"),
     ("🎥 Sora 2", "sora2"),

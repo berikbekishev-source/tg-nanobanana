@@ -1,6 +1,6 @@
 slug,Pricing type,"Cost per Pricing type, $"
 gpt-image-1,Price per one image,"0,04"
-midjourney-v6-relaxed(kie.ai),Price per one image,"0,015"
+midjourney-v7-fast,Price per one image,"0,04"
 emini-2.5-flash-image-preview(nano-banana) ,Price per one image,"0,01"
 kling-v1(kie.ai),Price per second,"0,042"
 sora2 ,Price per second,"0,1"

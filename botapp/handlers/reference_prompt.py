@@ -5,19 +5,23 @@ from __future__ import annotations
 import logging
 import re
 from typing import List, Optional, Tuple
+from urllib.parse import quote_plus
 
 from aiogram import F, Router
 from aiogram.filters import StateFilter
 from aiogram.fsm.context import FSMContext
-from aiogram.types import CallbackQuery, Message
+from aiogram.types import CallbackQuery, Message, InlineKeyboardMarkup
+from asgiref.sync import sync_to_async
+from django.conf import settings
 
 from botapp.error_tracker import ErrorTracker
 from botapp.keyboards import (
     get_cancel_keyboard,
     get_reference_prompt_mods_keyboard,
     get_reference_prompt_models_keyboard,
+    get_video_models_keyboard,
 )
-from botapp.models import BotErrorEvent
+from botapp.models import BotErrorEvent, AIModel
 from botapp.reference_prompt import (
     REFERENCE_PROMPT_MODELS,
     ReferenceInputPayload,
@@ -25,6 +29,7 @@ from botapp.reference_prompt import (
     get_reference_prompt_model,
 )
 from botapp.states import BotStates
+from botapp.business.pricing import get_base_price_tokens
 
 
 logger = logging.getLogger(__name__)
@@ -154,7 +159,7 @@ async def prompt_by_reference_select_model(callback: CallbackQuery, state: FSMCo
     await state.update_data(reference_prompt_model=model.slug)
 
     await callback.message.answer(
-        "Отправьте ссылку на референс или загрузите в чат видео/изображение и я создам промт для генерации точно такого же видео",
+        "🔗 Скиньте в бота ссылку на любой Reels, Shorts, TikTok или загрузите в чат видео и получите промт для создания точно такого же видео!",
         reply_markup=get_cancel_keyboard(),
     )
 
@@ -175,10 +180,9 @@ async def prompt_by_reference_collect(message: Message, state: FSMContext):
     await state.update_data(reference_payload=payload.as_state())
 
     await message.answer(
-        "✅ Референс получен.\n\nХотите внести правки перед сборкой промта?",
+        '✅ Референс получен 🙌\n\nЕсли хотите создать точно такое же видео без изменений то нажмите на кнопку "✅ Без правок".\n\nА если хотите внести изменения в видео нажмите на кнопку "✏️ Внести правки".',
         reply_markup=get_reference_prompt_mods_keyboard(),
     )
-
     await state.set_state(BotStates.reference_prompt_confirm_mods)
 
 
@@ -221,6 +225,15 @@ async def _start_prompt_generation(message: Message, state: FSMContext, modifica
 
     reference_payload = ReferenceInputPayload.from_state(payload_data)
 
+    logger.info(
+        "reference_prompt: handler start chat_id=%s user_id=%s model=%s input_type=%s mods=%s",
+        message.chat.id,
+        message.from_user.id if message.from_user else None,
+        model_slug,
+        reference_payload.input_type,
+        bool(modifications),
+    )
+
     await message.answer(
         "Создаю промт для генерация видео по указанному референсу, ожидайте пару минут ⏳",
         reply_markup=get_cancel_keyboard(),
@@ -239,6 +252,7 @@ async def _start_prompt_generation(message: Message, state: FSMContext, modifica
                 "username": message.from_user.username if message.from_user else None,
             },
         )
+        video_keyboard = await _build_video_models_keyboard()
     except Exception as exc:  # noqa: BLE001 - логируем и отвечаем пользователю
         logger.exception("Failed to build reference prompt: %s", exc)
         error_message = str(exc).strip() or "Не удалось собрать промт. Попробуйте снова или пришлите другой референс."
@@ -262,7 +276,62 @@ async def _start_prompt_generation(message: Message, state: FSMContext, modifica
         return
 
     for chunk in result.chunks:
-        await message.answer(chunk, parse_mode="Markdown")
+        await message.answer(chunk, parse_mode="HTML", reply_markup=video_keyboard)
 
     await state.clear()
     await state.set_state(BotStates.main_menu)
+
+
+async def _build_video_models_keyboard() -> Optional[InlineKeyboardMarkup]:
+    """Возвращает inline-кнопки выбора модели видео, как в 'Создать видео'."""
+
+    models = await sync_to_async(list)(
+        AIModel.objects.filter(type="video", is_active=True).order_by("order")
+    )
+    if not models:
+        return None
+
+    public_base_url = (getattr(settings, "PUBLIC_BASE_URL", None) or "").rstrip("/")
+
+    kling_webapps = {}
+    veo_webapps = {}
+    sora_webapps = {}
+
+    if public_base_url:
+        for model in models:
+            cost = await sync_to_async(get_base_price_tokens)(model)
+            price_label = f"⚡{cost:.2f} токенов"
+
+            if model.provider == "kling":
+                default_duration = None
+                if isinstance(model.default_params, dict):
+                    try:
+                        default_duration = int(model.default_params.get("duration") or 0)
+                    except (TypeError, ValueError):
+                        default_duration = None
+                base_duration = default_duration if default_duration and default_duration > 0 else 10
+                kling_webapps[model.slug] = (
+                    f"{public_base_url}/kling/?"
+                    f"model={quote_plus(model.slug)}&price={quote_plus(price_label)}"
+                    f"&price_base_duration={quote_plus(str(base_duration))}"
+                )
+
+            if model.provider == "veo" or model.slug.startswith("veo"):
+                veo_webapps[model.slug] = (
+                    f"{public_base_url}/veo/?"
+                    f"model={quote_plus(model.slug)}&price={quote_plus(price_label)}"
+                    f"&max_prompt={quote_plus(str(model.max_prompt_length))}"
+                )
+
+            if model.provider == "openai" and model.slug.startswith("sora"):
+                sora_webapps[model.slug] = (
+                    f"{public_base_url}/sora2/?"
+                    f"model={quote_plus(model.slug)}&price={quote_plus(price_label)}"
+                )
+
+    return get_video_models_keyboard(
+        models,
+        kling_webapps=kling_webapps,
+        veo_webapps=veo_webapps,
+        sora_webapps=sora_webapps,
+    )

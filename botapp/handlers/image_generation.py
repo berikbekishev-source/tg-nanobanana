@@ -36,6 +36,23 @@ from botapp.generation_text import (
 
 router = Router()
 logger = logging.getLogger(__name__)
+START_MESSAGE_DELAY = 0.6
+
+
+async def _send_start_message_with_delay(
+    message: Message,
+    text: str,
+    *,
+    parse_mode: Optional[str] = None,
+    delay: float = START_MESSAGE_DELAY,
+) -> None:
+    """Отправляет стартовое сообщение после небольшой задержки."""
+    await asyncio.sleep(delay)
+    await message.answer(
+        text,
+        parse_mode=parse_mode,
+        reply_markup=get_main_menu_inline_keyboard(),
+    )
 
 
 # Обработчик кнопки "🎨 Создать изображение" перенесен в global_commands.py
@@ -80,7 +97,7 @@ async def handle_midjourney_webapp_data(message: Message, state: FSMContext):
     data = await state.get_data()
 
     # Получаем slug модели из payload с fallback на состояние и дефолт
-    model_slug = payload.get("modelSlug") or data.get("model_slug") or data.get("selected_model") or "midjourney-v6"
+    model_slug = payload.get("modelSlug") or data.get("model_slug") or data.get("selected_model") or "midjourney-v7-fast"
     logging.info(f"[MIDJOURNEY_WEBAPP] Model slug: {model_slug} (source: {'payload' if payload.get('modelSlug') else 'state/default'})")
 
     # Проверяем, что не пытаемся использовать не-midjourney провайдера
@@ -673,9 +690,9 @@ async def handle_nanobanana_webapp_data(message: Message, state: FSMContext):
         prompt,
     )
 
-    await message.answer(
+    await _send_start_message_with_delay(
+        message,
         start_message,
-        reply_markup=get_main_menu_inline_keyboard(),
         parse_mode=None,
     )
 
@@ -816,10 +833,10 @@ async def _start_generation(message: Message, state: FSMContext, prompt: str):
         )
 
         # Отправляем информационное сообщение с деталями
-        await message.answer(
+        await _send_start_message_with_delay(
+            message,
             start_message,
             parse_mode=None,
-            reply_markup=get_main_menu_inline_keyboard()
         )
 
         # Запускаем задачу генерации

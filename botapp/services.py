@@ -20,7 +20,7 @@ GEMINI_URL_TMPL = "https://generativelanguage.googleapis.com/v1beta/models/{mode
 OPENAI_IMAGE_URL = "https://api.openai.com/v1/images/generations"
 OPENAI_IMAGE_EDIT_URL = "https://api.openai.com/v1/images/edits"
 KIE_DEFAULT_BASE_URL = "https://api.kie.ai"
-DEFAULT_VERTEX_IMAGE_MODEL = "gemini-2.5-flash-image"
+DEFAULT_VERTEX_IMAGE_MODEL = "imagen-4.0-generate-001"
 
 def vertex_generate_images(prompt: str, quantity: int, params: Optional[Dict[str, Any]] = None) -> List[bytes]:
     """Генерация изображений через Vertex AI Imagen."""
@@ -171,19 +171,66 @@ def vertex_edit_images(
             results.append(base64.b64decode(b64_data))
     return results
 
-def gemini_generate_images(prompt: str, quantity: int, params: Optional[Dict[str, Any]] = None) -> List[bytes]:
-    """Возвращает список байтов изображений (разбираем inlineData или fileUri)."""
-    model = settings.GEMINI_IMAGE_MODEL or "gemini-2.5-flash-image"
-    url = GEMINI_URL_TMPL.format(model=model)
-    headers = {"x-goog-api-key": settings.GEMINI_API_KEY, "Content-Type": "application/json"}
-    payload = {"contents": [{"parts": [{"text": prompt}]}]}
-    if params:
-        generation_config = {}
-        for key in ("temperature", "top_p", "top_k"):
-            if key in params:
-                generation_config[key] = params[key]
-        if generation_config:
-            payload["generationConfig"] = generation_config
+def gemini_generate_images(
+    prompt: str,
+    quantity: int,
+    params: Optional[Dict[str, Any]] = None,
+    *,
+    model_name: Optional[str] = None,
+    generation_type: str = "text2image",
+    input_images: Optional[List[Dict[str, Any]]] = None,
+    image_mode: Optional[str] = None,
+) -> List[bytes]:
+    """Возвращает список байтов изображений через публичный Gemini API."""
+    if not model_name:
+        raise ValueError("model_name обязателен для Gemini image генерации и должен приходить из AIModel.api_model_name")
+
+    if generation_type == "image2image" and not input_images:
+        raise ValueError("Для режима image2image необходимо передать хотя бы одно изображение.")
+
+    params = params or {}
+    model_id = _gemini_model_name(model_name)
+
+    url = GEMINI_URL_TMPL.format(model=model_id)
+    api_key = getattr(settings, "GEMINI_API_KEY", None)
+    if not api_key:
+        raise ValueError("GEMINI_API_KEY не настроен для Gemini image генерации")
+    headers = {"x-goog-api-key": api_key, "Content-Type": "application/json"}
+
+    parts: List[Dict[str, Any]] = [{"text": prompt}]
+    # Gemini 3 Pro Image Preview поддерживает до 14 референсов.
+    for img in (input_images or [])[:14]:
+        content = img.get("content")
+        if not content:
+            continue
+        parts.append(
+            {
+                "inlineData": {
+                    "mimeType": img.get("mime_type", "image/png"),
+                    "data": base64.b64encode(content).decode(),
+                }
+            }
+        )
+
+    payload: Dict[str, Any] = {"contents": [{"role": "user", "parts": parts}]}
+
+    generation_config: Dict[str, Any] = {"responseModalities": ["IMAGE"]}
+    image_config: Dict[str, Any] = {}
+
+    for key in ("temperature", "top_p", "top_k"):
+        if key in params:
+            generation_config[key] = params[key]
+
+    aspect_ratio = params.get("aspect_ratio") or params.get("aspectRatio")
+    image_size = params.get("image_size") or params.get("imageSize")
+    if aspect_ratio:
+        image_config["aspectRatio"] = str(aspect_ratio)
+    if image_size:
+        image_config["imageSize"] = str(image_size).upper()
+    if image_config:
+        generation_config["imageConfig"] = image_config
+
+    payload["generationConfig"] = generation_config
 
     imgs: List[bytes] = []
     with httpx.Client(timeout=120) as client:
@@ -191,20 +238,17 @@ def gemini_generate_images(prompt: str, quantity: int, params: Optional[Dict[str
             r = client.post(url, headers=headers, json=payload)
             r.raise_for_status()
             data = r.json()
-            parts = (data.get("candidates") or [{}])[0].get("content", {}).get("parts", [])  # inlineData | fileData
-            # 1) inlineData
-            inline = next((p.get("inlineData", {}).get("data") for p in parts if p.get("inlineData")), None)
+            parts_resp = (data.get("candidates") or [{}])[0].get("content", {}).get("parts", [])
+            inline = next((p.get("inlineData", {}).get("data") for p in parts_resp if p.get("inlineData")), None)
             if inline:
                 imgs.append(base64.b64decode(inline))
                 continue
-            # 2) fileUri
-            file_uri = next((p.get("fileData", {}).get("fileUri") for p in parts if p.get("fileData")), None)
+            file_uri = next((p.get("fileData", {}).get("fileUri") for p in parts_resp if p.get("fileData")), None)
             if file_uri:
                 fr = client.get(file_uri)
                 fr.raise_for_status()
                 imgs.append(fr.content)
                 continue
-            # иначе пустой ответ — пропускаем
     return imgs
 
 def openai_generate_images(
@@ -445,7 +489,7 @@ def midjourney_generate_images(
         payload["taskType"] = payload.get("taskType") or (
             "mj_img2img" if generation_type == "image2image" else "mj_txt2img"
         )
-        payload["speed"] = payload.get("speed") or params.get("speed") or "relaxed"
+        payload["speed"] = payload.get("speed") or params.get("speed") or "fast"
         payload["model"] = model_name
 
         logger.info(f"[MIDJOURNEY_KIE] Отправка запроса на {base_url}/api/v1/mj/generate")
@@ -513,6 +557,13 @@ def generate_images_for_model(
 ) -> List[bytes]:
     """Вызывает подходящего провайдера генерации на основе модели."""
     provider = getattr(model, "provider", None)
+    slug = getattr(model, "slug", "")
+    supports_image_input = bool(getattr(model, "supports_image_input", False))
+    if generation_type == "image2image" and not supports_image_input:
+        raise ValueError(f"Модель {slug or provider or 'unknown'} не поддерживает загрузку изображений.")
+    if generation_type == "image2image" and not input_images:
+        raise ValueError("Для режима image2image необходимо передать хотя бы одно изображение.")
+
     merged_params: Dict[str, Any] = {}
     if getattr(model, "default_params", None):
         merged_params.update(model.default_params)
@@ -529,29 +580,20 @@ def generate_images_for_model(
             input_images=input_images,
             image_mode=image_mode,
         )
+    elif provider in {"gemini", "gemini_vertex"}:
+        return gemini_generate_images(
+            prompt,
+            quantity,
+            params=merged_params,
+            model_name=getattr(model, "api_model_name", None),
+            generation_type=generation_type,
+            input_images=input_images or [],
+            image_mode=image_mode,
+        )
     elif provider == "vertex":
         if generation_type == "image2image":
             return vertex_edit_images(prompt, quantity, input_images or [], merged_params, image_mode=image_mode)
         return vertex_generate_images(prompt, quantity, params=merged_params)
-    elif provider == "gemini":
-        if generation_type == "image2image":
-            return vertex_edit_images(prompt, quantity, input_images or [], merged_params, image_mode=image_mode)
-        return gemini_generate_images(prompt, quantity, params=merged_params)
-    elif provider == "gemini_vertex":
-        if generation_type == "image2image":
-            return gemini_vertex_edit(
-                prompt, 
-                quantity, 
-                input_images or [], 
-                merged_params,
-                model_name=model.api_model_name,
-            )
-        return gemini_vertex_generate(
-            prompt, 
-            quantity, 
-            params=merged_params,
-            model_name=model.api_model_name,
-        )
     elif provider == "midjourney":
         return midjourney_generate_images(
             prompt,
@@ -561,23 +603,12 @@ def generate_images_for_model(
             input_images=input_images or [],
         )
 
-    use_vertex = getattr(settings, 'USE_VERTEX_AI', False)
-    if use_vertex:
-        if generation_type == "image2image":
-            return vertex_edit_images(prompt, quantity, input_images or [], merged_params, image_mode=image_mode)
-        return vertex_generate_images(prompt, quantity, params=merged_params)
-
-    if generation_type == "image2image":
-        raise ValueError("Выбранная модель не поддерживает режим image2image.")
-    return gemini_generate_images(prompt, quantity, params=merged_params)
+    raise ValueError(f"Провайдер {provider or 'unknown'} не поддерживает генерацию изображений.")
 
 
 def generate_images(prompt: str, quantity: int) -> List[bytes]:
-    """Старый интерфейс для обратной совместимости (использует глобальные настройки)."""
-    use_vertex = getattr(settings, 'USE_VERTEX_AI', False)
-    if use_vertex:
-        return vertex_generate_images(prompt, quantity)
-    return gemini_generate_images(prompt, quantity)
+    """Старый интерфейс для обратной совместимости (использует модель из аргумента, а не из env)."""
+    raise ValueError("generate_images требует явного указания модели через AIModel; используйте generate_images_for_model.")
 
 def supabase_upload_png(content: bytes) -> str:
     """Загружает PNG в Supabase Storage и возвращает ПУБЛИЧНЫЙ URL."""
@@ -853,6 +884,171 @@ def _authorized_vertex_session() -> AuthorizedSession:
     return AuthorizedSession(credentials)
 
 
+def _vertex_auth_headers(api_key: Optional[str]) -> Tuple[Dict[str, str], Optional[Dict[str, Any]]]:
+    """
+    Готовит заголовки авторизации для Vertex Imagen.
+    Приоритет: API Key (x-goog-api-key) -> Service Account (Bearer).
+    """
+    headers: Dict[str, str] = {"Content-Type": "application/json"}
+    if api_key:
+        print(f"[VERTEX] Using API Key authentication (key starts with {api_key[:6]}...)", flush=True)
+        headers["x-goog-api-key"] = api_key
+        return headers, None
+
+    print("[VERTEX] Using Service Account authentication for Imagen", flush=True)
+    creds_info = _load_service_account_info()
+    credentials = service_account.Credentials.from_service_account_info(
+        creds_info,
+        scopes=_VERTEX_SCOPES,
+    )
+    from google.auth.transport.requests import Request
+    credentials.refresh(Request())
+    if not credentials.token:
+        raise ValueError("Не удалось получить access token для Vertex AI")
+    headers["Authorization"] = f"Bearer {credentials.token}"
+    return headers, creds_info
+
+
+def _normalize_imagen_size(raw_size: Optional[Any]) -> Optional[str]:
+    """Приводит размер изображения к допустимому формату Imagen."""
+    if not raw_size:
+        return None
+    value = str(raw_size).upper()
+    if value in {"1K", "2K"}:
+        return value
+    if value == "4K":
+        # Imagen API поддерживает 1K/2K, 4K маппим на максимально доступный размер.
+        print("[VERTEX] 4K не поддерживается Imagen API, используем 2K", flush=True)
+        return "2K"
+    return None
+
+
+def _build_imagen_parameters(quantity: int, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """Готовит объект parameters для Imagen predict согласно документации."""
+    parameters: Dict[str, Any] = {"sampleCount": max(1, min(quantity, 4))}
+    params = params or {}
+
+    aspect_ratio = params.get("aspect_ratio") or params.get("aspectRatio")
+    allowed_aspects = {"1:1", "2:3", "3:2", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9"}
+    if aspect_ratio in allowed_aspects:
+        parameters["aspectRatio"] = aspect_ratio
+
+    image_size = params.get("image_size") or params.get("imageSize") or params.get("quality")
+    normalized_size = _normalize_imagen_size(image_size)
+    if normalized_size:
+        parameters["sampleImageSize"] = normalized_size
+
+    return parameters
+
+
+def _decode_imagen_predictions(data: Dict[str, Any]) -> List[bytes]:
+    """Декодирует base64 из predictions Imagen predict."""
+    predictions = data.get("predictions") or []
+    results: List[bytes] = []
+    for prediction in predictions:
+        b64_data = prediction.get("bytesBase64Encoded") or prediction.get("bytes_base64_encoded")
+        if b64_data:
+            try:
+                results.append(base64.b64decode(b64_data))
+            except Exception:
+                continue
+    return results
+
+
+def _resolve_imagen_model_name(model_name: Optional[str], default_model: str) -> str:
+    """
+    Для Nano Banana Pro жёстко уходим на Imagen-модели.
+    Любые устаревшие gemini-3.* image ID заменяем на актуальную Imagen.
+    """
+    if not model_name:
+        return default_model
+    tail = model_name.rsplit("/", 1)[-1]
+    if tail.startswith("gemini-3"):
+        return default_model
+    return model_name
+
+
+def _build_imagen_reference_images(
+    input_images: List[Dict[str, Any]],
+    params: Optional[Dict[str, Any]],
+    image_mode: Optional[str],
+) -> Tuple[List[Dict[str, Any]], bool]:
+    """Формирует referenceImages для Imagen predict (image2image/редактирование)."""
+    params = params or {}
+    raw_entry = next((img for img in input_images if img.get("role") == "raw"), None)
+    mask_entry = next((img for img in input_images if img.get("role") == "mask"), None)
+
+    subject_entries = []
+    for img in input_images:
+        if img.get("role") in {"raw", "mask"}:
+            continue
+        if img.get("content"):
+            subject_entries.append(img)
+
+    reference_images: List[Dict[str, Any]] = []
+    next_id = 1
+
+    def _encode(entry: Dict[str, Any]) -> Optional[str]:
+        content = entry.get("content")
+        if not content:
+            return None
+        try:
+            return base64.b64encode(content).decode()
+        except Exception:
+            return None
+
+    if raw_entry:
+        raw_b64 = _encode(raw_entry)
+        if raw_b64:
+            reference_images.append(
+                {
+                    "referenceType": "REFERENCE_TYPE_RAW",
+                    "referenceId": next_id,
+                    "referenceImage": {"bytesBase64Encoded": raw_b64},
+                }
+            )
+            next_id += 1
+
+    has_mask = False
+    if raw_entry and mask_entry:
+        mask_b64 = _encode(mask_entry)
+        if mask_b64:
+            has_mask = True
+            reference_images.append(
+                {
+                    "referenceType": "REFERENCE_TYPE_MASK",
+                    "referenceId": next_id,
+                    "referenceImage": {"bytesBase64Encoded": mask_b64},
+                    "maskImageConfig": {
+                        "maskMode": params.get("mask_mode", "MASK_MODE_USER_PROVIDED"),
+                        "dilation": params.get("mask_dilation", 0.01),
+                    },
+                }
+            )
+            next_id += 1
+
+    for idx, entry in enumerate(subject_entries, start=next_id):
+        encoded = _encode(entry)
+        if not encoded:
+            continue
+        reference_images.append(
+            {
+                "referenceType": "REFERENCE_TYPE_SUBJECT",
+                "referenceId": idx,
+                "referenceImage": {"bytesBase64Encoded": encoded},
+                "subjectImageConfig": {
+                    "subjectDescription": params.get("subject_description", f"reference {idx}"),
+                    "subjectType": params.get("subject_type", "SUBJECT_TYPE_DEFAULT"),
+                },
+            }
+        )
+
+    if not reference_images:
+        raise ValueError("Не удалось подготовить изображения для Vertex edit.")
+
+    return reference_images, has_mask
+
+
 def _normalize_image_model_name(model_name: str) -> str:
     """Нормализует название модели (устраняет устаревшие ID без версии)."""
     print(f"[DEBUG] Normalizing image model name: '{model_name}'", flush=True)
@@ -896,210 +1092,6 @@ def _vertex_project_and_location(creds_info: Optional[Dict[str, Any]] = None) ->
     return project, location
 
 
-def _vertex_model_variants(model_path: str) -> List[str]:
-    """Возвращает список вариантов имени модели для Vertex (обходим расхождения в названиях)."""
-    variants = []
-    normalized = _vertex_model_path(model_path)
-    variants.append(normalized)
-
-    tail = normalized.rsplit("/", 1)[-1]
-    # Для Pro-preview пробуем несколько вариантов, т.к. в Vertex встречаются разные суффиксы.
-    if tail in {"gemini-3.0-pro-image-preview", "gemini-3-pro-image-preview"}:
-        for alt_tail in [
-            "gemini-3-pro-image-preview",
-            "gemini-3.0-pro-image-preview",
-            "gemini-3-pro-image",
-            "gemini-3.0-pro-image",
-        ]:
-            variants.append(f"publishers/google/models/{alt_tail}")
-
-    # Убираем дубликаты, сохраняя порядок
-    seen = set()
-    unique_variants: List[str] = []
-    for v in variants:
-        if v not in seen:
-            seen.add(v)
-            unique_variants.append(v)
-    return unique_variants
-
-
-def _build_gemini_payload(parts: List[Dict[str, Any]], quantity: int, params: Optional[Dict[str, Any]]) -> Dict[str, Any]:
-    # Собираем contents в формате, рекомендованном Gemini: отдельные сообщения пользователя,
-    # чтобы корректно передавать несколько референсов (в т.ч. больше двух).
-    contents: List[Dict[str, Any]] = []
-    current_parts: List[Dict[str, Any]] = []
-    for part in parts:
-        is_image_part = "inlineData" in part or "inline_data" in part
-        if is_image_part:
-            if current_parts:
-                contents.append({"role": "user", "parts": current_parts})
-                current_parts = []
-            contents.append({"role": "user", "parts": [part]})
-        else:
-            current_parts.append(part)
-
-    if current_parts:
-        contents.append({"role": "user", "parts": current_parts})
-    elif not contents:
-        contents.append({"role": "user", "parts": parts})
-
-    payload: Dict[str, Any] = {
-        "contents": contents,
-        "generationConfig": {
-            "candidateCount": max(1, min(quantity, 4)),
-        },
-    }
-    if params:
-        generation_config = payload["generationConfig"]
-        for key in ("temperature", "top_p", "top_k"):
-            if key in params:
-                generation_config[key] = params[key]
-        image_config: Dict[str, Any] = {}
-        aspect_ratio = params.get("aspect_ratio") or params.get("aspectRatio")
-        if aspect_ratio:
-            image_config["aspectRatio"] = str(aspect_ratio)
-        image_size = params.get("image_size") or params.get("imageSize") or params.get("quality")
-        if image_size:
-            image_size_str = str(image_size).upper()
-            if image_size_str in {"1K", "2K", "4K"}:
-                image_config["imageSize"] = image_size_str
-        if image_config:
-            generation_config["imageConfig"] = image_config
-    return payload
-
-
-def _gemini_google_api_request(
-    *,
-    model_name: str,
-    parts: List[Dict[str, Any]],
-    quantity: int,
-    params: Optional[Dict[str, Any]] = None,
-    api_key: Optional[str] = None,
-    session: Optional[AuthorizedSession] = None,
-) -> Dict[str, Any]:
-    """Запрос в Generative Language API с авторизацией через service account."""
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent"
-    payload = _build_gemini_payload(parts, quantity, params)
-
-    # Детальное логирование структуры contents для диагностики
-    print(f"[GEMINI_API] Sending request to: {url}", flush=True)
-    contents = payload.get("contents", [])
-    if contents:
-        for idx, content in enumerate(contents):
-            parts_list = content.get("parts", [])
-            print(f"[GEMINI_API] Content[{idx}] has {len(parts_list)} parts", flush=True)
-            for part_idx, part in enumerate(parts_list):
-                if "text" in part:
-                    print(f"[GEMINI_API]   Part[{part_idx}]: text ({len(part['text'])} chars)", flush=True)
-                elif "inlineData" in part:
-                    mime = part["inlineData"].get("mimeType", "unknown")
-                    data_len = len(part["inlineData"].get("data", ""))
-                    print(f"[GEMINI_API]   Part[{part_idx}]: inlineData ({mime}, {data_len} bytes base64)", flush=True)
-                else:
-                    print(f"[GEMINI_API]   Part[{part_idx}]: {list(part.keys())}", flush=True)
-
-    if api_key:
-        headers = {"x-goog-api-key": api_key, "Content-Type": "application/json"}
-        response = httpx.post(url, headers=headers, json=payload, timeout=120)
-    else:
-        client = session or _authorized_vertex_session()
-        response = client.post(url, json=payload, timeout=120)
-    if response.status_code >= 400:
-        detail = response.text
-        try:
-            detail = response.json()
-        except ValueError:
-            pass
-        raise ValueError(f"Gemini Image API error ({response.status_code}): {detail}")
-    return response.json()
-
-
-def _gemini_vertex_request(
-    *,
-    project_id: str,
-    location: str,
-    model_path: str,
-    parts: List[Dict[str, Any]],
-    quantity: int,
-    params: Optional[Dict[str, Any]] = None,
-    api_key: Optional[str] = None,
-) -> Dict[str, Any]:
-    """Запрос к Vertex AI Imagen/Gemini с поддержкой API Key или Service Account."""
-    print(f"[VERTEX] Preparing request to Vertex AI", flush=True)
-    print(f"[VERTEX] Project: {project_id}, Location: {location}, Model: {model_path}", flush=True)
-    
-    url = f"https://{location}-aiplatform.googleapis.com/v1/projects/{project_id}/locations/{location}/{model_path}:generateContent"
-    payload = _build_gemini_payload(parts, quantity, params)
-    
-    headers = {"Content-Type": "application/json"}
-    
-    # Приоритет: API Key > Service Account
-    if api_key:
-        print(f"[VERTEX] Using API Key authentication (key: {api_key[:20]}...)", flush=True)
-        headers["x-goog-api-key"] = api_key
-    else:
-        print("[VERTEX] Using Service Account authentication", flush=True)
-        print("[VERTEX] Loading service account credentials...", flush=True)
-        creds_info = _load_service_account_info()
-        print(f"[VERTEX] Credentials loaded. Project: {creds_info.get('project_id', 'N/A')}", flush=True)
-        print(f"[VERTEX] Service account email: {creds_info.get('client_email', 'N/A')}", flush=True)
-        
-        credentials = service_account.Credentials.from_service_account_info(
-            creds_info,
-            scopes=_VERTEX_SCOPES,
-        )
-        print(f"[VERTEX] Credentials initialized with scopes: {_VERTEX_SCOPES}", flush=True)
-        
-        # Явно refresh для получения access_token
-        from google.auth.transport.requests import Request
-        credentials.refresh(Request())
-        access_token = credentials.token
-        
-        print(f"[VERTEX] Access token obtained: {access_token[:50]}..." if access_token else "[VERTEX] ERROR: No access token!", flush=True)
-        
-        if not access_token:
-            raise ValueError("Failed to obtain access token from Google OAuth")
-        
-        headers["Authorization"] = f"Bearer {access_token}"
-    
-    print(f"[VERTEX] Sending POST request to: {url}", flush=True)
-    print(f"[VERTEX] Payload keys: {list(payload.keys())}", flush=True)
-
-    # Детальное логирование структуры contents для диагностики
-    contents = payload.get("contents", [])
-    if contents:
-        for idx, content in enumerate(contents):
-            parts = content.get("parts", [])
-            print(f"[VERTEX] Content[{idx}] has {len(parts)} parts", flush=True)
-            for part_idx, part in enumerate(parts):
-                if "text" in part:
-                    print(f"[VERTEX]   Part[{part_idx}]: text ({len(part['text'])} chars)", flush=True)
-                elif "inlineData" in part:
-                    mime = part["inlineData"].get("mimeType", "unknown")
-                    data_len = len(part["inlineData"].get("data", ""))
-                    print(f"[VERTEX]   Part[{part_idx}]: inlineData ({mime}, {data_len} bytes base64)", flush=True)
-                else:
-                    print(f"[VERTEX]   Part[{part_idx}]: {list(part.keys())}", flush=True)
-
-    timeout = httpx.Timeout(120.0, connect=30.0)
-    with httpx.Client(timeout=timeout) as client:
-        response = client.post(url, json=payload, headers=headers)
-    
-    print(f"[VERTEX] Response status: {response.status_code}", flush=True)
-    
-    # Если ошибка - кидаем исключение, чтобы верхний уровень (gemini_vertex_generate) мог его поймать и решить что делать
-    if response.status_code != 200:
-        detail = response.text
-        try:
-            detail = response.json()
-        except ValueError:
-            pass
-        print(f"[VERTEX] ERROR Response: {str(detail)[:500]}", flush=True)
-        raise ValueError(f"Vertex AI error ({response.status_code}): {detail}")
-    
-    print(f"[VERTEX] Request successful!", flush=True)
-    return response.json()
-
 def gemini_vertex_edit(
     prompt: str,
     quantity: int,
@@ -1111,114 +1103,53 @@ def gemini_vertex_edit(
     if not input_images:
         raise ValueError("Для режима image2image необходимо загрузить изображение.")
 
-    # Используем переданный model_name или дефолтный из настроек
-    model_path = _vertex_model_path(model_name or getattr(settings, "NANO_BANANA_GEMINI_MODEL", None))
-    
-    # Разделяем ключи:
+    params = params or {}
+    default_model = getattr(settings, "VERTEX_IMAGE_EDIT_MODEL", "imagen-3.0-capability-001")
+    effective_model = _resolve_imagen_model_name(model_name, default_model)
+    model_path = _vertex_model_path(effective_model)
+
     vertex_api_key = getattr(settings, "NANO_BANANA_API_KEY", None)
-    gemini_api_key = getattr(settings, "GEMINI_API_KEY", None)
+    headers, creds_info = _vertex_auth_headers(vertex_api_key)
+    project_id, location = _vertex_project_and_location(creds_info)
 
-    parts: List[Dict[str, Any]] = [{"text": prompt}]
-    for image in input_images:
-        content = image.get("content")
-        if not content:
-            continue
-        b64_img = base64.b64encode(content).decode()
-        parts.append(
+    image_mode = params.get("image_mode")
+    reference_images, has_mask = _build_imagen_reference_images(input_images, params, image_mode)
+    parameters = _build_imagen_parameters(quantity, params)
+    if has_mask:
+        parameters["editMode"] = params.get("edit_mode") or "EDIT_MODE_INPAINT_INSERTION"
+
+    url = f"https://{location}-aiplatform.googleapis.com/v1/projects/{project_id}/locations/{location}/{model_path}:predict"
+    payload = {
+        "instances": [
             {
-                "inlineData": {
-                    "mimeType": image.get("mime_type", "image/png"),
-                    "data": b64_img,
-                }
+                "prompt": prompt,
+                "referenceImages": reference_images,
             }
-        )
+        ],
+        "parameters": parameters,
+    }
 
-    # Логируем промт и количество изображений
-    print(f"[IMAGE_EDIT] Prompt: {prompt[:200]}{'...' if len(prompt) > 200 else ''}", flush=True)
-    print(f"[IMAGE_EDIT] Input images: {len(input_images)}", flush=True)
+    print(f"[IMAGE_EDIT] Vertex Imagen edit → model={model_path}, project={project_id}, location={location}", flush=True)
+    print(f"[IMAGE_EDIT] Input images: {len(input_images)}, parameters: {json.dumps(parameters, ensure_ascii=False)}", flush=True)
 
-    data = None
-    creds_info: Optional[Dict[str, Any]] = None
-    # Пробуем Vertex по всем допустимым вариантам модели
-    variants = _vertex_model_variants(model_path)
-    last_error: Optional[Exception] = None
-
-    for variant in variants:
+    response = httpx.post(url, headers=headers, json=payload, timeout=120.0)
+    if response.status_code >= 400:
+        detail = response.text
         try:
-            print(f"[IMAGE_EDIT] Attempting Vertex AI edit for model {variant}...", flush=True)
+            detail = response.json()
+        except ValueError:
+            pass
+        print(f"[IMAGE_EDIT] ✗ Vertex Imagen error ({response.status_code}): {str(detail)[:500]}", flush=True)
+        raise ValueError(f"Vertex Imagen error ({response.status_code}): {detail}")
 
-            if vertex_api_key:
-                print(f"[IMAGE_EDIT] Using Vertex AI API Key", flush=True)
-            else:
-                print(f"[IMAGE_EDIT] Using Service Account for Vertex AI", flush=True)
-                creds_info = _load_service_account_info()
+    data = response.json()
+    results = _decode_imagen_predictions(data)
 
-            project_id, location = _vertex_project_and_location(creds_info)
-            print(f"[IMAGE_EDIT] Using Project: {project_id}, Location: {location}", flush=True)
-
-            data = _gemini_vertex_request(
-                project_id=project_id,
-                location=location,
-                model_path=variant,
-                parts=parts,
-                quantity=quantity,
-                params=params,
-                api_key=vertex_api_key,
-            )
-            print(f"[IMAGE_EDIT] ✓ Vertex AI edit successful (model: {variant}).", flush=True)
-            break
-        except Exception as e:
-            last_error = e
-            print(f"[IMAGE_EDIT] ✗ Vertex AI edit failed for {variant}: {e}", flush=True)
-            continue
-
-    if data is None:
-        # Fallback на Gemini API для всех моделей, если есть ключ
-        if gemini_api_key:
-            model_short = _gemini_model_name(model_path)
-            print(f"[IMAGE_EDIT] Vertex failed, attempting Gemini API fallback for model {model_short}...", flush=True)
-            try:
-                data = _gemini_google_api_request(
-                    model_name=model_short,
-                    parts=parts,
-                    quantity=quantity,
-                    params=params,
-                    api_key=gemini_api_key,
-                )
-                print("[IMAGE_EDIT] ✓ Gemini API edit successful (fallback).", flush=True)
-            except Exception as e:
-                 raise ValueError(f"Edit generation failed. Vertex error: {last_error}. Gemini error: {e}")
-        else:
-            raise last_error or RuntimeError("Vertex AI edit failed and no Gemini API key provided.")
-
-    outputs = data.get("candidates") or []
-    results: List[bytes] = []
-
-    # Проверяем finishReason для обнаружения отказов модели
-    for candidate in outputs:
-        finish_reason = candidate.get("finishReason", "")
-        finish_message = candidate.get("finishMessage", "")
-
-        # IMAGE_OTHER означает что модель отказалась генерировать (контент-политика, некорректный промт и т.д.)
-        if finish_reason in ["IMAGE_OTHER", "SAFETY", "PROHIBITED_CONTENT"]:
-            error_msg = f"Модель отказалась генерировать изображение. Причина: {finish_reason}"
-            if finish_message:
-                error_msg += f". Сообщение: {finish_message[:200]}"
-            print(f"[IMAGE_EDIT] ✗ {error_msg}", flush=True)
-            raise ValueError(error_msg)
-
-        content_parts = candidate.get("content", {}).get("parts", [])
-        for part in content_parts:
-            inline = part.get("inlineData")
-            if inline and inline.get("data"):
-                results.append(base64.b64decode(inline["data"]))
-
-    # Проверка на пустой результат (критично для режима ремикс!)
     if not results:
-        print(f"[IMAGE_EDIT] ✗ No images returned from edit. Response: {str(data)[:300]}", flush=True)
-        raise ValueError(f"No images returned from edit generation. Response: {str(data)[:200]}")
+        print(f"[IMAGE_EDIT] ✗ Vertex Imagen вернул пустой результат: {str(data)[:300]}", flush=True)
+        raise ValueError("Vertex Imagen не вернул изображений.")
 
-    print(f"[IMAGE_EDIT] ✓ Successfully decoded {len(results)} image(s)", flush=True)
+    print(f"[IMAGE_EDIT] ✓ Получено изображений: {len(results)}", flush=True)
     return results
 
 
@@ -1229,103 +1160,40 @@ def gemini_vertex_generate(
     *,
     model_name: Optional[str] = None,
 ) -> List[bytes]:
-    """
-    Генерация изображений через Vertex AI (Gemini image) без фоллбэков.
-    """
-    # Используем переданный model_name или дефолтный из настроек
-    model_path = _vertex_model_path(model_name or getattr(settings, "NANO_BANANA_GEMINI_MODEL", None))
-    
-    # Разделяем ключи:
-    # - NANO_BANANA_API_KEY (Vertex AI key, формат AQ.xxx) - только для Vertex AI
+    params = params or {}
+    default_model = getattr(settings, "VERTEX_IMAGE_GENERATE_MODEL", DEFAULT_VERTEX_IMAGE_MODEL)
+    effective_model = _resolve_imagen_model_name(model_name, default_model)
+    model_path = _vertex_model_path(effective_model)
+
     vertex_api_key = getattr(settings, "NANO_BANANA_API_KEY", None)
-    gemini_api_key = getattr(settings, "GEMINI_API_KEY", None)
-    
-    parts = [{"text": prompt}]
-    
-    data = None
-    creds_info: Optional[Dict[str, Any]] = None
+    headers, creds_info = _vertex_auth_headers(vertex_api_key)
+    project_id, location = _vertex_project_and_location(creds_info)
 
-    # 1. Попытка через Vertex AI
-    variants = _vertex_model_variants(model_path)
-    last_error: Optional[Exception] = None
+    url = f"https://{location}-aiplatform.googleapis.com/v1/projects/{project_id}/locations/{location}/{model_path}:predict"
+    parameters = _build_imagen_parameters(quantity, params)
+    payload = {
+        "instances": [{"prompt": prompt}],
+        "parameters": parameters,
+    }
 
-    for variant in variants:
+    print(f"[IMAGE_GEN] Vertex Imagen request → model={model_path}, project={project_id}, location={location}", flush=True)
+    print(f"[IMAGE_GEN] Parameters: {json.dumps(parameters, ensure_ascii=False)}", flush=True)
+
+    response = httpx.post(url, headers=headers, json=payload, timeout=120.0)
+    if response.status_code >= 400:
+        detail = response.text
         try:
-            print(f"[IMAGE_GEN] Attempting Vertex AI generation for model {variant}...", flush=True)
-            print(f"[IMAGE_GEN] Prompt: {prompt[:100]}...", flush=True)
-            
-            # Если есть Vertex API key, используем его для Vertex AI (через x-goog-api-key)
-            # Иначе используем Service Account
-            if vertex_api_key:
-                print(f"[IMAGE_GEN] Using Vertex AI API Key", flush=True)
-            else:
-                print(f"[IMAGE_GEN] Using Service Account for Vertex AI", flush=True)
-                creds_info = _load_service_account_info()
-            
-            project_id, location = _vertex_project_and_location(creds_info)
-            print(f"[IMAGE_GEN] Using Project: {project_id}, Location: {location}", flush=True)
-            
-            data = _gemini_vertex_request(
-                project_id=project_id,
-                location=location,
-                model_path=variant,
-                parts=parts,
-                quantity=quantity,
-                params=params,
-                api_key=vertex_api_key,
-            )
-            print(f"[IMAGE_GEN] ✓ Vertex AI generation successful (model: {variant}).", flush=True)
-            break
-        except Exception as e:
-            last_error = e
-            print(f"[IMAGE_GEN] ✗ Vertex AI failed for {variant}: {e}", flush=True)
-            continue
+            detail = response.json()
+        except ValueError:
+            pass
+        print(f"[IMAGE_GEN] ✗ Vertex Imagen error ({response.status_code}): {str(detail)[:500]}", flush=True)
+        raise ValueError(f"Vertex Imagen error ({response.status_code}): {detail}")
 
-    if data is None:
-        model_short = _gemini_model_name(model_path)
-        # Fallback на Gemini API для всех моделей, если есть ключ
-        if not gemini_api_key:
-            raise last_error or RuntimeError("Vertex AI generation failed and no Gemini API key provided.")
-        
-        print(f"[IMAGE_GEN] Vertex failed, attempting Gemini API fallback for model {model_short}...", flush=True)
-        try:
-            data = _gemini_google_api_request(
-                model_name=model_short,
-                parts=parts,
-                quantity=quantity,
-                params=params,
-                api_key=gemini_api_key,
-            )
-            print("[IMAGE_GEN] ✓ Gemini API generation successful (fallback).", flush=True)
-        except Exception as e:
-            raise ValueError(f"Generation failed. Vertex error: {last_error}. Gemini error: {e}")
-
-    # Обработка ответа (одинаковая для обоих)
-    outputs = data.get("candidates") or []
-    results: List[bytes] = []
-
-    # Проверяем finishReason для обнаружения отказов модели
-    for candidate in outputs:
-        finish_reason = candidate.get("finishReason", "")
-        finish_message = candidate.get("finishMessage", "")
-
-        # IMAGE_OTHER означает что модель отказалась генерировать (контент-политика, некорректный промт и т.д.)
-        if finish_reason in ["IMAGE_OTHER", "SAFETY", "PROHIBITED_CONTENT"]:
-            error_msg = f"Модель отказалась генерировать изображение. Причина: {finish_reason}"
-            if finish_message:
-                error_msg += f". Сообщение: {finish_message[:200]}"
-            print(f"[IMAGE_GEN] ✗ {error_msg}", flush=True)
-            raise ValueError(error_msg)
-
-        content_parts = candidate.get("content", {}).get("parts", [])
-        for part in content_parts:
-            inline = part.get("inlineData")
-            if inline and inline.get("data"):
-                results.append(base64.b64decode(inline["data"]))
-
+    data = response.json()
+    results = _decode_imagen_predictions(data)
     if not results:
-        print(f"[IMAGE_GEN] ✗ No images returned. Response: {str(data)[:300]}", flush=True)
-        raise ValueError(f"No images returned from generation. Response: {str(data)[:200]}")
+        print(f"[IMAGE_GEN] ✗ Vertex Imagen вернул пустой результат: {str(data)[:300]}", flush=True)
+        raise ValueError("Vertex Imagen не вернул изображений.")
 
-    print(f"[IMAGE_GEN] ✓ Successfully decoded {len(results)} image(s)", flush=True)
+    print(f"[IMAGE_GEN] ✓ Получено изображений: {len(results)}", flush=True)
     return results

@@ -33,3 +33,4 @@ __all__ = [
 from . import vertex  # noqa: E402,F401
 from . import openai_sora  # noqa: E402,F401
 from . import kling  # noqa: E402,F401
+from . import midjourney  # noqa: E402,F401

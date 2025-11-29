@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import json
 import logging
+from html import escape
+import time
 import uuid
 from dataclasses import dataclass
 from typing import Any, Dict, Iterable, List, Optional, Tuple
@@ -136,18 +139,46 @@ class ReferencePromptService:
         "OUTPUT\nReturn exactly one valid JSON object with both keys and nothing else."
     )
 
-    SYSTEM_PROMPT = (
-        "You are an expert prompt writer for general video generation models (Sora, Veo, Kling, Runway, OpenAI, etc.).\n"
-        "Given a reference (link/photo/video) and optional user edits, produce ONE concise English prompt that will recreate the reference as closely as possible.\n"
-        "- Output plain text only, no JSON, no code fences, no meta-comments.\n"
-        "- Keep it under ~800 characters.\n"
-        "- Include subject, environment, camera feel/movement, lighting, mood/color, pacing/editing, notable actions, and framing.\n"
-        "- Do not include platform-specific parameters or negative prompts.\n"
-        "- If audio/speech is implied, briefly suggest it in English; otherwise omit.\n"
-        "- Respect user edits if provided; otherwise infer from the reference.\n"
-    )
+    SYSTEM_PROMPT = """
+You are an expert AI Video Reconstruction Specialist. Your goal is to analyze the input video and generate a comprehensive, high-fidelity text prompt that allows generative models (Google Veo, Sora, Kling, Runway) to recreate the video as closely as possible in terms of visuals, physics, meaning, and specific speech.
 
-    MAX_INLINE_BYTES = 14 * 1024 * 1024  # 14 MB ограничение для Gemini inline_data
+INPUT PROCESSING LOGIC:
+1. Analyze the video visually (frame-by-frame) and audibly.
+2. Check for User Text Input:
+   - NO text: Reverse-engineer the video exactly as is, capturing visual details, narrative context, and speech.
+   - WITH text: Keep the original scene structure but apply the user's specific edits seamlessy.
+
+PROMPT CONSTRUCTION GUIDELINES:
+Construct a single, dense, highly descriptive paragraph in English. You must cover these four layers:
+
+1. VISUAL FIDELITY & PHYSICS:
+   - Describe the subject's appearance, texture, and material properties (skin pores, fabric type, metal reflection).
+   - Define the physics of movement (weight, inertia, speed, fluidity).
+   - Describe the environment, lighting (direction, hardness, color), and camera specs (lens type, depth of field, movement type like "handheld" or "drone").
+
+2. NARRATIVE & CONTEXT (THE "MEANING"):
+   - Describe the scene's intent and genre (e.g., "a fitness tutorial," "a dramatic cinematic reveal," "a casual vlog," "a comedy sketch").
+   - Capture the emotional tone (tense, joyful, educational, melancholic).
+
+3. SPEECH & DIALOGUE (CRITICAL):
+   - Listen to the audio. If there is distinct speech, you MUST transcribe the key spoken phrases and include them in the description to ensure accurate lip-sync and facial animation.
+   - Format: "...the subject speaks [emotionally/calmly], looking at the camera and saying: '[Insert Transcribed Text Here]'."
+   - If there is no speech, describe the ambient sound mood if relevant to the visual vibe (e.g., "silent atmosphere," "loud chaotic environment").
+
+4. STYLE AESTHETICS:
+   - Define the visual medium (e.g., "CCTV footage," "Hollywood movie style," "iPhone vertical video," "Anime," "3D Render").
+
+STRICT CONSTRAINTS:
+- OUTPUT FORMAT: Plain text ONLY. No Markdown, no code blocks, no JSON, no conversational filler.
+- LANGUAGE: English ONLY (translate any non-English speech from the video into English descriptions of the speech, or keep the quote if the generation target requires it, but the prompt description itself must be English).
+- NO PLATFORM PARAMETERS: Do not include flags like --ar or --v.
+- LENGTH: Detailed but under 3500 characters.
+
+Your output must be the final prompt text ready for generation.
+"""
+
+    INLINE_MAX_BYTES = 20 * 1024 * 1024  # <=20MB отправляем inline_data
+    FILES_API_MAX_BYTES = 200 * 1024 * 1024  # предел для загрузки через Files API
 
     def __init__(self, *, model: Optional[ReferencePromptModel] = None) -> None:
         self._default_model = model
@@ -164,75 +195,120 @@ class ReferencePromptService:
         """Формирует текстовый промт на основе входных данных пользователя."""
 
         model = self._default_model or get_reference_prompt_model(model_slug)
+        logger.info(
+            "reference_prompt: start generation slug=%s gemini_model=%s input_type=%s has_urls=%s has_file=%s mods=%s",
+            model.slug,
+            model.gemini_model,
+            reference.input_type,
+            bool(reference.urls),
+            bool(reference.file_id),
+            bool(modifications),
+        )
 
         media_bytes: Optional[bytes] = None
+        file_uri: Optional[str] = None
 
         source_url: Optional[str] = None
         if reference.urls:
             source_url = next((u for u in reference.urls if is_supported_url(u)), None)
 
+        is_youtube = bool(source_url) and ("youtube.com" in source_url.lower() or "youtu.be" in source_url.lower())
+
         if source_url:
             reference.source_url = reference.source_url or source_url
+            logger.info("reference_prompt: downloading reference url=%s", source_url)
             try:
                 download_result = await download_video(source_url)
             except Exception as exc:  # noqa: BLE001 - обернули внешний загрузчик
-                logger.exception("Failed to download reference media from %s: %s", source_url, exc)
-                raise ValueError(
-                    "Не удалось скачать видео по ссылке. Отправьте файл напрямую или попробуйте другую ссылку."
-                ) from exc
+                if is_youtube:
+                    logger.warning(
+                        "Failed to download reference media from %s, will fallback to Gemini file_uri: %s",
+                        source_url,
+                        exc,
+                    )
+                else:
+                    logger.exception("Failed to download reference media from %s: %s", source_url, exc)
+                    raise ValueError(
+                        "Не удалось скачать видео по ссылке. Отправьте файл напрямую или попробуйте другую ссылку."
+                    ) from exc
+            else:
+                media_bytes = download_result.content
+                reference.input_type = "video"
+                reference.mime_type = download_result.mime_type
+                reference.file_size = len(download_result.content)
+                reference.duration = download_result.duration or reference.duration
+                reference.width = download_result.width or reference.width
+                reference.height = download_result.height or reference.height
+                reference.source_title = reference.source_title or download_result.title
+                reference.source_description = reference.source_description or download_result.description
 
-            media_bytes = download_result.content
-            reference.input_type = "video"
-            reference.mime_type = download_result.mime_type
-            reference.file_size = len(download_result.content)
-            reference.duration = download_result.duration or reference.duration
-            reference.width = download_result.width or reference.width
-            reference.height = download_result.height or reference.height
-            reference.source_title = reference.source_title or download_result.title
-            reference.source_description = reference.source_description or download_result.description
+                if download_result.title and (
+                    not reference.text or reference.text.strip() in {"", source_url.strip()}
+                ):
+                    reference.text = download_result.title
 
-            if download_result.title and (
-                not reference.text or reference.text.strip() in {"", source_url.strip()}
-            ):
-                reference.text = download_result.title
-
-            if download_result.description and (
-                not reference.caption or reference.caption.strip() in {"", source_url.strip()}
-            ):
-                reference.caption = download_result.description
-
-            if len(media_bytes) > self.MAX_INLINE_BYTES:
-                size_mb = len(media_bytes) / (1024 * 1024)
-                raise ValueError(
-                    f"Скачанное видео весит {size_mb:.1f} MB — это больше лимита 14 MB."
-                )
+                if download_result.description and (
+                    not reference.caption or reference.caption.strip() in {"", source_url.strip()}
+                ):
+                    reference.caption = download_result.description
 
         if media_bytes is None and reference.file_id and reference.input_type in {"photo", "video"}:
+            logger.info(
+                "reference_prompt: downloading telegram file input_type=%s file_id=%s",
+                reference.input_type,
+                reference.file_id,
+            )
             media_bytes = await self._download_file(bot, reference.file_id)
             reference.file_size = len(media_bytes)
-            if len(media_bytes) > self.MAX_INLINE_BYTES:
-                size_mb = len(media_bytes) / (1024 * 1024)
-                raise ValueError(
-                    f"Размер файла ({size_mb:.1f} MB) превышает допустимый предел для анализа."
-                )
 
-        if media_bytes is None and source_url:
-            raise ValueError(
-                "Не удалось обработать ссылку. Загрузите видео или изображение напрямую."
-            )
+        if media_bytes is None and source_url and is_youtube:
+            # fallback: отправляем ссылку в Gemini без загрузки на нашу сторону
+            file_uri = source_url
 
-        prompt_text = self._build_user_prompt(reference, modifications)
-        parts = [{"text": prompt_text}]
+        if media_bytes is None and source_url and not file_uri:
+            raise ValueError("Не удалось обработать ссылку. Загрузите видео или изображение напрямую.")
 
+        file_part: Optional[Dict[str, Any]] = None
+        inline_part: Optional[Dict[str, Any]] = None
         if media_bytes and reference.mime_type:
-            parts.append(
-                {
+            media_size = len(media_bytes)
+            if media_size <= self.INLINE_MAX_BYTES:
+                logger.info("reference_prompt: using inline media size_bytes=%s mime=%s", media_size, reference.mime_type)
+                inline_part = {
                     "inline_data": {
                         "mime_type": reference.mime_type,
                         "data": base64.b64encode(media_bytes).decode("utf-8"),
                     }
                 }
-            )
+            else:
+                if media_size > self.FILES_API_MAX_BYTES:
+                    size_mb = media_size / (1024 * 1024)
+                    raise ValueError(f"Видео слишком большое ({size_mb:.1f} MB). Загрузите укороченную версию.")
+
+                display_name = reference.file_name or f"reference-{uuid.uuid4().hex[:8]}"
+                logger.info(
+                    "reference_prompt: uploading via Files API size_bytes=%s mime=%s display_name=%s",
+                    media_size,
+                    reference.mime_type,
+                    display_name,
+                )
+                file_uri = await self._upload_video_file(
+                    media_bytes,
+                    reference.mime_type,
+                    display_name=display_name,
+                )
+                await self._wait_for_file_active(file_uri)
+                file_part = {"fileData": {"fileUri": file_uri, "mimeType": reference.mime_type}}
+        elif file_uri:
+            file_part = {"fileData": {"fileUri": file_uri, "mimeType": reference.mime_type or "video/mp4"}}
+
+        prompt_text = self._build_user_prompt(reference, modifications)
+        parts: List[Dict[str, Any]] = []
+        if file_part:
+            parts.append(file_part)
+        if inline_part:
+            parts.append(inline_part)
+        parts.append({"text": prompt_text})
 
         payload = {
             "systemInstruction": {
@@ -252,11 +328,19 @@ class ReferencePromptService:
             },
         }
 
+        logger.info(
+            "reference_prompt: calling gemini model=%s url=%s parts=%s",
+            model.gemini_model,
+            GEMINI_URL_TMPL.format(
+                model=model.gemini_model.split("/", 1)[1] if model.gemini_model.startswith("models/") else model.gemini_model
+            ),
+            [list(part.keys())[0] for part in parts],
+        )
         response_json = await self._call_gemini(model.gemini_model, payload)
         prompt_out = self._extract_text_response(response_json)
         dialogue_code = uuid.uuid4().hex[:12]
 
-        chunks = [f"✅Ваш промт готов:\n{prompt_out}"]
+        chunks = self._format_chunks(prompt_out)
 
         return ReferencePromptResult(
             prompt_text=prompt_out,
@@ -330,8 +414,105 @@ class ReferencePromptService:
         timeout = httpx.Timeout(120.0, connect=20.0)
         async with httpx.AsyncClient(timeout=timeout) as client:
             response = await client.post(url, headers=headers, json=payload)
-            response.raise_for_status()
+            try:
+                response.raise_for_status()
+            except httpx.HTTPStatusError as exc:  # хотим видеть тело ошибки
+                detail = exc.response.text
+                logger.error(
+                    "Gemini API error %s (model=%s url=%s): %s",
+                    exc.response.status_code,
+                    model_name,
+                    url,
+                    detail,
+                )
+                raise ValueError(
+                    f"Gemini API error {exc.response.status_code} (model={model_name} url={url}): {detail}"
+                ) from exc
             return response.json()
+
+    async def _upload_video_file(self, media_bytes: bytes, mime_type: str, *, display_name: str) -> str:
+        """Загружает видео в Gemini Files API и возвращает file_uri."""
+
+        api_key = settings.GEMINI_API_KEY
+        if not api_key:
+            raise ValueError("GEMINI_API_KEY не задан")
+
+        start_headers = {
+            "X-Goog-Upload-Protocol": "resumable",
+            "X-Goog-Upload-Command": "start",
+            "X-Goog-Upload-Header-Content-Length": str(len(media_bytes)),
+            "X-Goog-Upload-Header-Content-Type": mime_type,
+            "Content-Type": "application/json",
+        }
+
+        timeout = httpx.Timeout(300.0, connect=30.0)
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            start_resp = await client.post(
+                "https://generativelanguage.googleapis.com/upload/v1beta/files",
+                params={"key": api_key},
+                headers=start_headers,
+                json={"file": {"display_name": display_name}},
+            )
+            start_resp.raise_for_status()
+
+            upload_url = start_resp.headers.get("X-Goog-Upload-URL") or start_resp.headers.get(
+                "x-goog-upload-url"
+            )
+            if not upload_url:
+                raise ValueError("Не удалось получить upload URL от Gemini Files API")
+
+            upload_headers = {
+                "Content-Length": str(len(media_bytes)),
+                "X-Goog-Upload-Offset": "0",
+                "X-Goog-Upload-Command": "upload, finalize",
+            }
+            upload_resp = await client.post(upload_url, headers=upload_headers, content=media_bytes)
+            upload_resp.raise_for_status()
+
+            try:
+                file_info = upload_resp.json()
+            except json.JSONDecodeError as exc:  # pragma: no cover
+                raise ValueError(f"Gemini Files API вернул неожиданный ответ: {upload_resp.text}") from exc
+
+            file_uri = (file_info.get("file") or {}).get("uri")
+            if not file_uri:
+                raise ValueError("Не удалось получить file_uri из Gemini Files API")
+
+            return file_uri
+
+    async def _wait_for_file_active(self, file_uri: str, *, timeout: float = 30.0, interval: float = 2.0) -> None:
+        """Дожидается, пока файл в Gemini Files API станет ACTIVE."""
+
+        api_key = settings.GEMINI_API_KEY
+        if not api_key:
+            raise ValueError("GEMINI_API_KEY не задан")
+
+        path = file_uri
+        if not file_uri.startswith("http"):
+            path = file_uri.lstrip("/")
+            url = f"https://generativelanguage.googleapis.com/v1beta/{path}"
+        else:
+            url = file_uri
+
+        file_id = path.rsplit("/", 1)[-1]
+        deadline = time.monotonic() + timeout
+
+        timeout_cfg = httpx.Timeout(60.0, connect=10.0)
+        async with httpx.AsyncClient(timeout=timeout_cfg) as client:
+            while True:
+                resp = await client.get(url, params={"key": api_key})
+                resp.raise_for_status()
+                data = resp.json()
+                status = data.get("state") or data.get("status")
+                logger.info("Gemini file %s status=%s", file_id, status)
+
+                if status == "ACTIVE":
+                    return
+
+                if time.monotonic() >= deadline:
+                    raise ValueError(f"Файл Gemini {file_id} не стал ACTIVE (статус {status})")
+
+                await asyncio.sleep(interval)
 
     def _extract_json_response(self, response: Dict[str, Any]) -> Dict[str, Any]:
         candidates = response.get("candidates") or []
@@ -540,12 +721,12 @@ class ReferencePromptService:
         return params
 
     def _format_chunks(self, pretty: str) -> List[str]:
-        chunks_raw = chunk_text(pretty, 3500) or [pretty]
-        total = len(chunks_raw)
+        chunks_raw = chunk_text(pretty, 3000) or [pretty]
         formatted: List[str] = []
-        for idx, chunk in enumerate(chunks_raw, start=1):
-            header = "*Veo 3 request*" if total == 1 else f"*Veo 3 request — часть {idx} из {total}*"
-            formatted.append(f"{header}\n```json\n{chunk}\n```")
+        for chunk in chunks_raw:
+            header = "<b>✅ Ваш промт готов:</b>"
+            safe_chunk = escape(chunk)
+            formatted.append(f"{header}\n\n{safe_chunk}")
         return formatted
 
     @staticmethod

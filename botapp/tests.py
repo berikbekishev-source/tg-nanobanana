@@ -1,4 +1,5 @@
 import asyncio
+import json
 import base64
 import os
 import unittest
@@ -30,6 +31,7 @@ from botapp.providers.video.openai_sora import OpenAISoraProvider
 from botapp.media_utils import detect_reference_mime
 from botapp.services import (
     openai_generate_images,
+    gemini_generate_images,
     gemini_vertex_generate,
     gemini_vertex_edit,
     generate_images_for_model,
@@ -588,6 +590,135 @@ class OpenAIImageGenerationTests(TestCase):
             input_images=[],
         )
 
+    @patch("botapp.services.gemini_generate_images", return_value=[b"ok"])
+    def test_generate_images_for_model_gemini_vertex_text2image(self, gemini_mock: MagicMock):
+        model = AIModel.objects.create(
+            slug="nano-banana-pro-test-text",
+            name="Nano Banana Pro",
+            display_name="Nano Banana Pro",
+            type="image",
+            provider="gemini_vertex",
+            description="",
+            short_description="",
+            price=Decimal("2.50"),
+            unit_cost_usd=_cost_from_price(Decimal("2.50")),
+            base_cost_usd=_cost_from_price(Decimal("2.50")),
+            cost_unit=AIModel.CostUnit.IMAGE,
+            api_endpoint="https://generativelanguage.googleapis.com",
+            api_model_name="publishers/google/models/gemini-3-pro-image-preview",
+            max_prompt_length=2000,
+            supports_image_input=True,
+            max_input_images=4,
+            default_params={"top_p": 0.9, "image_size": "1K"},
+            allowed_params={},
+            max_quantity=4,
+            cooldown_seconds=0,
+        )
+
+        imgs = generate_images_for_model(
+            model,
+            "prompt",
+            1,
+            {"image_size": "2K", "aspect_ratio": "16:9"},
+            generation_type="text2image",
+        )
+
+        self.assertEqual(imgs, [b"ok"])
+        gemini_mock.assert_called_once()
+        call_kwargs = gemini_mock.call_args.kwargs
+        self.assertEqual(call_kwargs["model_name"], "publishers/google/models/gemini-3-pro-image-preview")
+        self.assertEqual(call_kwargs["params"]["top_p"], 0.9)
+        self.assertEqual(call_kwargs["params"]["image_size"], "2K")
+        self.assertEqual(call_kwargs["params"]["aspect_ratio"], "16:9")
+
+    @patch("botapp.services.gemini_generate_images", return_value=[b"ok"])
+    def test_generate_images_for_model_gemini_vertex_image2image(self, gemini_mock: MagicMock):
+        model = AIModel.objects.create(
+            slug="nano-banana-pro-test-image",
+            name="Nano Banana Pro",
+            display_name="Nano Banana Pro",
+            type="image",
+            provider="gemini_vertex",
+            description="",
+            short_description="",
+            price=Decimal("2.50"),
+            unit_cost_usd=_cost_from_price(Decimal("2.50")),
+            base_cost_usd=_cost_from_price(Decimal("2.50")),
+            cost_unit=AIModel.CostUnit.IMAGE,
+            api_endpoint="https://generativelanguage.googleapis.com",
+            api_model_name="publishers/google/models/gemini-3-pro-image-preview",
+            max_prompt_length=2000,
+            supports_image_input=True,
+            max_input_images=4,
+            default_params={"top_k": 40},
+            allowed_params={},
+            max_quantity=4,
+            cooldown_seconds=0,
+        )
+
+        imgs = generate_images_for_model(
+            model,
+            "prompt",
+            1,
+            {"image_size": "4K"},
+            generation_type="image2image",
+            input_images=[{"content": b"raw", "mime_type": "image/png"}],
+        )
+
+        self.assertEqual(imgs, [b"ok"])
+        gemini_mock.assert_called_once()
+        call_kwargs = gemini_mock.call_args.kwargs
+        self.assertEqual(call_kwargs["model_name"], "publishers/google/models/gemini-3-pro-image-preview")
+        self.assertEqual(call_kwargs["params"]["top_k"], 40)
+        self.assertEqual(call_kwargs["params"]["image_size"], "4K")
+        self.assertEqual(call_kwargs["input_images"][0]["mime_type"], "image/png")
+
+class GeminiGenerateImagesPayloadTests(TestCase):
+    @override_settings(GEMINI_API_KEY="test-key")
+    @patch("botapp.services.httpx.Client")
+    def test_payload_matches_gemini_image_config(self, client_cls: MagicMock):
+        post_resp = MagicMock()
+        post_resp.raise_for_status.return_value = None
+        post_resp.json.return_value = {
+            "candidates": [
+                {"content": {"parts": [{"inlineData": {"data": base64.b64encode(b"img").decode(), "mimeType": "image/png"}}]}}
+            ]
+        }
+
+        client = MagicMock()
+        client.post.return_value = post_resp
+        client.get.return_value = MagicMock()
+
+        client_ctx = client_cls.return_value
+        client_ctx.__enter__.return_value = client
+        client_ctx.__exit__.return_value = False
+
+        imgs = gemini_generate_images(
+            "prompt text",
+            1,
+            params={"aspect_ratio": "16:9", "image_size": "4K", "temperature": 0.7},
+            model_name="publishers/google/models/gemini-3-pro-image-preview",
+            generation_type="image2image",
+            input_images=[{"content": b"ref", "mime_type": "image/jpeg"}],
+        )
+
+        self.assertEqual(imgs, [b"img"])
+        client.post.assert_called_once()
+        called_headers = client.post.call_args.kwargs["headers"]
+        self.assertEqual(called_headers["x-goog-api-key"], "test-key")
+
+        payload = client.post.call_args.kwargs["json"]
+        generation_config = payload["generationConfig"]
+        self.assertEqual(generation_config["responseModalities"], ["IMAGE"])
+        self.assertEqual(generation_config["temperature"], 0.7)
+        self.assertEqual(generation_config["imageConfig"]["aspectRatio"], "16:9")
+        self.assertEqual(generation_config["imageConfig"]["imageSize"], "4K")
+
+        parts = payload["contents"][0]["parts"]
+        self.assertEqual(parts[0]["text"], "prompt text")
+        self.assertEqual(parts[1]["inlineData"]["mimeType"], "image/jpeg")
+
+
 class ReferenceMimeDetectionTests(TestCase):
     def test_detect_png_signature_when_header_generic(self):
         png_bytes = b"\x89PNG\r\n\x1a\n" + b"\x00" * 10
@@ -602,43 +733,22 @@ class ReferenceMimeDetectionTests(TestCase):
 
 @unittest.skipIf(SKIP_VERTEX_TESTS, "Vertex AI интеграционные тесты отключены в CI")
 class GeminiVertexFallbackTests(TestCase):
-    @patch("botapp.services._authorized_vertex_session")
-    @patch("botapp.services._load_service_account_info")
-    def test_generate_falls_back_to_generative_language_api(self, load_info: MagicMock, auth_session: MagicMock):
-        load_info.return_value = {"project_id": "demo-project"}
-        session = MagicMock()
-        auth_session.return_value = session
+    @patch("botapp.services.httpx.post")
+    @patch("botapp.services._vertex_auth_headers", return_value=({"Authorization": "Bearer token"}, {"project_id": "demo-project"}))
+    def test_generate_does_not_fallback(self, auth_headers: MagicMock, http_post: MagicMock):
+        response = MagicMock()
+        response.status_code = 404
+        response.text = "Publisher Model not found"
+        response.json.side_effect = ValueError("invalid json")
+        http_post.return_value = response
 
-        vertex_response = MagicMock()
-        vertex_response.status_code = 404
-        vertex_response.text = "Publisher Model not found"
-        vertex_response.json.return_value = {"error": {"message": "not found"}}
+        with self.assertRaises(ValueError):
+            gemini_vertex_generate("test prompt", 1, model_name="gemini-3-pro-image-preview")
 
-        gl_response = MagicMock()
-        gl_response.status_code = 200
-        gl_response.json.return_value = {
-            "candidates": [
-                {
-                    "content": {
-                        "parts": [
-                            {
-                                "inlineData": {
-                                    "data": base64.b64encode(b"ok").decode(),
-                                }
-                            }
-                        ]
-                    }
-                }
-            ]
-        }
-
-        session.post.side_effect = [vertex_response, gl_response]
-
-        images = gemini_vertex_generate("test prompt", 1)
-        self.assertEqual(images, [b"ok"])
-        self.assertEqual(session.post.call_count, 2)
-        second_call_url = session.post.call_args_list[1].args[0]
-        self.assertIn("generativelanguage.googleapis.com", second_call_url)
+        http_post.assert_called_once()
+        called_url = http_post.call_args.args[0]
+        self.assertIn("aiplatform.googleapis.com", called_url)
+        auth_headers.assert_called_once()
 
 
 @unittest.skipIf(SKIP_VERTEX_TESTS, "Vertex AI интеграционные тесты отключены в CI")
@@ -650,21 +760,16 @@ class GeminiVertexApiKeyTests(TestCase):
         response = MagicMock()
         response.status_code = 200
         response.json.return_value = {
-            "candidates": [
+            "predictions": [
                 {
-                    "content": {
-                        "parts": [
-                            {
-                                "inlineData": {"data": base64.b64encode(b"img").decode()}
-                            }
-                        ]
-                    }
+                    "bytesBase64Encoded": base64.b64encode(b"img").decode(),
+                    "mimeType": "image/png",
                 }
             ]
         }
         http_post.return_value = response
 
-        imgs = gemini_vertex_generate("prompt", 1)
+        imgs = gemini_vertex_generate("prompt", 1, model_name="gemini-3-pro-image-preview")
 
         self.assertEqual(imgs, [b"img"])
         http_post.assert_called_once()
@@ -679,15 +784,10 @@ class GeminiVertexApiKeyTests(TestCase):
         response = MagicMock()
         response.status_code = 200
         response.json.return_value = {
-            "candidates": [
+            "predictions": [
                 {
-                    "content": {
-                        "parts": [
-                            {
-                                "inlineData": {"data": base64.b64encode(b"edit").decode()}
-                            }
-                        ]
-                    }
+                    "bytesBase64Encoded": base64.b64encode(b"edit").decode(),
+                    "mimeType": "image/png",
                 }
             ]
         }
@@ -697,6 +797,7 @@ class GeminiVertexApiKeyTests(TestCase):
             "prompt",
             1,
             input_images=[{"content": b"raw", "mime_type": "image/png"}],
+            model_name="gemini-3-pro-image-preview",
         )
 
         self.assertEqual(imgs, [b"edit"])
@@ -779,6 +880,19 @@ class ChatLoggerTests(TestCase):
         self.assertEqual(last_message.media_file_id, "photo-file")
         self.assertEqual(last_message.message_type, ChatMessage.MessageType.PHOTO)
         self.assertEqual(last_message.text, "Вот фото")
+
+    def test_log_webapp_message_sets_readable_text(self):
+        payload = {"kind": "kling_settings", "modelSlug": "kling-v1"}
+        web_app_data = {"data": json.dumps(payload), "button_text": "Generate"}
+        message = self._build_message(message_id=7, text=None, web_app_data=web_app_data)
+
+        asyncio.run(ChatLogger.log_incoming(message))
+
+        stored_message = ChatMessage.objects.order_by("id").last()
+        self.assertIn("Webapp", stored_message.text)
+        self.assertIn("Kling", stored_message.text)
+        self.assertEqual(stored_message.message_type, ChatMessage.MessageType.TEXT)
+        self.assertEqual(stored_message.payload.get("web_app", {}).get("kind"), "kling_settings")
 
 
 class AdminChatThreadViewTests(TestCase):

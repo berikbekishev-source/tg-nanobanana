@@ -1,6 +1,7 @@
 """
 Обработчики генерации видео
 """
+import asyncio
 import base64
 import json
 from io import BytesIO
@@ -32,6 +33,18 @@ from botapp.services import supabase_upload_png
 from botapp.error_tracker import ErrorTracker
 
 router = Router()
+START_MESSAGE_DELAY = 0.6
+
+
+async def _send_generation_start_message(
+    message: Message,
+    text: str,
+    *,
+    delay: float = START_MESSAGE_DELAY,
+) -> None:
+    """Отправляет стартовое сообщение с задержкой, чтобы успело закрыться WebApp."""
+    await asyncio.sleep(delay)
+    await message.answer(text, reply_markup=get_main_menu_inline_keyboard())
 
 
 def _extract_duration_options(model: AIModel) -> Optional[List[int]]:
@@ -189,6 +202,8 @@ async def handle_webapp_data_dispatcher(message: Message, state: FSMContext):
     kind = payload.get("kind") if isinstance(payload, dict) else None
     if kind == "sora2_settings":
         await _handle_sora_webapp_data_impl(message, state, payload)
+    elif kind == "midjourney_video_settings":
+        await _handle_midjourney_video_webapp_data_impl(message, state, payload)
     elif kind == "kling_settings":
         await _handle_kling_webapp_data_impl(message, state, payload)
     elif kind == "veo_video_settings":
@@ -388,7 +403,8 @@ async def _handle_sora_webapp_data_impl(message: Message, state: FSMContext, pay
         await state.clear()
         return
 
-    await message.answer(
+    await _send_generation_start_message(
+        message,
         get_generation_start_message(
             model=model.display_name,
             mode=generation_type,
@@ -397,12 +413,222 @@ async def _handle_sora_webapp_data_impl(message: Message, state: FSMContext, pay
             duration=duration_value,
             prompt=prompt,
         ),
-        reply_markup=get_main_menu_inline_keyboard()
     )
 
     generate_video_task.delay(gen_request.id)
     await state.clear()
 
+
+
+
+async def _handle_midjourney_video_webapp_data_impl(message: Message, state: FSMContext, payload: dict):
+    """Принимаем данные Midjourney Video WebApp и запускаем генерацию (только image2video)."""
+    data = await state.get_data()
+    model_slug = payload.get("modelSlug") or data.get("model_slug") or data.get("selected_model") or "midjourney-video"
+
+    try:
+        model = await sync_to_async(AIModel.objects.get)(slug=model_slug, is_active=True)
+    except AIModel.DoesNotExist:
+        await message.answer(
+            "Модель Midjourney недоступна. Выберите её заново из списка моделей.",
+            reply_markup=get_main_menu_inline_keyboard(),
+        )
+        await state.clear()
+        return
+
+    if model.provider != "midjourney" or model.type != "video":
+        await message.answer(
+            "Эта WebApp работает только с моделью Midjourney для видео.",
+            reply_markup=get_main_menu_inline_keyboard(),
+        )
+        await state.clear()
+        return
+
+    await state.update_data(
+        model_id=int(model.id),
+        model_slug=str(model.slug),
+        model_provider=str(model.provider),
+        selected_model=str(model.slug),
+    )
+
+    prompt = (payload.get("prompt") or "").strip()
+    if not prompt:
+        await message.answer("Введите промт в окне Midjourney Video и отправьте ещё раз.", reply_markup=get_cancel_keyboard())
+        return
+    if len(prompt) > model.max_prompt_length:
+        await message.answer(
+            f"❌ Промт слишком длинный! Максимум {model.max_prompt_length} символов.",
+            reply_markup=get_cancel_keyboard(),
+        )
+        return
+
+    try:
+        user = await sync_to_async(TgUser.objects.get)(chat_id=message.from_user.id)
+    except TgUser.DoesNotExist:
+        await message.answer(
+            "Не удалось найти пользователя. Начните заново.",
+            reply_markup=get_main_menu_inline_keyboard(),
+        )
+        await state.clear()
+        return
+
+    defaults = model.default_params or {}
+    try:
+        duration_value = int(defaults.get("duration") or 10)
+    except (TypeError, ValueError):
+        duration_value = 10
+
+    allowed_aspects = _extract_allowed_aspect_ratios(model) or ["16:9", "9:16", "1:1", "2:1", "1:2", "4:3", "3:4"]
+    requested_aspect = (
+        payload.get("aspectRatio")
+        or payload.get("aspect_ratio")
+        or defaults.get("aspect_ratio")
+        or "16:9"
+    )
+    aspect_ratio = requested_aspect if requested_aspect in allowed_aspects else (defaults.get("aspect_ratio") or allowed_aspects[0])
+
+    version_value = payload.get("version") or payload.get("modelVersion") or defaults.get("version") or "7"
+
+    image_b64 = payload.get("imageData")
+    if not image_b64:
+        await message.answer("Загрузите изображение в WebApp для Midjourney Video.", reply_markup=get_cancel_keyboard())
+        return
+    try:
+        raw = base64.b64decode(image_b64)
+    except Exception:
+        await message.answer(
+            "Не удалось прочитать изображение. Загрузите файл ещё раз.",
+            reply_markup=get_cancel_keyboard(),
+        )
+        return
+    if len(raw) > MAX_KLING_IMAGE_BYTES:
+        await message.answer(
+            "Изображение слишком большое. Максимум 10 МБ.",
+            reply_markup=get_cancel_keyboard(),
+        )
+        return
+
+    mime = payload.get("imageMime") or "image/png"
+    file_name = payload.get("imageName") or "image.png"
+    png_bytes = _convert_to_png_bytes(raw, mime)
+    try:
+        upload_obj = await sync_to_async(supabase_upload_png)(png_bytes)
+    except Exception as exc:  # pragma: no cover - сеть/хранилище
+        await ErrorTracker.alog(
+            origin=BotErrorEvent.Origin.TELEGRAM,
+            severity=BotErrorEvent.Severity.WARNING,
+            handler="video_generation.handle_midjourney_video_webapp_data",
+            chat_id=message.chat.id,
+            payload={"reason": "supabase_upload_failed"},
+            exc=exc,
+        )
+        await message.answer(
+            "Не удалось загрузить изображение в хранилище. Попробуйте другой файл.",
+            reply_markup=get_cancel_keyboard(),
+        )
+        await state.clear()
+        return
+
+    image_url = _extract_public_url(upload_obj)
+    if not image_url:
+        await message.answer(
+            "Не удалось получить ссылку на изображение. Попробуйте снова.",
+            reply_markup=get_cancel_keyboard(),
+        )
+        await state.clear()
+        return
+
+    params = {
+        "aspect_ratio": aspect_ratio,
+        "version": version_value,
+        "image_url": image_url,
+    }
+    source_media = {
+        "file_name": file_name,
+        "mime_type": mime,
+        "storage_url": image_url,
+        "size_bytes": len(raw),
+        "source": "midjourney_video_webapp",
+    }
+
+    try:
+        _, cost_tokens = await sync_to_async(calculate_request_cost)(
+            model, quantity=1, duration=duration_value, params=params
+        )
+        can_generate, error_msg = await sync_to_async(BalanceService.check_can_generate)(
+            user,
+            model,
+            quantity=1,
+            total_cost_tokens=cost_tokens,
+        )
+        if not can_generate:
+            await message.answer(
+                f"❌ {error_msg}",
+                reply_markup=get_main_menu_inline_keyboard(),
+            )
+            await state.clear()
+            return
+    except Exception as exc:
+        await ErrorTracker.alog(
+            origin=BotErrorEvent.Origin.TELEGRAM,
+            severity=BotErrorEvent.Severity.WARNING,
+            handler="video_generation.handle_midjourney_video_webapp_data.balance_check",
+            chat_id=message.chat.id,
+            payload={"model": model.slug},
+            exc=exc,
+        )
+        # При ошибке продолжаем — сервис проверит баланс перед запуском
+
+    try:
+        gen_request = await sync_to_async(GenerationService.create_generation_request)(
+            user=user,
+            ai_model=model,
+            prompt=prompt,
+            quantity=1,
+            generation_type="image2video",
+            generation_params=params,
+            duration=duration_value,
+            aspect_ratio=aspect_ratio,
+            source_media=source_media,
+        )
+    except InsufficientBalanceError as exc:
+        await message.answer(str(exc), reply_markup=get_main_menu_inline_keyboard())
+        await state.clear()
+        return
+    except ValueError as exc:
+        await message.answer(str(exc), reply_markup=get_main_menu_inline_keyboard())
+        await state.clear()
+        return
+    except Exception as exc:
+        await message.answer(
+            "❌ Произошла ошибка при подготовке генерации. Попробуйте ещё раз.",
+            reply_markup=get_main_menu_inline_keyboard(),
+        )
+        await ErrorTracker.alog(
+            origin=BotErrorEvent.Origin.TELEGRAM,
+            severity=BotErrorEvent.Severity.ERROR,
+            handler="video_generation.handle_midjourney_video_webapp_data",
+            chat_id=message.chat.id,
+            payload={"aspect_ratio": aspect_ratio},
+            exc=exc,
+        )
+        await state.clear()
+        return
+
+    await _send_generation_start_message(
+        message,
+        get_generation_start_message(
+            model=model.display_name,
+            mode="image2video",
+            aspect_ratio=aspect_ratio,
+            resolution=None,
+            duration=duration_value,
+            prompt=prompt,
+        ),
+    )
+
+    generate_video_task.delay(gen_request.id)
+    await state.clear()
 
 async def _handle_kling_webapp_data_impl(message: Message, state: FSMContext, payload: dict):
     """Принимаем данные Kling WebApp и запускаем генерацию."""
@@ -613,7 +839,8 @@ async def _handle_kling_webapp_data_impl(message: Message, state: FSMContext, pa
         await state.clear()
         return
 
-    await message.answer(
+    await _send_generation_start_message(
+        message,
         get_generation_start_message(
             model=model.display_name,
             mode=generation_type,
@@ -622,7 +849,6 @@ async def _handle_kling_webapp_data_impl(message: Message, state: FSMContext, pa
             duration=duration_value,
             prompt=prompt,
         ),
-        reply_markup=get_main_menu_inline_keyboard()
     )
 
     generate_video_task.delay(gen_request.id)
@@ -873,7 +1099,8 @@ async def _handle_veo_webapp_data_impl(message: Message, state: FSMContext, payl
         await state.clear()
         return
 
-    await message.answer(
+    await _send_generation_start_message(
+        message,
         get_generation_start_message(
             model=model.display_name,
             mode=generation_type,
@@ -882,7 +1109,6 @@ async def _handle_veo_webapp_data_impl(message: Message, state: FSMContext, payl
             duration=duration,
             prompt=prompt,
         ),
-        reply_markup=get_main_menu_inline_keyboard()
     )
 
     generate_video_task.delay(gen_request.id)
@@ -1360,7 +1586,8 @@ async def handle_video_prompt(message: Message, state: FSMContext):
         await state.clear()
         return
 
-    await message.answer(
+    await _send_generation_start_message(
+        message,
         get_generation_start_message(
             model=model.display_name,
             mode=generation_type,
@@ -1369,7 +1596,6 @@ async def handle_video_prompt(message: Message, state: FSMContext):
             duration=selected_duration,
             prompt=prompt,
         ),
-        reply_markup=get_main_menu_inline_keyboard()
     )
 
     generate_video_task.delay(gen_request.id)
@@ -1579,7 +1805,8 @@ async def handle_video_extension_prompt(message: Message, state: FSMContext):
         await state.clear()
         return
 
-    await message.answer(
+    await _send_generation_start_message(
+        message,
         get_generation_start_message(
             model=model.display_name if model else "—",
             mode="image2video",
@@ -1588,7 +1815,6 @@ async def handle_video_extension_prompt(message: Message, state: FSMContext):
             duration=8,
             prompt=text,
         ),
-        reply_markup=get_main_menu_inline_keyboard()
     )
 
     extend_video_task.delay(gen_request.id)

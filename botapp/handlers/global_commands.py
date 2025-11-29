@@ -187,14 +187,23 @@ async def global_create_video_start(message: Message, state: FSMContext):
 
     kling_webapps = {}
     veo_webapps = {}
+    midjourney_video_webapps = {}
     if PUBLIC_BASE_URL:
         for model in models:
             if model.provider == "kling":
                 cost = await sync_to_async(get_base_price_tokens)(model)
                 price_label = f"⚡{cost:.2f} токенов"
+                default_duration = None
+                if isinstance(model.default_params, dict):
+                    try:
+                        default_duration = int(model.default_params.get("duration") or 0)
+                    except (TypeError, ValueError):
+                        default_duration = None
+                base_duration = default_duration if default_duration and default_duration > 0 else 10
                 kling_webapps[model.slug] = (
                     f"{PUBLIC_BASE_URL}/kling/?"
                     f"model={quote_plus(model.slug)}&price={quote_plus(price_label)}"
+                    f"&price_base_duration={quote_plus(str(base_duration))}"
                 )
             if model.provider == "veo" or model.slug.startswith("veo"):
                 cost = await sync_to_async(get_base_price_tokens)(model)
@@ -202,6 +211,15 @@ async def global_create_video_start(message: Message, state: FSMContext):
                 veo_webapps[model.slug] = (
                     f"{PUBLIC_BASE_URL}/veo/?"
                     f"model={quote_plus(model.slug)}&price={quote_plus(price_label)}"
+                    f"&max_prompt={quote_plus(str(model.max_prompt_length))}"
+                )
+            if model.provider == "midjourney":
+                cost = await sync_to_async(get_base_price_tokens)(model)
+                price_label = f"⚡{cost:.2f} токенов"
+                midjourney_video_webapps[model.slug] = (
+                    f"{PUBLIC_BASE_URL}/midjourney_video/?"
+                    f"model={quote_plus(model.slug)}&price={quote_plus(price_label)}"
+                    f"&max_prompt={quote_plus(str(model.max_prompt_length))}"
                 )
 
 
@@ -225,6 +243,7 @@ async def global_create_video_start(message: Message, state: FSMContext):
             kling_webapps=kling_webapps,
             veo_webapps=veo_webapps,
             sora_webapps=sora_webapps,
+            midjourney_video_webapps=midjourney_video_webapps,
         )
     )
 
@@ -270,7 +289,7 @@ async def global_prompt_by_reference_entry(message: Message, state: FSMContext):
     await state.update_data(reference_prompt_model=default_model.slug)
 
     await message.answer(
-        "🔍 Скиньте в бота ссылку на любой Reels, Shorts, TikTok или загрузите в чат видео/изображение и получите промт для генерации точно такого же видео!",
+        "🔗 Скиньте в бота ссылку на любой Reels, Shorts, TikTok или загрузите в чат видео и получите промт для создания точно такого же видео!",
         reply_markup=get_cancel_keyboard(),
     )
     await state.set_state(BotStates.reference_prompt_wait_reference)
@@ -460,7 +479,17 @@ async def global_select_video_model(callback: CallbackQuery, state: FSMContext):
     if model.provider == "kling":
         price_label = f"⚡{model_cost:.2f} токенов"
         base = PUBLIC_BASE_URL or "https://example.com"
-        webapp_url = f"{base}/kling/?price={quote_plus(price_label)}"
+        default_duration = None
+        if isinstance(model.default_params, dict):
+            try:
+                default_duration = int(model.default_params.get("duration") or 0)
+            except (TypeError, ValueError):
+                default_duration = None
+        base_duration = default_duration if default_duration and default_duration > 0 else 10
+        webapp_url = (
+            f"{base}/kling/?price={quote_plus(price_label)}"
+            f"&price_base_duration={quote_plus(str(base_duration))}"
+        )
         try:
             await callback.answer(url=webapp_url)
         except Exception:
