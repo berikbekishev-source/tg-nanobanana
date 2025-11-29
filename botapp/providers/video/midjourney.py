@@ -85,7 +85,6 @@ class MidjourneyVideoProvider(BaseVideoProvider):
             "taskType": "mj_video",
             "prompt": prompt,
             "fileUrl": image_url,
-            "fileUrls": [image_url],
         }
 
         aspect_ratio = params.get("aspect_ratio") or params.get("aspectRatio")
