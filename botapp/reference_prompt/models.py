@@ -13,7 +13,7 @@ class ReferencePromptModel:
     slug: str
     title: str
     description: str
-    gemini_model: str = "gemini-3-pro-preview"
+    gemini_model: str = "gemini-2.5-pro"
 
 
 REFERENCE_PROMPT_MODELS: Dict[str, ReferencePromptModel] = {
