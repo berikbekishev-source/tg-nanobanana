@@ -489,7 +489,7 @@ def midjourney_generate_images(
         payload["taskType"] = payload.get("taskType") or (
             "mj_img2img" if generation_type == "image2image" else "mj_txt2img"
         )
-        payload["speed"] = payload.get("speed") or params.get("speed") or "relaxed"
+        payload["speed"] = payload.get("speed") or params.get("speed") or "fast"
         payload["model"] = model_name
 
         logger.info(f"[MIDJOURNEY_KIE] Отправка запроса на {base_url}/api/v1/mj/generate")

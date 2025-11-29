@@ -41,6 +41,15 @@ def _shorten_caption(text: str, limit: int = MAX_TELEGRAM_CAPTION) -> str:
     return text[: limit - 1] + "…"
 
 
+def _log_bot_api_result(result) -> None:
+    """Логирует результат Telegram Bot API, корректно обрабатывая списки (media group)."""
+    if isinstance(result, list):
+        for item in result:
+            ChatLogger.log_outgoing_from_payload(item)
+    else:
+        ChatLogger.log_outgoing_from_payload(result)
+
+
 def send_telegram_photo(
     chat_id: int,
     photo_bytes: bytes,
@@ -73,7 +82,7 @@ def send_telegram_photo(
             )
             raise
         payload = resp.json()
-        ChatLogger.log_outgoing_from_payload(payload.get("result"))
+        _log_bot_api_result(payload.get("result"))
         return payload
 
 
@@ -101,7 +110,45 @@ def send_telegram_video(chat_id: int, video_bytes: bytes, caption: str, reply_ma
             )
             raise
         payload = resp.json()
-        ChatLogger.log_outgoing_from_payload(payload.get("result"))
+        _log_bot_api_result(payload.get("result"))
+        return payload
+
+
+def send_telegram_album(
+    chat_id: int,
+    images: List[Tuple[bytes, Optional[str]]],
+) -> dict:
+    """
+    Отправка нескольких изображений одним альбомом (media group).
+    Caption ставится только на первое изображение.
+    """
+    url = f"https://api.telegram.org/bot{settings.TELEGRAM_BOT_TOKEN}/sendMediaGroup"
+    files = {}
+    media = []
+
+    for idx, (image_bytes, caption) in enumerate(images, start=1):
+        file_key = f"photo{idx}"
+        files[file_key] = ("image.png", image_bytes, "image/png")
+        media_item = {
+            "type": "photo",
+            "media": f"attach://{file_key}",
+        }
+        if caption:
+            media_item["caption"] = _shorten_caption(caption)
+        media.append(media_item)
+
+    with httpx.Client(timeout=60) as client:
+        resp = client.post(
+            url,
+            data={
+                "chat_id": chat_id,
+                "media": json.dumps(media, ensure_ascii=False),
+            },
+            files=files,
+        )
+        resp.raise_for_status()
+        payload = resp.json()
+        _log_bot_api_result(payload.get("result"))
         return payload
 
 
@@ -121,7 +168,7 @@ def send_telegram_message(chat_id: int, text: str, reply_markup: Optional[Dict] 
         resp = client.post(url, json=data)
         resp.raise_for_status()
         payload = resp.json()
-        ChatLogger.log_outgoing_from_payload(payload.get("result"))
+        _log_bot_api_result(payload.get("result"))
         return payload
 
 
@@ -657,53 +704,75 @@ def generate_image_task(self, request_id: int):
         urls = []
         inline_markup = get_inline_menu_markup()
         charged_amount, balance_after = _extract_charge_details(req)
+        system_message = get_generation_complete_message(
+            prompt=prompt,
+            generation_type=generation_type,
+            model_name=model.display_name,
+            model_display_name=model.display_name,
+            quantity=quantity,
+            aspect_ratio=req.aspect_ratio or "1:1",
+            generation_params=req.generation_params or {},
+            model_provider=model.provider,
+            image_mode=(req.generation_params or {}).get("image_mode"),
+            charged_amount=charged_amount,
+            balance_after=balance_after,
+        )
 
-        # Загружаем и отправляем каждое изображение
+        # Загружаем изображения в Storage и формируем список для отправки одним альбомом
+        prepared_images: List[Tuple[bytes, Optional[str]]] = []
         for idx, img in enumerate(imgs, start=1):
             try:
-                # Загружаем в Storage
                 logger.info(f"[TASK] Загрузка изображения {idx}/{quantity} в Supabase для запроса {req.id}")
                 url_obj = supabase_upload_png(img)
                 url = url_obj.get("public_url") if isinstance(url_obj, dict) else url_obj
                 urls.append(url)
                 logger.info(f"[TASK] Изображение {idx}/{quantity} загружено: {url}")
-
-                # Формируем системное сообщение после генерации
-                system_message = get_generation_complete_message(
-                    prompt=prompt,
-                    generation_type=generation_type,
-                    model_name=model.display_name,
-                    model_display_name=model.display_name,
-                    quantity=quantity,
-                    aspect_ratio=req.aspect_ratio or "1:1",
-                    generation_params=req.generation_params or {},
-                    model_provider=model.provider,
-                    image_mode=(req.generation_params or {}).get("image_mode"),
-                    charged_amount=charged_amount,
-                    balance_after=balance_after,
-                )
-
-                # Отправляем изображение с системным сообщением
-                logger.info(f"[TASK] Отправка изображения {idx}/{quantity} в Telegram (chat_id={req.chat_id})")
-                send_telegram_photo(
-                    chat_id=req.chat_id,
-                    photo_bytes=img,
-                    caption=system_message + f"\n\n📷 Изображение {idx}/{quantity}",
-                    reply_markup=inline_markup
-                )
-                logger.info(f"[TASK] Изображение {idx}/{quantity} успешно отправлено в Telegram")
+                caption = None
+                # caption добавляем только к первому изображению
+                prepared_images.append((img, caption))
+                logger.info(f"[TASK] Изображение {idx}/{quantity} подготовлено к отправке")
             except Exception as img_error:
                 logger.exception(f"[TASK] Ошибка при обработке изображения {idx}/{quantity} для запроса {req.id}: {img_error}")
                 # Продолжаем обработку остальных изображений
                 continue
 
         # Проверка что хотя бы одно изображение было успешно обработано
-        if not urls:
+        if not urls or not prepared_images:
             error_msg = f"Ни одно изображение не было успешно загружено или отправлено для запроса {req.id}"
             logger.error(f"[TASK] {error_msg}")
             raise ValueError(error_msg)
 
-        logger.info(f"[TASK] Запрос {req.id} завершен успешно. Загружено и отправлено {len(urls)}/{quantity} изображений")
+        delivered_count = len(prepared_images)
+        if delivered_count > 0:
+            caption_text = f"{system_message}\n\n📷 Изображения 1-{delivered_count}"
+            prepared_images[0] = (prepared_images[0][0], caption_text)
+
+        # Отправляем результаты одним сообщением (media group) если изображений несколько
+        try:
+            if len(prepared_images) == 1:
+                img, caption = prepared_images[0]
+                send_telegram_photo(
+                    chat_id=req.chat_id,
+                    photo_bytes=img,
+                    caption=caption or system_message,
+                    reply_markup=inline_markup,
+                )
+            else:
+                send_telegram_album(
+                    chat_id=req.chat_id,
+                    images=prepared_images,
+                )
+                # Отдельно отправляем меню, так как sendMediaGroup не поддерживает inline клавиатуру
+                send_telegram_message(
+                    req.chat_id,
+                    "Готово! Выберите действие:",
+                    reply_markup=inline_markup,
+                    parse_mode=None,
+                )
+            logger.info(f"[TASK] Запрос {req.id} завершен успешно. Загружено и отправлено {len(prepared_images)}/{quantity} изображений")
+        except Exception as send_error:
+            logger.exception(f"[TASK] Ошибка при отправке результатов запроса {req.id}: {send_error}")
+            raise
 
         # Обновляем статус запроса
         req.status = "done"
