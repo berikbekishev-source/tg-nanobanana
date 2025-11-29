@@ -276,7 +276,7 @@ async def _start_prompt_generation(message: Message, state: FSMContext, modifica
         return
 
     for chunk in result.chunks:
-        await message.answer(chunk, parse_mode=None, reply_markup=video_keyboard)
+        await message.answer(chunk, parse_mode="HTML", reply_markup=video_keyboard)
 
     await state.clear()
     await state.set_state(BotStates.main_menu)
