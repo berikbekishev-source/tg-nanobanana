@@ -158,6 +158,27 @@ def _extract_allowed_resolutions(model: AIModel) -> List[str]:
             allowed = [str(v) for v in opts if v]
     return [r.strip().lower() for r in allowed if isinstance(r, str) and r.strip()]
 
+
+def _normalize_resolution_value(value: Optional[Any]) -> str:
+    """
+    Нормализуем разрешение к каноническим значениям:
+    - 720p: {'720', '720p', 'small'}
+    - 1080p: {'1080', '1080p', 'large'}
+    Остальное возвращаем как есть (строкой, lower).
+    """
+    val = str(value or "").strip().lower()
+    if val in {"720", "720p", "small"}:
+        return "720p"
+    if val in {"1080", "1080p", "large"}:
+        return "1080p"
+    return val
+
+
+def _normalize_allowed_resolutions(raw: List[str]) -> List[str]:
+    """Расширяем список разрешений с учетом синонимов (small/large, без 'p')."""
+    normalized = {_normalize_resolution_value(item) for item in raw}
+    return [r for r in normalized if r]
+
 MAX_VEO_IMAGE_BYTES = 5 * 1024 * 1024
 
 
@@ -276,13 +297,13 @@ async def _handle_sora_webapp_data_impl(message: Message, state: FSMContext, pay
     if aspect_ratio not in {"16:9", "9:16", "1:1"}:
         aspect_ratio = "16:9"
 
-    allowed_resolutions = _extract_allowed_resolutions(model) or ["720p", "1080p"]
+    allowed_resolutions = _normalize_allowed_resolutions(_extract_allowed_resolutions(model)) or ["720p", "1080p"]
     requested_resolution = (
         payload.get("resolution")
         or (model.default_params or {}).get("resolution")
         or allowed_resolutions[0]
     )
-    resolution = str(requested_resolution).lower()
+    resolution = _normalize_resolution_value(requested_resolution)
     if resolution not in allowed_resolutions:
         resolution = allowed_resolutions[0]
 
@@ -916,7 +937,7 @@ async def _handle_veo_webapp_data_impl(message: Message, state: FSMContext, payl
         aspect_ratio = allowed_ratios[0]
 
     duration = data.get("default_duration") or defaults.get("duration") or 8
-    allowed_resolutions = _extract_allowed_resolutions(model) or ["720p", "1080p"]
+    allowed_resolutions = _normalize_allowed_resolutions(_extract_allowed_resolutions(model)) or ["720p", "1080p"]
     requested_resolution = (
         params_payload.get("resolution")
         or payload.get("resolution")
@@ -924,7 +945,7 @@ async def _handle_veo_webapp_data_impl(message: Message, state: FSMContext, payl
         or defaults.get("resolution")
         or allowed_resolutions[0]
     )
-    resolution = str(requested_resolution).lower()
+    resolution = _normalize_resolution_value(requested_resolution)
     if resolution not in allowed_resolutions:
         resolution = allowed_resolutions[0]
 
