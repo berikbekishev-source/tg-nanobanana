@@ -415,52 +415,54 @@ def get_generation_complete_message(
         model_display_name: Выводимое имя модели (если нужно отличать от хэштега)
         **kwargs: Дополнительные параметры (duration, resolution, aspect_ratio и т.д.)
     """
-    if "image" in generation_type:
-        params = kwargs.get("generation_params") or kwargs.get("params") or kwargs
-        aspect_ratio = kwargs.get("aspect_ratio")
-        if aspect_ratio is None and isinstance(params, dict):
-            aspect_ratio = params.get("aspect_ratio") or params.get("aspectRatio")
+    gtype = (generation_type or "").lower()
 
-        format_value, quality_value = resolve_format_and_quality(
-            kwargs.get("model_provider") or "",
-            params,
-            aspect_ratio=aspect_ratio,
-        )
-        mode_label = resolve_image_mode_label(
-            generation_type,
-            kwargs.get("image_mode") or (params or {}).get("image_mode"),
-        )
+    if "video" in gtype:
+        params = kwargs.get("generation_params") or kwargs.get("params") or {}
+        aspect_ratio = kwargs.get("aspect_ratio") or params.get("aspect_ratio") or params.get("aspectRatio")
+        resolution = kwargs.get("resolution") or kwargs.get("video_resolution") or params.get("resolution")
+        duration = kwargs.get("duration") or params.get("duration") or params.get("seconds")
         charged_amount = kwargs.get("charged_amount")
         balance_after = kwargs.get("balance_after")
-        if charged_amount is None:
-            charged_amount = Decimal("0.00")
-        if balance_after is None:
-            balance_after = Decimal("0.00")
 
-        return format_image_result_message(
+        return format_video_result_message(
             model_display_name or model_name,
-            mode_label,
-            format_value,
-            quality_value,
+            resolve_video_mode_label(generation_type),
+            aspect_ratio or "—",
+            resolution or "—",
+            duration,
             prompt,
-            Decimal(charged_amount),
-            Decimal(balance_after),
+            Decimal(charged_amount or "0.00"),
+            Decimal(balance_after or "0.00"),
         )
 
-    params = kwargs.get("generation_params") or kwargs.get("params") or {}
-    aspect_ratio = kwargs.get("aspect_ratio") or params.get("aspect_ratio") or params.get("aspectRatio")
-    resolution = kwargs.get("resolution") or kwargs.get("video_resolution") or params.get("resolution")
-    duration = kwargs.get("duration") or params.get("duration") or params.get("seconds")
+    params = kwargs.get("generation_params") or kwargs.get("params") or kwargs
+    aspect_ratio = kwargs.get("aspect_ratio")
+    if aspect_ratio is None and isinstance(params, dict):
+        aspect_ratio = params.get("aspect_ratio") or params.get("aspectRatio")
+
+    format_value, quality_value = resolve_format_and_quality(
+        kwargs.get("model_provider") or "",
+        params,
+        aspect_ratio=aspect_ratio,
+    )
+    mode_label = resolve_image_mode_label(
+        generation_type,
+        kwargs.get("image_mode") or (params or {}).get("image_mode"),
+    )
     charged_amount = kwargs.get("charged_amount")
     balance_after = kwargs.get("balance_after")
+    if charged_amount is None:
+        charged_amount = Decimal("0.00")
+    if balance_after is None:
+        balance_after = Decimal("0.00")
 
-    return format_video_result_message(
+    return format_image_result_message(
         model_display_name or model_name,
-        resolve_video_mode_label(generation_type),
-        aspect_ratio or "—",
-        resolution or "—",
-        duration,
+        mode_label,
+        format_value,
+        quality_value,
         prompt,
-        Decimal(charged_amount or "0.00"),
-        Decimal(balance_after or "0.00"),
+        Decimal(charged_amount),
+        Decimal(balance_after),
     )
