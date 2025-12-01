@@ -214,6 +214,15 @@ def fetch_remote_file(url: str) -> bytes:
         return resp.content
 
 
+def _download_media_with_mime(url: str) -> Tuple[bytes, str]:
+    """Скачать бинарный файл и вернуть пару (контент, mime)."""
+    with httpx.Client(timeout=httpx.Timeout(300.0, connect=10.0)) as client:
+        resp = client.get(url, follow_redirects=True)
+        resp.raise_for_status()
+        mime = resp.headers.get("content-type", "video/mp4")
+        return resp.content, mime.split(";")[0].strip()
+
+
 
 
 @lru_cache()
@@ -916,6 +925,23 @@ def generate_video_task(self, request_id: int):
 
         result = provider.generate(**generate_kwargs)
 
+        if result.content is None:
+            updates = []
+            if result.provider_job_id:
+                req.provider_job_id = result.provider_job_id
+                updates.append("provider_job_id")
+            if result.metadata:
+                req.provider_metadata = result.metadata
+                updates.append("provider_metadata")
+            if updates:
+                req.save(update_fields=updates)
+            logger.info(
+                "[VIDEO_TASK] Geminigen поставил задачу в очередь: request_id=%s job_id=%s",
+                req.id,
+                result.provider_job_id,
+            )
+            return
+
         upload_result = supabase_upload_video(result.content, mime_type=result.mime_type)
         public_url = upload_result.get("public_url") if isinstance(upload_result, dict) else upload_result
 
@@ -946,7 +972,7 @@ def generate_video_task(self, request_id: int):
             balance_after=balance_after,
         )
 
-        allow_extension = model.provider == "veo"
+        allow_extension = bool(getattr(provider, "supports_extension", model.provider == "veo"))
 
         try:
             send_telegram_video(
@@ -1079,6 +1105,10 @@ def extend_video_task(self, request_id: int):
             input_media=frame_bytes,
             input_mime_type="image/png",
         )
+        if result.content is None:
+            raise VideoGenerationError(
+                "Продление для Geminigen пока недоступно: провайдер вернул задачу без готового видео."
+            )
         part2_bytes = result.content
 
         combined_bytes, combined_duration = combine_videos_with_crossfade(
@@ -1158,6 +1188,169 @@ def extend_video_task(self, request_id: int):
             reply_markup=get_inline_menu_markup(),
         )
         raise
+
+
+
+@shared_task(bind=True, autoretry_for=(Exception,), retry_backoff=True, max_retries=3)
+def process_geminigen_webhook(self, payload: Dict[str, Any]):
+    """
+    Обработка вебхуков Geminigen для видео (VIDEO_GENERATION_COMPLETED / FAILED).
+    """
+    event = (payload.get("event") or payload.get("type") or "").strip()
+    data = payload.get("data") if isinstance(payload.get("data"), dict) else {}
+
+    job_uuid = data.get("uuid") or payload.get("uuid") or payload.get("job_id")
+    status = data.get("status") or payload.get("status")
+    media_url = data.get("media_url") or data.get("mediaUrl")
+    thumbnail_url = data.get("thumbnail_url") or data.get("thumbnailUrl")
+    error_message = (
+        data.get("error_message")
+        or data.get("errorMessage")
+        or (payload.get("detail") or {}).get("message")
+        or payload.get("error_message")
+    )
+
+    if not job_uuid:
+        logger.warning("[GEMINIGEN_WEBHOOK] Пропущено событие без uuid: %s", payload)
+        return
+
+    try:
+        req = GenRequest.objects.select_related('user', 'ai_model', 'transaction').get(provider_job_id=str(job_uuid))
+    except GenRequest.DoesNotExist:
+        logger.warning("[GEMINIGEN_WEBHOOK] Запрос с uuid=%s не найден.", job_uuid)
+        return
+
+    if req.status == "done":
+        logger.info("[GEMINIGEN_WEBHOOK] Запрос уже завершён, uuid=%s", job_uuid)
+        return
+    if req.status == "error":
+        logger.warning("[GEMINIGEN_WEBHOOK] Запрос уже в статусе error, uuid=%s", job_uuid)
+        return
+
+    model = req.ai_model
+    normalized_event = event.upper()
+    normalized_status = str(status).lower() if status is not None else ""
+    success_events = {"VIDEO_GENERATION_COMPLETED", "VIDEO.GENERATED", "VIDEO_GENERATED", "VIDEO.GENERATION.COMPLETED"}
+    fail_events = {"VIDEO_GENERATION_FAILED", "VIDEO.GENERATION.FAILED", "VIDEO_FAILED"}
+
+    def _merge_metadata() -> Dict[str, Any]:
+        meta = req.provider_metadata or {}
+        meta = dict(meta)
+        meta["webhook"] = payload
+        if thumbnail_url:
+            meta["thumbnail_url"] = thumbnail_url
+        return meta
+
+    if normalized_event in success_events or normalized_status in {"2", "completed", "success"} or media_url:
+        if not media_url:
+            GenerationService.fail_generation(
+                req,
+                "Geminigen сообщил об успехе, но не прислал media_url.",
+                refund=True,
+            )
+            send_telegram_message(
+                req.chat_id,
+                "❌ Видео не получено: нет ссылки media_url в ответе Geminigen.",
+                reply_markup=get_inline_menu_markup(),
+                parse_mode=None,
+            )
+            return
+
+        try:
+            video_bytes, mime_type = _download_media_with_mime(str(media_url))
+        except Exception as exc:
+            GenerationService.fail_generation(
+                req,
+                f"Не удалось скачать видео по ссылке Geminigen: {exc}",
+                refund=True,
+            )
+            send_telegram_message(
+                req.chat_id,
+                "❌ Не удалось скачать видео по ссылке Geminigen. Попробуйте ещё раз позже.",
+                reply_markup=get_inline_menu_markup(),
+                parse_mode=None,
+            )
+            return
+
+        upload_result = supabase_upload_video(video_bytes, mime_type=mime_type or "video/mp4")
+        public_url = upload_result.get("public_url") if isinstance(upload_result, dict) else upload_result
+
+        GenerationService.complete_generation(
+            req,
+            result_urls=[public_url],
+            file_sizes=[len(video_bytes)],
+            duration=req.duration,
+            video_resolution=req.video_resolution,
+            aspect_ratio=req.aspect_ratio,
+            provider_job_id=str(job_uuid),
+            provider_metadata=_merge_metadata(),
+        )
+
+        charged_amount, balance_after = _extract_charge_details(req)
+        message = get_generation_complete_message(
+            prompt=req.prompt,
+            generation_type=req.generation_type,
+            model_name=model.display_name if model else req.model,
+            model_display_name=model.display_name if model else req.model,
+            generation_params=req.generation_params or {},
+            model_provider=model.provider if model else "veo",
+            duration=req.duration,
+            resolution=req.video_resolution,
+            aspect_ratio=req.aspect_ratio,
+            charged_amount=charged_amount,
+            balance_after=balance_after,
+        )
+
+        allow_extension = False  # Geminigen пока без синхронного продления
+
+        try:
+            send_telegram_video(
+                chat_id=req.chat_id,
+                video_bytes=video_bytes,
+                caption=message,
+                reply_markup=get_video_result_markup(req.id, include_extension=allow_extension),
+            )
+        except httpx.HTTPStatusError as e:
+            status_code = e.response.status_code if e.response else "unknown"
+            body = e.response.text if e.response else str(e)
+            logger.warning("Telegram sendDocument failed: status=%s body=%s", status_code, body[:500], exc_info=e)
+            fallback_text = (
+                "Видео готово, но Telegram вернул ошибку при отправке файла. "
+                f"Ссылка для скачивания: {public_url}"
+            )
+            send_telegram_message(
+                req.chat_id,
+                fallback_text,
+                reply_markup=get_video_result_markup(req.id, include_extension=allow_extension),
+                parse_mode=None,
+            )
+        except Exception as exc:
+            logger.exception("Unexpected error while sending Geminigen video to Telegram: %s", exc)
+            fallback_text = (
+                "Видео готово, но не удалось отправить его файлом. "
+                f"Ссылка для скачивания: {public_url}"
+            )
+            send_telegram_message(
+                req.chat_id,
+                fallback_text,
+                reply_markup=get_video_result_markup(req.id, include_extension=allow_extension),
+                parse_mode=None,
+            )
+            raise
+
+        return
+
+    if normalized_event in fail_events or normalized_status in {"3", "failed", "error"}:
+        GenerationService.fail_generation(req, error_message or "Geminigen сообщил об ошибке", refund=True)
+        send_telegram_message(
+            req.chat_id,
+            f"❌ Ошибка генерации видео: {error_message or 'Geminigen сообщил об ошибке'}",
+            reply_markup=get_inline_menu_markup(),
+            parse_mode=None,
+        )
+        return
+
+    logger.info("[GEMINIGEN_WEBHOOK] Событие проигнорировано: event=%s status=%s uuid=%s", event, status, job_uuid)
 
 @shared_task(bind=True, max_retries=1)
 def process_payment_webhook(self, payment_data: Dict):
