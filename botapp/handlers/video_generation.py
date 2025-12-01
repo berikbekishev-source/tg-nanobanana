@@ -144,6 +144,20 @@ def _extract_allowed_aspect_ratios(model: AIModel) -> List[str]:
             allowed = [str(v) for v in opts if v]
     return [r.strip() for r in allowed if isinstance(r, str) and r.strip()]
 
+
+def _extract_allowed_resolutions(model: AIModel) -> List[str]:
+    """Возвращает список разрешенных разрешений для модели."""
+    allowed: List[str] = []
+    params = model.allowed_params or {}
+    raw = params.get("resolution")
+    if isinstance(raw, list):
+        allowed = [str(v) for v in raw if v]
+    elif isinstance(raw, dict):
+        opts = raw.get("options") or raw.get("values")
+        if isinstance(opts, list):
+            allowed = [str(v) for v in opts if v]
+    return [r.strip().lower() for r in allowed if isinstance(r, str) and r.strip()]
+
 MAX_VEO_IMAGE_BYTES = 5 * 1024 * 1024
 
 
