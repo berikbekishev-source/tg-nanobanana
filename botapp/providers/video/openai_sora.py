@@ -75,15 +75,9 @@ class GeminigenSoraProvider(BaseVideoProvider):
 
     @staticmethod
     def _normalize_model(raw: Optional[str]) -> str:
-        name = (raw or "").strip()
-        if not name:
-            return name
-        name = name.split("@", 1)[0]
-        for suffix in ("-generate-preview", "-generate-001", "-generate"):
-            if name.endswith(suffix):
-                name = name[: -len(suffix)]
-                break
-        return name
+        # По требованию используем sora-2 вне зависимости от внутренних имён.
+        _ = raw  # сохраняем аргумент для совместимости
+        return "sora-2"
 
     @staticmethod
     def _map_aspect(raw: Optional[str]) -> Tuple[str, str]:
@@ -104,19 +98,14 @@ class GeminigenSoraProvider(BaseVideoProvider):
         return "small", "720p"
 
     def _resolve_duration(self, model: str, params: Dict[str, Any]) -> int:
-        allowed_by_model = {
-            "sora-2": [10, 15],
-            "sora-2-pro": [25],
-            "sora-2-pro-hd": [15],
-        }
+        allowed = [10, 15]
         raw = params.get("duration") or params.get("seconds")
         try:
             value = int(float(raw))
         except (TypeError, ValueError):
-            value = allowed_by_model.get(model, [10])[0]
+            value = allowed[0]
 
-        allowed = allowed_by_model.get(model, [10, 15])
-        if allowed and value not in allowed:
+        if value not in allowed:
             value = allowed[0]
         return value
 
