@@ -214,6 +214,15 @@ def fetch_remote_file(url: str) -> bytes:
         return resp.content
 
 
+def _download_media_with_mime(url: str) -> Tuple[bytes, str]:
+    """Скачать бинарный файл и вернуть пару (контент, mime)."""
+    with httpx.Client(timeout=httpx.Timeout(300.0, connect=10.0)) as client:
+        resp = client.get(url, follow_redirects=True)
+        resp.raise_for_status()
+        mime = resp.headers.get("content-type", "video/mp4")
+        return resp.content, mime.split(";")[0].strip()
+
+
 
 
 @lru_cache()
