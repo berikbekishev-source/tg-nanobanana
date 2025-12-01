@@ -262,9 +262,15 @@ async def _handle_sora_webapp_data_impl(message: Message, state: FSMContext, pay
     if aspect_ratio not in {"16:9", "9:16", "1:1"}:
         aspect_ratio = "16:9"
 
-    resolution = (payload.get("resolution") or (model.default_params or {}).get("resolution") or "720p").lower()
-    if resolution not in {"720p", "1080p"}:
-        resolution = "720p"
+    allowed_resolutions = _extract_allowed_resolutions(model) or ["720p", "1080p"]
+    requested_resolution = (
+        payload.get("resolution")
+        or (model.default_params or {}).get("resolution")
+        or allowed_resolutions[0]
+    )
+    resolution = str(requested_resolution).lower()
+    if resolution not in allowed_resolutions:
+        resolution = allowed_resolutions[0]
 
     params = {
         "duration": duration_value,
@@ -896,7 +902,17 @@ async def _handle_veo_webapp_data_impl(message: Message, state: FSMContext, payl
         aspect_ratio = allowed_ratios[0]
 
     duration = data.get("default_duration") or defaults.get("duration") or 8
-    resolution = data.get("default_resolution") or defaults.get("resolution") or "720p"
+    allowed_resolutions = _extract_allowed_resolutions(model) or ["720p", "1080p"]
+    requested_resolution = (
+        params_payload.get("resolution")
+        or payload.get("resolution")
+        or data.get("default_resolution")
+        or defaults.get("resolution")
+        or allowed_resolutions[0]
+    )
+    resolution = str(requested_resolution).lower()
+    if resolution not in allowed_resolutions:
+        resolution = allowed_resolutions[0]
 
     input_images = []
     final_frame = None
