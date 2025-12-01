@@ -13,7 +13,7 @@ class VideoGenerationError(Exception):
 class VideoGenerationResult:
     """Результат генерации видео."""
 
-    content: bytes
+    content: Optional[bytes]
     mime_type: str = "video/mp4"
     duration: Optional[int] = None
     aspect_ratio: Optional[str] = None
@@ -56,4 +56,3 @@ class BaseVideoProvider(abc.ABC):
             input_media: байты входного изображения (для image2video)
             input_mime_type: MIME тип входного файла
         """
-

@@ -1,5 +1,7 @@
 import json
 import logging
+import hashlib
+from pathlib import Path
 from typing import Any, Dict, Optional
 
 from django.conf import settings
@@ -11,6 +13,53 @@ from config.ninja_api import build_ninja_api
 
 api = build_ninja_api()
 logger = logging.getLogger(__name__)
+
+
+try:
+    from cryptography.hazmat.primitives.serialization import load_pem_public_key
+    from cryptography.hazmat.primitives.asymmetric import padding
+    from cryptography.hazmat.primitives import hashes
+except Exception:  # cryptography может отсутствовать
+    load_pem_public_key = None  # type: ignore
+    padding = None  # type: ignore
+    hashes = None  # type: ignore
+
+
+def _load_geminigen_public_key_bytes() -> Optional[bytes]:
+    pem = getattr(settings, "GEMINIGEN_WEBHOOK_PUBLIC_KEY", None)
+    path = getattr(settings, "GEMINIGEN_WEBHOOK_PUBLIC_KEY_PATH", None)
+    if pem:
+        return pem.encode("utf-8") if isinstance(pem, str) else pem
+    if path:
+        try:
+            return Path(path).read_bytes()
+        except OSError:
+            logger.warning("Не удалось прочитать GEMINIGEN_WEBHOOK_PUBLIC_KEY_PATH=%s", path)
+    return None
+
+
+def _verify_geminigen_signature(raw_body: bytes, signature_hex: str) -> bool:
+    if not signature_hex:
+        return True
+    if not load_pem_public_key:
+        logger.warning("cryptography не установлена, пропускаем проверку подписи Geminigen")
+        return True
+
+    public_key_bytes = _load_geminigen_public_key_bytes()
+    if not public_key_bytes:
+        logger.warning("Публичный ключ Geminigen не настроен, пропускаем проверку подписи")
+        return True
+
+    try:
+        public_key = load_pem_public_key(public_key_bytes)
+        payload = json.loads(raw_body.decode("utf-8", errors="ignore") or "{}") if raw_body else {}
+        event_uuid = payload.get("uuid") or (payload.get("data") or {}).get("uuid") or ""
+        digest = hashlib.md5(str(event_uuid).encode()).digest()
+        public_key.verify(bytes.fromhex(signature_hex), digest, padding.PKCS1v15(), hashes.SHA256())
+        return True
+    except Exception as exc:
+        logger.warning("Проверка подписи Geminigen не пройдена: %s", exc)
+        return False
 
 
 @api.get("/health")
@@ -207,6 +256,34 @@ try:
         except Exception as e:
             logger.error(f"[WEBAPP_REST] Veo submit error: {e}", exc_info=True)
             return JsonResponse({"ok": False, "error": str(e)}, status=500)
+
+
+
+    @api.post("/geminigen/webhook")
+    async def geminigen_webhook(request):
+        """
+        Webhook для уведомлений Geminigen (video generation completed/failed).
+        """
+        raw_body: bytes = request.body or b""
+        signature = request.headers.get("x-signature") or request.headers.get("X-Signature") or ""
+
+        if signature and not _verify_geminigen_signature(raw_body, signature):
+            return JsonResponse({"ok": False, "error": "invalid signature"}, status=400)
+
+        try:
+            payload = json.loads(raw_body.decode("utf-8", errors="ignore") or "{}")
+        except Exception:
+            return JsonResponse({"ok": False, "error": "invalid json"}, status=400)
+
+        try:
+            from botapp.tasks import process_geminigen_webhook
+
+            process_geminigen_webhook.delay(payload)
+        except Exception as exc:
+            logger.exception("Не удалось поставить вебхук Geminigen в очередь: %s", exc)
+            return JsonResponse({"ok": False, "error": str(exc)}, status=500)
+
+        return JsonResponse({"ok": True})
 
     @api.post("/gpt-image/webapp/submit")
     async def gpt_image_webapp_submit(request):

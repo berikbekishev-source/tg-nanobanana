@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+# Архивная реализация Veo через Vertex AI (не регистрируется по умолчанию).
+
 import base64
 import json
 import time
