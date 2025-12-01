@@ -18,6 +18,17 @@ class GeminigenVeoProvider(BaseVideoProvider):
 
     slug = "veo"
     supports_extension = False
+    _ALLOWED_MODELS = {
+        "veo-2",
+        "veo-3",
+        "veo-3-fast",
+        "veo-3.1",
+        "veo-3.1-fast",
+        "sora-2-free",
+        "sora-2",
+        "sora-2-pro",
+        "sora-2-pro-hd",
+    }
 
     _ENDPOINT = "/uapi/v1/video-gen/veo"
 
@@ -43,6 +54,27 @@ class GeminigenVeoProvider(BaseVideoProvider):
 
     def _build_url(self) -> str:
         return f"{self._base_url}{self._ENDPOINT}"
+
+    @classmethod
+    def _normalize_model(cls, raw_name: str) -> str:
+        """Приводим internal Vertex-подобные имена к списку, который принимает Geminigen."""
+        name = (raw_name or "").strip()
+        if not name:
+            return name
+
+        name = name.split("@", 1)[0]  # убираем @default
+        for suffix in ("-generate-preview", "-generate-001", "-generate"):
+            if name.endswith(suffix):
+                name = name[: -len(suffix)]
+                break
+
+        # Если всё ещё не в списке — попробуем подобрать по префиксу
+        if name not in cls._ALLOWED_MODELS:
+            for allowed in cls._ALLOWED_MODELS:
+                if name.startswith(allowed):
+                    name = allowed
+                    break
+        return name
 
     @staticmethod
     def _pick_mime(mime: Optional[str]) -> str:
@@ -87,9 +119,15 @@ class GeminigenVeoProvider(BaseVideoProvider):
         if not prompt or not prompt.strip():
             raise VideoGenerationError("Промт обязателен для Geminigen Veo.")
 
-        model_value = model_name or params.get("model") or params.get("api_model") or params.get("api_model_name")
+        raw_model_value = model_name or params.get("model") or params.get("api_model") or params.get("api_model_name")
+        model_value = self._normalize_model(raw_model_value)
         if not model_value:
             raise VideoGenerationError("Не задано имя модели для Geminigen Veo.")
+        if model_value not in self._ALLOWED_MODELS:
+            raise VideoGenerationError(
+                f"Модель '{raw_model_value}' не поддерживается Geminigen. "
+                f"Разрешенные: {', '.join(sorted(self._ALLOWED_MODELS))}"
+            )
 
         aspect_ratio = params.get("aspect_ratio") or params.get("aspectRatio")
         resolution = params.get("resolution")
