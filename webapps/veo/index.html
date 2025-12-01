@@ -319,6 +319,14 @@
         </div>
 
         <div class="section">
+            <p class="section-title">Разрешение</p>
+            <div class="grid" id="resolutionGrid">
+                <div class="pill active" data-resolution="720p">720p</div>
+                <div class="pill" data-resolution="1080p">1080p</div>
+            </div>
+        </div>
+
+        <div class="section">
             <p class="section-title">Соотношение сторон</p>
             <div class="grid" id="ratioGrid">
                 <div class="pill active" data-ratio="9:16">9:16</div>
@@ -340,6 +348,7 @@
             mode: "text2video",
             prompt: "",
             aspectRatio: "9:16",
+            resolution: "720p",
             start: { data: null, mime: null, name: null },
             end: { data: null, mime: null, name: null },
             priceLabel: "—",
@@ -350,6 +359,7 @@
         const els = {
             modeToggle: document.getElementById("modeToggle"),
             ratioGrid: document.getElementById("ratioGrid"),
+            resolutionGrid: document.getElementById("resolutionGrid"),
             prompt: document.getElementById("prompt"),
             promptCount: document.getElementById("promptCount"),
             uploadsSection: document.getElementById("uploadsSection"),
@@ -489,16 +499,18 @@
                 paramsPayload.startImageMime = state.start.mime;
                 paramsPayload.startImageName = state.start.name;
                 if (state.end.data) {
-                    paramsPayload.endImage = state.end.data;
-                    paramsPayload.endImageMime = state.end.mime;
-                    paramsPayload.endImageName = state.end.name;
-                }
+                paramsPayload.endImage = state.end.data;
+                paramsPayload.endImageMime = state.end.mime;
+                paramsPayload.endImageName = state.end.name;
             }
+        }
 
-            return {
-                kind: "veo_video_settings",
-                modelSlug: state.modelSlug,
-                mode: state.mode,
+        paramsPayload.resolution = state.resolution;
+
+        return {
+            kind: "veo_video_settings",
+            modelSlug: state.modelSlug,
+            mode: state.mode,
                 prompt,
                 params: paramsPayload,
             };
@@ -602,6 +614,13 @@
             if (!btn) return;
             setActive(els.ratioGrid, btn);
             state.aspectRatio = btn.dataset.ratio;
+        });
+
+        els.resolutionGrid.addEventListener("click", (e) => {
+            const btn = e.target.closest(".pill");
+            if (!btn) return;
+            setActive(els.resolutionGrid, btn);
+            state.resolution = btn.dataset.resolution;
         });
 
         els.startInput.addEventListener("change", () =>
