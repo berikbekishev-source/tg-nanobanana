@@ -240,7 +240,7 @@
             <div class="badge">S2</div>
             <div>
                 <h1>Sora 2 · Видео</h1>
-                <p class="sub">Text→Video и Image→Video до 12 c, 16:9 или 9:16</p>
+                <p class="sub">Text→Video и Image→Video · 10 или 15 c · 16:9 или 9:16</p>
             </div>
         </div>
 
@@ -272,7 +272,13 @@
         <div class="section">
             <div class="section-title">Настройки</div>
 
-            <div class="label">Соотношение сторон</div>
+            <div class="label">Разрешение</div>
+            <div id="resolutionGrid" class="grid">
+                <div class="pill active" data-resolution="720p">720p</div>
+                <div class="pill" data-resolution="1080p">1080p</div>
+            </div>
+
+            <div class="label" style="margin-top:12px;">Соотношение сторон</div>
             <div id="ratioGrid" class="grid">
                 <div class="pill active" data-ratio="16:9">16:9</div>
                 <div class="pill" data-ratio="9:16">9:16</div>
@@ -280,21 +286,15 @@
 
             <div class="label">Длительность (сек.)</div>
             <div id="durationGrid" class="grid">
-                <div class="pill" data-duration="4">4</div>
-                <div class="pill active" data-duration="8">8</div>
-                <div class="pill" data-duration="12">12</div>
-            </div>
-
-            <div class="label">Качество</div>
-            <div id="qualityToggle" class="chip-toggle">
-                <div class="chip active" data-quality="standard">Standard (720p)</div>
+                <div class="pill active" data-duration="10">10</div>
+                <div class="pill" data-duration="15">15</div>
             </div>
         </div>
 
         <div class="error" id="error"></div>
         <div class="footer">
             • Формат подстраивается под выбранное соотношение сторон.<br>
-            • Sora 2 поддерживает 4/8/12 секунд. Критичные сцены описывайте в промте.
+            • Sora 2 поддерживает 10 или 15 секунд. Критичные сцены описывайте в промте.
         </div>
     </div>
 
@@ -302,7 +302,7 @@
         const tg = window.Telegram?.WebApp || null;
         const params = new URLSearchParams(window.location.search);
 
-        const durations = [4, 8, 12];
+        const durations = [10, 15];
         const ratios = ["16:9", "9:16"];
         const state = {
             modelSlug: params.get("model") || "sora2",
@@ -310,8 +310,7 @@
             generationType: "text2video",
             prompt: "",
             aspectRatio: "16:9",
-            duration: 8,
-            quality: "standard",
+            duration: 10,
             resolution: "720p",
             imageData: null,
             imageMime: null,
@@ -325,7 +324,7 @@
             modeToggle: document.getElementById("modeToggle"),
             ratioGrid: document.getElementById("ratioGrid"),
             durationGrid: document.getElementById("durationGrid"),
-            qualityToggle: document.getElementById("qualityToggle"),
+            resolutionGrid: document.getElementById("resolutionGrid"),
             prompt: document.getElementById("prompt"),
             promptCount: document.getElementById("promptCount"),
             imgBlock: document.getElementById("imgBlock"),
@@ -399,12 +398,6 @@
             }
         }
 
-        function applyQuality(q) {
-            state.quality = "standard";
-            state.resolution = "720p";
-        }
-
-
         function sendData() {
             try {
                 els.prompt.blur();
@@ -429,7 +422,6 @@
                     prompt: state.prompt,
                     aspectRatio: state.aspectRatio,
                     duration: state.duration,
-                    quality: state.quality,
                     resolution: state.resolution,
                 };
 
@@ -525,12 +517,12 @@
             updatePriceForDuration();
         });
 
-        els.qualityToggle.addEventListener("click", (e) => {
-            const btn = e.target.closest(".chip");
+        els.resolutionGrid.addEventListener("click", (e) => {
+            const btn = e.target.closest(".pill");
             if (!btn) return;
             e.preventDefault();
-            setActive(els.qualityToggle, btn);
-            applyQuality(btn.dataset.quality);
+            setActive(els.resolutionGrid, btn);
+            state.resolution = btn.dataset.resolution;
         });
 
         const MAX_IMAGE_SIZE = 10 * 1024 * 1024; // 10 MB

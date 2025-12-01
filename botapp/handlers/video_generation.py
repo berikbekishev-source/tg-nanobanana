@@ -245,24 +245,13 @@ async def _handle_sora_webapp_data_impl(message: Message, state: FSMContext, pay
     if generation_type not in {"text2video", "image2video"}:
         generation_type = "text2video"
 
-    allowed_durations = []
     try:
-        allowed_durations = model.allowed_params.get("duration") or []
-    except Exception:
-        allowed_durations = []
-
-    try:
-        duration_value = int(float(payload.get("duration") or payload.get("seconds") or 8))
+        duration_value = int(float(payload.get("duration") or payload.get("seconds") or 10))
     except (TypeError, ValueError):
-        duration_value = 8
-    duration_value = max(2, min(60, duration_value))
-    if allowed_durations:
-        try:
-            values = allowed_durations if isinstance(allowed_durations, list) else allowed_durations.get("options") or []
-            if values and duration_value not in values:
-                duration_value = values[0]
-        except Exception:
-            pass
+        duration_value = 10
+    allowed_durations = [10, 15]
+    if duration_value not in allowed_durations:
+        duration_value = allowed_durations[0]
 
     aspect_ratio = (
         payload.get("aspectRatio")
@@ -273,13 +262,9 @@ async def _handle_sora_webapp_data_impl(message: Message, state: FSMContext, pay
     if aspect_ratio not in {"16:9", "9:16", "1:1"}:
         aspect_ratio = "16:9"
 
-    quality_raw = (payload.get("quality") or "").lower()
-    resolution = payload.get("resolution") or (model.default_params or {}).get("resolution") or "720p"
-    if quality_raw == "hd":
-        resolution = "1080p"
-    elif quality_raw == "standard":
+    resolution = (payload.get("resolution") or (model.default_params or {}).get("resolution") or "720p").lower()
+    if resolution not in {"720p", "1080p"}:
         resolution = "720p"
-    resolution = resolution.lower()
 
     params = {
         "duration": duration_value,
