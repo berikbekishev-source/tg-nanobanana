@@ -303,5 +303,7 @@ class GeminigenSoraProvider(BaseVideoProvider):
             return True
         return False
 
+# Обратная совместимость для старых импортов (старое имя провайдера Sora)
+OpenAISoraProvider = GeminigenSoraProvider
 
 register_video_provider(GeminigenSoraProvider.slug, GeminigenSoraProvider)
