@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Kling · INTEGER</title>
+    <title>Kling v2-5-turbo · INTEGER</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <style>
         :root {
@@ -305,7 +305,7 @@
         <div class="header">
             <div class="badge">KG</div>
             <div>
-                <h1>Kling</h1>
+                <h1>Kling v2-5-turbo</h1>
                 <p class="sub">Видео из текста или изображения</p>
             </div>
         </div>
@@ -390,7 +390,7 @@
         const params = new URLSearchParams(window.location.search);
         const MAX_IMAGE_SIZE = 10 * 1024 * 1024; // 10 MB
         const state = {
-            modelSlug: params.get("model") || "kling-v1",
+            modelSlug: params.get("model") || "kling-v2-5-turbo",
             mode: "text2video",
             prompt: "",
             aspectRatio: "16:9",
