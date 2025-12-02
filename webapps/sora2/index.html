@@ -316,7 +316,7 @@
             imageName: null,
             priceLabel: "—",
             tokensPerSecond: null,
-            priceBaseDuration: 10,
+            priceBaseDuration: null,
         };
 
         const els = {
@@ -589,8 +589,10 @@
         }
         const baseTokens = parseTokens(rawPrice);
         if (baseTokens !== null) {
-            state.priceBaseDuration = state.duration;
-            state.tokensPerSecond = baseTokens / state.priceBaseDuration;
+            // Если не передан price_base_duration, используем 8 сек как базовую длительность
+            const baseDuration = Number.isFinite(priceBaseDurationParam) ? priceBaseDurationParam : 8;
+            state.priceBaseDuration = baseDuration;
+            state.tokensPerSecond = baseTokens / baseDuration;
             updatePriceForDuration();
         } else {
             setPriceLabel("—");
