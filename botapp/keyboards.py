@@ -364,13 +364,23 @@ def get_prices_info(balance: Decimal) -> str:
     has_midjourney_video_preset = any(slug == "midjourney-video" for _, slug in MODEL_PRICE_PRESETS)
     added_slugs: set[str] = set()
     midjourney_video_added = False
+    image_price_lines: List[str] = []
+    video_price_lines: List[str] = []
+
+    def _push_price_line(model_obj: AIModel, title_label: str) -> None:
+        base_price = _get_unit_price_tokens(model_obj)
+        suffix = unit_labels.get(model_obj.cost_unit, "за генерацию")
+        line = f"{title_label} — ⚡{base_price:.2f} токенов {suffix}"
+        if model_obj.type == "video":
+            video_price_lines.append(line)
+        else:
+            image_price_lines.append(line)
+
     for title, slug in MODEL_PRICE_PRESETS:
         model = available_models.get(slug)
         if not model:
             continue
-        base_price = _get_unit_price_tokens(model)
-        suffix = unit_labels.get(model.cost_unit, "за генерацию")
-        lines.append(f"{title} — ⚡{base_price:.2f} токенов {suffix}")
+        _push_price_line(model, title)
         added_slugs.add(slug)
         if "midjourney" in slug:
             midjourney_video_added = midjourney_video_added or "video" in slug
@@ -383,12 +393,19 @@ def get_prices_info(balance: Decimal) -> str:
                     None,
                 )
                 if candidate:
-                    video_price = _get_unit_price_tokens(candidate)
-                    video_suffix = unit_labels.get(candidate.cost_unit, "за генерацию")
                     video_title = candidate.display_name or "Midjourney Video"
-                    lines.append(f"🎞️ {video_title} — ⚡{video_price:.2f} токенов {video_suffix}")
+                    _push_price_line(candidate, f"🎞️ {video_title}")
                     added_slugs.add(candidate.slug)
                     midjourney_video_added = True
+
+    if image_price_lines:
+        lines.append("🖼️ Генерация изображений:")
+        lines.extend(image_price_lines)
+        lines.append("")
+    if video_price_lines:
+        lines.append("🎬 Генерация видео:")
+        lines.extend(video_price_lines)
+        lines.append("")
 
     lines.append("")
     lines.append(
