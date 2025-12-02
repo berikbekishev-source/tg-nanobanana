@@ -144,6 +144,102 @@ def _extract_allowed_aspect_ratios(model: AIModel) -> List[str]:
             allowed = [str(v) for v in opts if v]
     return [r.strip() for r in allowed if isinstance(r, str) and r.strip()]
 
+
+def _extract_allowed_resolutions(model: AIModel) -> List[str]:
+    """Возвращает список разрешенных разрешений для модели."""
+    allowed: List[str] = []
+    params = model.allowed_params or {}
+    raw = params.get("resolution")
+    if isinstance(raw, list):
+        allowed = [str(v) for v in raw if v]
+    elif isinstance(raw, dict):
+        opts = raw.get("options") or raw.get("values")
+        if isinstance(opts, list):
+            allowed = [str(v) for v in opts if v]
+    return [r.strip().lower() for r in allowed if isinstance(r, str) and r.strip()]
+
+
+def _normalize_resolution_value(value: Optional[Any]) -> str:
+    """
+    Нормализуем разрешение к каноническим значениям:
+    - 720p: {'720', '720p', 'small'}
+    - 1080p: {'1080', '1080p', 'large'}
+    Остальное возвращаем как есть (строкой, lower).
+    """
+    val = str(value or "").strip().lower()
+    if val in {"720", "720p", "small"}:
+        return "720p"
+    if val in {"1080", "1080p", "large"}:
+        return "1080p"
+    return val
+
+
+def _normalize_allowed_resolutions(raw: List[str]) -> List[str]:
+    """Расширяем список разрешений с учетом синонимов (small/large, без 'p')."""
+    normalized = {_normalize_resolution_value(item) for item in raw}
+    return [r for r in normalized if r]
+
+
+def _order_resolutions(resolutions: List[str]) -> List[str]:
+    """Возвращает список разрешений в предсказуемом порядке (720p, 1080p, остальные)."""
+    preferred = ["720p", "1080p"]
+    result: List[str] = []
+    seen = set()
+    for res in preferred + resolutions:
+        val = _normalize_resolution_value(res)
+        if val and val not in seen:
+            result.append(val)
+            seen.add(val)
+    return result
+
+
+def _normalize_model_name(raw: Optional[str]) -> str:
+    """Удаляет служебные суффиксы и приводит имя модели к нижнему регистру."""
+    value = (raw or "").strip()
+    if not value:
+        return ""
+    value = value.replace("_", "-").split("@", 1)[0].lower()
+    if value.startswith("sora") and not value.startswith("sora-") and len(value) > 4 and value[4].isdigit():
+        value = "sora-" + value[4:]
+    return value
+
+
+def _resolve_veo_resolutions(model: AIModel, aspect_ratio: str) -> List[str]:
+    """Определяет разрешения Veo с учетом модели и аспектного соотношения."""
+    allowed = set(_normalize_allowed_resolutions(_extract_allowed_resolutions(model)))
+    api_model = _normalize_model_name(model.api_model_name or model.slug)
+
+    if api_model.startswith("veo-2"):
+        allowed = {"720p"}
+    else:
+        # Veo 3.x поддерживает 720p и 1080p (при 16:9)
+        allowed.update({"720p", "1080p"})
+
+    # 9:16 у Veo поддерживает только 720p
+    if aspect_ratio.strip() == "9:16":
+        allowed = {"720p"}
+
+    return _order_resolutions(list(allowed or {"720p"}))
+
+
+def _resolve_sora_resolutions(model: AIModel) -> List[str]:
+    """Определяет разрешения Sora в зависимости от модели."""
+    allowed = set(_normalize_allowed_resolutions(_extract_allowed_resolutions(model)))
+    api_model = _normalize_model_name(model.api_model_name or model.slug)
+
+    sora_map = {
+        "sora-2": {"720p"},
+        "sora-2-pro": {"720p"},
+        "sora-2-pro-hd": {"1080p"},
+    }
+    if api_model in sora_map:
+        allowed = sora_map[api_model]
+    elif not allowed:
+        allowed = {"720p", "1080p"}
+
+    return _order_resolutions(list(allowed or {"720p"}))
+
+
 MAX_VEO_IMAGE_BYTES = 5 * 1024 * 1024
 
 
@@ -245,24 +341,13 @@ async def _handle_sora_webapp_data_impl(message: Message, state: FSMContext, pay
     if generation_type not in {"text2video", "image2video"}:
         generation_type = "text2video"
 
-    allowed_durations = []
     try:
-        allowed_durations = model.allowed_params.get("duration") or []
-    except Exception:
-        allowed_durations = []
-
-    try:
-        duration_value = int(float(payload.get("duration") or payload.get("seconds") or 8))
+        duration_value = int(float(payload.get("duration") or payload.get("seconds") or 10))
     except (TypeError, ValueError):
-        duration_value = 8
-    duration_value = max(2, min(60, duration_value))
-    if allowed_durations:
-        try:
-            values = allowed_durations if isinstance(allowed_durations, list) else allowed_durations.get("options") or []
-            if values and duration_value not in values:
-                duration_value = values[0]
-        except Exception:
-            pass
+        duration_value = 10
+    allowed_durations = [10, 15]
+    if duration_value not in allowed_durations:
+        duration_value = allowed_durations[0]
 
     aspect_ratio = (
         payload.get("aspectRatio")
@@ -273,13 +358,15 @@ async def _handle_sora_webapp_data_impl(message: Message, state: FSMContext, pay
     if aspect_ratio not in {"16:9", "9:16", "1:1"}:
         aspect_ratio = "16:9"
 
-    quality_raw = (payload.get("quality") or "").lower()
-    resolution = payload.get("resolution") or (model.default_params or {}).get("resolution") or "720p"
-    if quality_raw == "hd":
-        resolution = "1080p"
-    elif quality_raw == "standard":
-        resolution = "720p"
-    resolution = resolution.lower()
+    allowed_resolutions = _resolve_sora_resolutions(model)
+    requested_resolution = (
+        payload.get("resolution")
+        or (model.default_params or {}).get("resolution")
+        or allowed_resolutions[0]
+    )
+    resolution = _normalize_resolution_value(requested_resolution)
+    if resolution not in allowed_resolutions:
+        resolution = allowed_resolutions[0]
 
     params = {
         "duration": duration_value,
@@ -633,7 +720,7 @@ async def _handle_midjourney_video_webapp_data_impl(message: Message, state: FSM
 async def _handle_kling_webapp_data_impl(message: Message, state: FSMContext, payload: dict):
     """Принимаем данные Kling WebApp и запускаем генерацию."""
     data = await state.get_data()
-    model_slug = payload.get("modelSlug") or data.get("model_slug") or data.get("selected_model") or "kling-v1"
+    model_slug = payload.get("modelSlug") or data.get("model_slug") or data.get("selected_model") or "kling-v2-5-turbo"
     try:
         model = await sync_to_async(AIModel.objects.get)(slug=model_slug, is_active=True)
     except AIModel.DoesNotExist:
@@ -911,7 +998,17 @@ async def _handle_veo_webapp_data_impl(message: Message, state: FSMContext, payl
         aspect_ratio = allowed_ratios[0]
 
     duration = data.get("default_duration") or defaults.get("duration") or 8
-    resolution = data.get("default_resolution") or defaults.get("resolution") or "720p"
+    allowed_resolutions = _resolve_veo_resolutions(model, aspect_ratio)
+    requested_resolution = (
+        params_payload.get("resolution")
+        or payload.get("resolution")
+        or data.get("default_resolution")
+        or defaults.get("resolution")
+        or allowed_resolutions[0]
+    )
+    resolution = _normalize_resolution_value(requested_resolution)
+    if resolution not in allowed_resolutions:
+        resolution = allowed_resolutions[0]
 
     input_images = []
     final_frame = None

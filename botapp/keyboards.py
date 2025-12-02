@@ -319,7 +319,8 @@ MODEL_PRICE_PRESETS: List[Tuple[str, str]] = [
     ("⚡ Veo 3.1 Fast", "veo3-fast"),
     ("🍌 Nano Banana", "nano-banana"),
     ("Ⓜ️ Midjourney", "midjourney-v7-fast"),
-    ("🌀 Kling v1", "kling-v1"),
+    ("🎞️ Midjourney Video", "midjourney-video"),
+    ("🌀 Kling v2-5-turbo", "kling-v2-5-turbo"),
     ("🖼️ GPT Image 1", "gpt-image-1"),
     ("🎥 Sora 2", "sora2"),
 ]
@@ -360,6 +361,9 @@ def get_prices_info(balance: Decimal) -> str:
         AIModel.CostUnit.GENERATION: "за генерацию",
     }
     available_models = {m.slug: m for m in AIModel.objects.filter(is_active=True)}
+    has_midjourney_video_preset = any(slug == "midjourney-video" for _, slug in MODEL_PRICE_PRESETS)
+    added_slugs: set[str] = set()
+    midjourney_video_added = False
     for title, slug in MODEL_PRICE_PRESETS:
         model = available_models.get(slug)
         if not model:
@@ -367,6 +371,24 @@ def get_prices_info(balance: Decimal) -> str:
         base_price = _get_unit_price_tokens(model)
         suffix = unit_labels.get(model.cost_unit, "за генерацию")
         lines.append(f"{title} — ⚡{base_price:.2f} токенов {suffix}")
+        added_slugs.add(slug)
+        if "midjourney" in slug:
+            midjourney_video_added = midjourney_video_added or "video" in slug
+            if not midjourney_video_added and not has_midjourney_video_preset:
+                candidate = available_models.get("midjourney-video") or next(
+                    (
+                        m for m in available_models.values()
+                        if m.provider == "midjourney" and m.type == "video" and m.slug not in added_slugs
+                    ),
+                    None,
+                )
+                if candidate:
+                    video_price = _get_unit_price_tokens(candidate)
+                    video_suffix = unit_labels.get(candidate.cost_unit, "за генерацию")
+                    video_title = candidate.display_name or "Midjourney Video"
+                    lines.append(f"🎞️ {video_title} — ⚡{video_price:.2f} токенов {video_suffix}")
+                    added_slugs.add(candidate.slug)
+                    midjourney_video_added = True
 
     lines.append("")
     lines.append(
@@ -415,52 +437,54 @@ def get_generation_complete_message(
         model_display_name: Выводимое имя модели (если нужно отличать от хэштега)
         **kwargs: Дополнительные параметры (duration, resolution, aspect_ratio и т.д.)
     """
-    if "image" in generation_type:
-        params = kwargs.get("generation_params") or kwargs.get("params") or kwargs
-        aspect_ratio = kwargs.get("aspect_ratio")
-        if aspect_ratio is None and isinstance(params, dict):
-            aspect_ratio = params.get("aspect_ratio") or params.get("aspectRatio")
+    gtype = (generation_type or "").lower()
 
-        format_value, quality_value = resolve_format_and_quality(
-            kwargs.get("model_provider") or "",
-            params,
-            aspect_ratio=aspect_ratio,
-        )
-        mode_label = resolve_image_mode_label(
-            generation_type,
-            kwargs.get("image_mode") or (params or {}).get("image_mode"),
-        )
+    if "video" in gtype:
+        params = kwargs.get("generation_params") or kwargs.get("params") or {}
+        aspect_ratio = kwargs.get("aspect_ratio") or params.get("aspect_ratio") or params.get("aspectRatio")
+        resolution = kwargs.get("resolution") or kwargs.get("video_resolution") or params.get("resolution")
+        duration = kwargs.get("duration") or params.get("duration") or params.get("seconds")
         charged_amount = kwargs.get("charged_amount")
         balance_after = kwargs.get("balance_after")
-        if charged_amount is None:
-            charged_amount = Decimal("0.00")
-        if balance_after is None:
-            balance_after = Decimal("0.00")
 
-        return format_image_result_message(
+        return format_video_result_message(
             model_display_name or model_name,
-            mode_label,
-            format_value,
-            quality_value,
+            resolve_video_mode_label(generation_type),
+            aspect_ratio or "—",
+            resolution or "—",
+            duration,
             prompt,
-            Decimal(charged_amount),
-            Decimal(balance_after),
+            Decimal(charged_amount or "0.00"),
+            Decimal(balance_after or "0.00"),
         )
 
-    params = kwargs.get("generation_params") or kwargs.get("params") or {}
-    aspect_ratio = kwargs.get("aspect_ratio") or params.get("aspect_ratio") or params.get("aspectRatio")
-    resolution = kwargs.get("resolution") or kwargs.get("video_resolution") or params.get("resolution")
-    duration = kwargs.get("duration") or params.get("duration") or params.get("seconds")
+    params = kwargs.get("generation_params") or kwargs.get("params") or kwargs
+    aspect_ratio = kwargs.get("aspect_ratio")
+    if aspect_ratio is None and isinstance(params, dict):
+        aspect_ratio = params.get("aspect_ratio") or params.get("aspectRatio")
+
+    format_value, quality_value = resolve_format_and_quality(
+        kwargs.get("model_provider") or "",
+        params,
+        aspect_ratio=aspect_ratio,
+    )
+    mode_label = resolve_image_mode_label(
+        generation_type,
+        kwargs.get("image_mode") or (params or {}).get("image_mode"),
+    )
     charged_amount = kwargs.get("charged_amount")
     balance_after = kwargs.get("balance_after")
+    if charged_amount is None:
+        charged_amount = Decimal("0.00")
+    if balance_after is None:
+        balance_after = Decimal("0.00")
 
-    return format_video_result_message(
+    return format_image_result_message(
         model_display_name or model_name,
-        resolve_video_mode_label(generation_type),
-        aspect_ratio or "—",
-        resolution or "—",
-        duration,
+        mode_label,
+        format_value,
+        quality_value,
         prompt,
-        Decimal(charged_amount or "0.00"),
-        Decimal(balance_after or "0.00"),
+        Decimal(charged_amount),
+        Decimal(balance_after),
     )

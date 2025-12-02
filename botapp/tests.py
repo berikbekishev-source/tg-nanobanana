@@ -27,7 +27,11 @@ from botapp.models import (
     ChatMessage,
 )
 from botapp.providers.video.base import VideoGenerationError
-from botapp.providers.video.openai_sora import OpenAISoraProvider
+from botapp.providers.video.openai_sora import (
+    OpenAISoraProvider,
+    resolve_sora_dimensions,
+    resolve_sora_size,
+)
 from botapp.media_utils import detect_reference_mime
 from botapp.services import (
     openai_generate_images,
@@ -240,132 +244,60 @@ class GenerationServiceTests(TestCase):
 
 class OpenAISoraProviderTests(TestCase):
     @override_settings(
-        OPENAI_API_KEY="test-key",
-        OPENAI_API_BASE="https://api.openai.com/v1",
-        OPENAI_VIDEO_POLL_INTERVAL=1,
-        OPENAI_VIDEO_POLL_TIMEOUT=30,
+        GEMINIGEN_API_KEY="test-key",
+        GEMINIGEN_API_BASE_URL="https://api.geminigen.ai",
+        GEMINIGEN_REQUEST_TIMEOUT=5,
     )
-    @patch("botapp.providers.video.openai_sora.time.sleep", return_value=None)
+    @patch.object(OpenAISoraProvider, "_download_media")
     @patch("botapp.providers.video.openai_sora.httpx.Client")
-    def test_generate_video_success(self, client_cls: MagicMock, _sleep: MagicMock):
+    def test_generate_video_success(self, client_cls: MagicMock, download_mock: MagicMock):
         client_instance = MagicMock()
         client_ctx_manager = MagicMock()
         client_ctx_manager.__enter__.return_value = client_instance
         client_ctx_manager.__exit__.return_value = False
         client_cls.return_value = client_ctx_manager
 
+        download_mock.return_value = (b"binary-video-data", "video/mp4")
+
         post_response = MagicMock()
-        post_response.json.return_value = {"id": "job-123", "status": "queued"}
+        post_response.json.return_value = {"media_url": "https://example.com/video.mp4", "uuid": "job-123"}
         post_response.headers = {}
         post_response.content = b""
         post_response.raise_for_status.return_value = None
-
-        poll_response_running = MagicMock()
-        poll_response_running.json.return_value = {"id": "job-123", "status": "processing"}
-        poll_response_running.headers = {}
-        poll_response_running.content = b""
-        poll_response_running.raise_for_status.return_value = None
-
-        poll_response_done = MagicMock()
-        poll_response_done.json.return_value = {
-            "id": "job-123",
-            "status": "succeeded",
-            "seconds": "12",
-            "size": "1080x1920",
-        }
-        poll_response_done.headers = {}
-        poll_response_done.content = b""
-        poll_response_done.raise_for_status.return_value = None
-
-        content_response = MagicMock()
-        content_response.content = b"binary-video-data"
-        content_response.headers = {"content-type": "video/mp4"}
-        content_response.raise_for_status.return_value = None
-
-        client_instance.request.side_effect = [
-            post_response,
-            poll_response_running,
-            poll_response_done,
-            content_response,
-        ]
+        client_instance.post.return_value = post_response
 
         provider = OpenAISoraProvider()
         result = provider.generate(
             prompt="Create a sunset skyline",
             model_name="sora-2",
             generation_type="text2video",
-            params={"duration": 8, "resolution": "720p", "aspect_ratio": "16:9"},
+            params={"duration": 10, "resolution": "720p", "aspect_ratio": "16:9"},
         )
 
-        first_request_kwargs = client_instance.request.call_args_list[0].kwargs
-        self.assertEqual(
-            first_request_kwargs.get("json"),
-            {
-                "prompt": "Create a sunset skyline",
-                "model": "sora-2",
-                "seconds": "8",
-                "size": "1280x720",
-            },
-        )
-        self.assertNotIn("duration", first_request_kwargs.get("json", {}))
-        self.assertIsNone(first_request_kwargs.get("data"))
-        self.assertIsNone(first_request_kwargs.get("files"))
+        client_instance.post.assert_called_once()
+        download_mock.assert_called_once_with("https://example.com/video.mp4")
 
         self.assertEqual(result.content, b"binary-video-data")
         self.assertEqual(result.mime_type, "video/mp4")
-        self.assertEqual(result.duration, 12)
-        self.assertEqual(result.resolution, "1080p")
-        self.assertEqual(result.aspect_ratio, "9:16")
+        self.assertEqual(result.duration, 10)
+        self.assertEqual(result.resolution, "720p")
+        self.assertEqual(result.aspect_ratio, "16:9")
         self.assertEqual(result.provider_job_id, "job-123")
-        self.assertIn("job", result.metadata)
-        self.assertEqual(client_instance.request.call_count, 4)
+        self.assertEqual(result.metadata["request"]["resolution"], "small")
+        self.assertEqual(result.metadata["request"]["aspect_ratio"], "landscape")
 
-        called_urls = [call.args[1] for call in client_instance.request.call_args_list]
-        self.assertTrue(called_urls[0].endswith("/videos"))
-        self.assertTrue(called_urls[-1].endswith("/videos/job-123/download"))
-
-    @override_settings(OPENAI_API_KEY=None)
+    @override_settings(GEMINIGEN_API_KEY=None)
     def test_missing_api_key_raises(self):
         with self.assertRaises(VideoGenerationError):
             OpenAISoraProvider()
 
-    @override_settings(OPENAI_API_KEY="test-key")
     def test_1080p_resolution_maps_to_supported_size(self):
-        provider = OpenAISoraProvider()
-        json_payload, _, _ = provider._build_create_payload(
-            prompt="Test",
-            model_name="sora-2",
-            generation_type="text2video",
-            params={"resolution": "1080p", "aspect_ratio": "16:9"},
-            input_media=None,
-            input_mime_type=None,
-        )
-        self.assertIsNotNone(json_payload)
-        self.assertEqual(json_payload.get("size"), "1280x720")
+        size = resolve_sora_size("1080p", "16:9")
+        self.assertEqual(size, "1920x1080")
 
-    @override_settings(OPENAI_API_KEY="test-key")
-    def test_image2video_reference_resized_to_required_dimensions(self):
-        provider = OpenAISoraProvider()
-        img = Image.new("RGB", (800, 600), color=(255, 0, 0))
-        buffer = BytesIO()
-        img.save(buffer, format="PNG")
-        buffer.seek(0)
-
-        json_payload, form_payload, files = provider._build_create_payload(
-            prompt="Test",
-            model_name="sora-2",
-            generation_type="image2video",
-            params={"resolution": "1080p", "aspect_ratio": "9:16"},
-            input_media=buffer.getvalue(),
-            input_mime_type="image/png",
-        )
-
-        self.assertIsNone(json_payload)
-        self.assertIsNotNone(form_payload)
-        self.assertIsNotNone(files)
-        media_bytes = files["input_reference"][1]
-        with Image.open(BytesIO(media_bytes)) as processed:
-            self.assertEqual(processed.size, (720, 1280))
+    def test_resolve_dimensions_returns_width_height(self):
+        dims = resolve_sora_dimensions("720p", "9:16")
+        self.assertEqual(dims, (720, 1280))
 
 
 class OpenAIImageGenerationTests(TestCase):
@@ -882,7 +814,7 @@ class ChatLoggerTests(TestCase):
         self.assertEqual(last_message.text, "Вот фото")
 
     def test_log_webapp_message_sets_readable_text(self):
-        payload = {"kind": "kling_settings", "modelSlug": "kling-v1"}
+        payload = {"kind": "kling_settings", "modelSlug": "kling-v2-5-turbo"}
         web_app_data = {"data": json.dumps(payload), "button_text": "Generate"}
         message = self._build_message(message_id=7, text=None, web_app_data=web_app_data)
 
