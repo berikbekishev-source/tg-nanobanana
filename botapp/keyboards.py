@@ -361,6 +361,7 @@ def get_prices_info(balance: Decimal) -> str:
         AIModel.CostUnit.GENERATION: "за генерацию",
     }
     available_models = {m.slug: m for m in AIModel.objects.filter(is_active=True)}
+    has_midjourney_video_preset = any(slug == "midjourney-video" for _, slug in MODEL_PRICE_PRESETS)
     added_slugs: set[str] = set()
     midjourney_video_added = False
     for title, slug in MODEL_PRICE_PRESETS:
@@ -373,7 +374,7 @@ def get_prices_info(balance: Decimal) -> str:
         added_slugs.add(slug)
         if "midjourney" in slug:
             midjourney_video_added = midjourney_video_added or "video" in slug
-            if not midjourney_video_added:
+            if not midjourney_video_added and not has_midjourney_video_preset:
                 candidate = available_models.get("midjourney-video") or next(
                     (
                         m for m in available_models.values()
