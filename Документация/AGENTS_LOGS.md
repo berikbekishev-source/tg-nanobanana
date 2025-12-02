@@ -1,3 +1,18 @@
+## [2025-12-02] Sora цена и баланс с Midjourney Video
+
+**Агент:** Codex  
+**Ветка:** feature/fix_prices_for_sora_and_veo  
+**PR:** (авто-PR после push в staging, ожидается)
+
+### Выполненные действия:
+1. В Sora WebApp читаю `price_base_duration` из URL/start_param и считаю токены за секунду корректно, чтобы цена в кнопке отражала реальный тариф (4 ток/сек → 10 сек = 40 ток).
+2. В ссылках на Sora WebApp передаю `price_base_duration` из `default_params.duration`, чтобы расчёт в UI совпадал с тарифом модели.
+3. В сообщении «Мой баланс (цены)» добавил цену для модели Midjourney Video рядом с Midjourney.
+4. Проверил наличие Railway CLI: `railway 4.11.0`.
+
+### Результат:
+- Локальные правки готовы, готовлю push → auto PR → merge в staging, затем проверка деплоя.
+
 ## [2025-12-01] Veo/Sora: корректное разрешение и сообщения
 
 **Агент:** Codex  
