@@ -230,9 +230,18 @@ async def global_create_video_start(message: Message, state: FSMContext):
                 continue
             cost = await sync_to_async(get_base_price_tokens)(model)
             price_label = f"⚡{cost:.2f} токенов"
+            base_duration = 1
+            if isinstance(model.default_params, dict):
+                try:
+                    maybe_duration = int(model.default_params.get("duration") or 0)
+                    if maybe_duration > 0:
+                        base_duration = maybe_duration
+                except (TypeError, ValueError):
+                    base_duration = 1
             sora_webapps[model.slug] = (
                 f"{PUBLIC_BASE_URL}/sora2/?"
                 f"model={quote_plus(model.slug)}&price={quote_plus(price_label)}"
+                f"&price_base_duration={quote_plus(str(base_duration))}"
             )
 
     # Отправляем список моделей
@@ -509,9 +518,18 @@ async def global_select_video_model(callback: CallbackQuery, state: FSMContext):
     if model.provider == "openai" and model.slug.startswith("sora"):
         price_label = f"⚡{model_cost:.2f} токенов"
         base = PUBLIC_BASE_URL or "https://example.com"
+        base_duration = 1
+        if isinstance(model.default_params, dict):
+            try:
+                maybe_duration = int(model.default_params.get("duration") or 0)
+                if maybe_duration > 0:
+                    base_duration = maybe_duration
+            except (TypeError, ValueError):
+                base_duration = 1
         webapp_url = (
             f"{base}/sora2/?"
             f"model={quote_plus(model.slug)}&price={quote_plus(price_label)}"
+            f"&price_base_duration={quote_plus(str(base_duration))}"
         )
         try:
             await callback.answer(url=webapp_url)

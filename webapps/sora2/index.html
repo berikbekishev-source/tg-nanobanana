@@ -300,6 +300,20 @@
     <script>
         const tg = window.Telegram?.WebApp || null;
         const params = new URLSearchParams(window.location.search);
+        const startParamRaw = tg?.initDataUnsafe?.start_param || "";
+        let startParams = null;
+        try {
+            startParams = new URLSearchParams(startParamRaw);
+        } catch (err) {
+            startParams = null;
+        }
+
+        const priceBaseDurationRaw = params.get("price_base_duration") || startParams?.get("price_base_duration");
+        const initialPriceBaseDuration = (() => {
+            const parsed = priceBaseDurationRaw ? Number(priceBaseDurationRaw) : NaN;
+            return Number.isFinite(parsed) && parsed > 0 ? parsed : 10;
+        })();
+        const priceFromParams = params.get("price") || startParams?.get("price");
 
         const durations = [10, 15];
         const ratios = ["16:9", "9:16"];
@@ -316,7 +330,7 @@
             imageName: null,
             priceLabel: "—",
             tokensPerSecond: null,
-            priceBaseDuration: 10,
+            priceBaseDuration: initialPriceBaseDuration,
         };
 
         const els = {
@@ -581,16 +595,13 @@
             }
         });
 
-        const priceFromQuery = params.get("price");
-        const startParamRaw = tg?.initDataUnsafe?.start_param;
-        let rawPrice = priceFromQuery;
-        if (!rawPrice && startParamRaw && startParamRaw.startsWith("price=")) {
-            rawPrice = startParamRaw.replace("price=", "");
-        }
-        const baseTokens = parseTokens(rawPrice);
+        const baseTokens = parseTokens(priceFromParams);
         if (baseTokens !== null) {
-            state.priceBaseDuration = state.duration;
-            state.tokensPerSecond = baseTokens / state.priceBaseDuration;
+            const baseDuration = Number.isFinite(state.priceBaseDuration) && state.priceBaseDuration > 0
+                ? state.priceBaseDuration
+                : 1;
+            state.priceBaseDuration = baseDuration;
+            state.tokensPerSecond = baseTokens / baseDuration;
             updatePriceForDuration();
         } else {
             setPriceLabel("—");
