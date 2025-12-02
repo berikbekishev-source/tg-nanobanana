@@ -179,6 +179,67 @@ def _normalize_allowed_resolutions(raw: List[str]) -> List[str]:
     normalized = {_normalize_resolution_value(item) for item in raw}
     return [r for r in normalized if r]
 
+
+def _order_resolutions(resolutions: List[str]) -> List[str]:
+    """Возвращает список разрешений в предсказуемом порядке (720p, 1080p, остальные)."""
+    preferred = ["720p", "1080p"]
+    result: List[str] = []
+    seen = set()
+    for res in preferred + resolutions:
+        val = _normalize_resolution_value(res)
+        if val and val not in seen:
+            result.append(val)
+            seen.add(val)
+    return result
+
+
+def _normalize_model_name(raw: Optional[str]) -> str:
+    """Удаляет служебные суффиксы и приводит имя модели к нижнему регистру."""
+    value = (raw or "").strip()
+    if not value:
+        return ""
+    value = value.replace("_", "-").split("@", 1)[0].lower()
+    if value.startswith("sora") and not value.startswith("sora-") and len(value) > 4 and value[4].isdigit():
+        value = "sora-" + value[4:]
+    return value
+
+
+def _resolve_veo_resolutions(model: AIModel, aspect_ratio: str) -> List[str]:
+    """Определяет разрешения Veo с учетом модели и аспектного соотношения."""
+    allowed = set(_normalize_allowed_resolutions(_extract_allowed_resolutions(model)))
+    api_model = _normalize_model_name(model.api_model_name or model.slug)
+
+    if api_model.startswith("veo-2"):
+        allowed = {"720p"}
+    else:
+        # Veo 3.x поддерживает 720p и 1080p (при 16:9)
+        allowed.update({"720p", "1080p"})
+
+    # 9:16 у Veo поддерживает только 720p
+    if aspect_ratio.strip() == "9:16":
+        allowed = {"720p"}
+
+    return _order_resolutions(list(allowed or {"720p"}))
+
+
+def _resolve_sora_resolutions(model: AIModel) -> List[str]:
+    """Определяет разрешения Sora в зависимости от модели."""
+    allowed = set(_normalize_allowed_resolutions(_extract_allowed_resolutions(model)))
+    api_model = _normalize_model_name(model.api_model_name or model.slug)
+
+    sora_map = {
+        "sora-2": {"720p"},
+        "sora-2-pro": {"720p"},
+        "sora-2-pro-hd": {"1080p"},
+    }
+    if api_model in sora_map:
+        allowed = sora_map[api_model]
+    elif not allowed:
+        allowed = {"720p", "1080p"}
+
+    return _order_resolutions(list(allowed or {"720p"}))
+
+
 MAX_VEO_IMAGE_BYTES = 5 * 1024 * 1024
 
 
@@ -297,7 +358,7 @@ async def _handle_sora_webapp_data_impl(message: Message, state: FSMContext, pay
     if aspect_ratio not in {"16:9", "9:16", "1:1"}:
         aspect_ratio = "16:9"
 
-    allowed_resolutions = _normalize_allowed_resolutions(_extract_allowed_resolutions(model)) or ["720p", "1080p"]
+    allowed_resolutions = _resolve_sora_resolutions(model)
     requested_resolution = (
         payload.get("resolution")
         or (model.default_params or {}).get("resolution")
@@ -937,7 +998,7 @@ async def _handle_veo_webapp_data_impl(message: Message, state: FSMContext, payl
         aspect_ratio = allowed_ratios[0]
 
     duration = data.get("default_duration") or defaults.get("duration") or 8
-    allowed_resolutions = _normalize_allowed_resolutions(_extract_allowed_resolutions(model)) or ["720p", "1080p"]
+    allowed_resolutions = _resolve_veo_resolutions(model, aspect_ratio)
     requested_resolution = (
         params_payload.get("resolution")
         or payload.get("resolution")

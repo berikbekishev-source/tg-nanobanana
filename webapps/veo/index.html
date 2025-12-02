@@ -322,7 +322,6 @@
             <p class="section-title">Разрешение</p>
             <div class="grid" id="resolutionGrid">
                 <div class="pill active" data-resolution="720p">720p</div>
-                <div class="pill" data-resolution="1080p">1080p</div>
             </div>
         </div>
 
@@ -377,6 +376,13 @@
         function setActive(container, target) {
             container.querySelectorAll(".chip, .pill").forEach(btn => btn.classList.remove("active"));
             target.classList.add("active");
+        }
+
+        function applyResolutionRules() {
+            // В текущей версии доступно только 720p
+            state.resolution = "720p";
+            const active = els.resolutionGrid?.querySelector('.pill[data-resolution=\"720p\"]');
+            if (active) setActive(els.resolutionGrid, active);
         }
 
         // Применяем динамический лимит промта из параметров, если указан
@@ -614,6 +620,7 @@
             if (!btn) return;
             setActive(els.ratioGrid, btn);
             state.aspectRatio = btn.dataset.ratio;
+            applyResolutionRules();
         });
 
         els.resolutionGrid.addEventListener("click", (e) => {
@@ -645,6 +652,7 @@
             setPriceLabel("—");
         }
 
+        applyResolutionRules();
         updateCounts();
         toggleUploads(false);
 

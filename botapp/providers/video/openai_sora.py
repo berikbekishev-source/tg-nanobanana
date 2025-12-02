@@ -73,11 +73,25 @@ class GeminigenSoraProvider(BaseVideoProvider):
             else httpx.Timeout(120.0, connect=10.0)
         )
 
-    @staticmethod
-    def _normalize_model(raw: Optional[str]) -> str:
-        # По требованию используем sora-2 вне зависимости от внутренних имён.
-        _ = raw  # сохраняем аргумент для совместимости
-        return "sora-2"
+    @classmethod
+    def _normalize_model(cls, raw: Optional[str]) -> str:
+        """Приводим имя модели к разрешенному списку, убирая служебные суффиксы."""
+        name = (raw or "").strip()
+        if not name:
+            return "sora-2"
+
+        name = name.replace("_", "-").split("@", 1)[0]
+        if name.startswith("sora") and not name.startswith("sora-") and len(name) > 4 and name[4].isdigit():
+            name = "sora-" + name[4:]
+        if name not in cls._ALLOWED_MODELS:
+            for allowed in cls._ALLOWED_MODELS:
+                if name.startswith(allowed):
+                    name = allowed
+                    break
+
+        if name not in cls._ALLOWED_MODELS:
+            name = "sora-2"
+        return name
 
     @staticmethod
     def _map_aspect(raw: Optional[str]) -> Tuple[str, str]:
@@ -90,9 +104,16 @@ class GeminigenSoraProvider(BaseVideoProvider):
         return "landscape", "16:9"
 
     @staticmethod
-    def _map_resolution(raw: Optional[str]) -> Tuple[str, str]:
-        """Возвращает (api_value, human_value)."""
+    def _map_resolution(raw: Optional[str], model: str) -> Tuple[str, str]:
+        """Возвращает (api_value, human_value) с учетом ограничений модели."""
         val = (raw or "").lower()
+        normalized_model = (model or "sora-2").lower()
+
+        if normalized_model == "sora-2-pro-hd":
+            return "large", "1080p"
+        if normalized_model in {"sora-2", "sora-2-pro"}:
+            return "small", "720p"
+
         if val in {"1080p", "large"}:
             return "large", "1080p"
         return "small", "720p"
@@ -139,7 +160,7 @@ class GeminigenSoraProvider(BaseVideoProvider):
             )
 
         aspect_api, aspect_human = self._map_aspect(params.get("aspect_ratio") or params.get("aspectRatio"))
-        resolution_api, resolution_human = self._map_resolution(params.get("resolution"))
+        resolution_api, resolution_human = self._map_resolution(params.get("resolution"), model_value)
         duration_value = self._resolve_duration(model_value, params)
 
         form_data: Dict[str, Any] = {
