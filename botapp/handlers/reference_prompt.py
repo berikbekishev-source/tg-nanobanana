@@ -296,6 +296,7 @@ async def _build_video_models_keyboard() -> Optional[InlineKeyboardMarkup]:
     kling_webapps = {}
     veo_webapps = {}
     sora_webapps = {}
+    midjourney_video_webapps = {}
 
     if public_base_url:
         for model in models:
@@ -328,10 +329,17 @@ async def _build_video_models_keyboard() -> Optional[InlineKeyboardMarkup]:
                     f"{public_base_url}/sora2/?"
                     f"model={quote_plus(model.slug)}&price={quote_plus(price_label)}"
                 )
+            if model.provider == "midjourney":
+                midjourney_video_webapps[model.slug] = (
+                    f"{public_base_url}/midjourney_video/?"
+                    f"model={quote_plus(model.slug)}&price={quote_plus(price_label)}"
+                    f"&max_prompt={quote_plus(str(model.max_prompt_length))}"
+                )
 
     return get_video_models_keyboard(
         models,
         kling_webapps=kling_webapps,
         veo_webapps=veo_webapps,
         sora_webapps=sora_webapps,
+        midjourney_video_webapps=midjourney_video_webapps,
     )
