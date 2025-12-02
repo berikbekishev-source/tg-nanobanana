@@ -1,3 +1,18 @@
+## [2025-12-02] Баланс: один тариф Midjourney Video
+
+**Агент:** Codex  
+**Ветка:** feature/mj_price_fix  
+**PR:** #462 (MERGED)
+
+### Выполненные действия:
+1. В botapp/keyboards.py добавил флаг наличия пресета Midjourney Video, чтобы не дублировать строку при автодобавлении из списка моделей.
+2. Запушил ветку, авто-PR #462 → staging прошёл CI и авто-merge.
+3. Проверил Railway staging: web/worker/beat = SUCCESS на коммите be572ad9a2413ce450c4d852536139878b595480.
+
+### Результат:
+- В сообщении баланса осталась одна строка для Midjourney Video без дубля; staging задеплоен.
+
+
 ## [2025-12-02] Sora цена и баланс с Midjourney Video
 
 **Агент:** Codex  
