@@ -186,7 +186,7 @@ try:
             # print(f"[WEBHOOK] ERROR exc={exc}, body={payload_body[:500]}, headers={headers_payload}", flush=True)
             return JsonResponse({"ok": False, "error": str(exc)}, status=200)
 
-    @api.post("/midjourney/webapp/submit")
+@api.post("/midjourney/webapp/submit")
     async def midjourney_webapp_submit(request):
         """
         Fallback endpoint for WebApp data submission via HTTP if tg.sendData fails.
@@ -309,7 +309,7 @@ try:
             return JsonResponse({"ok": False, "error": str(exc)}, status=500)
 
 
-    @api.post("/sora2/webapp/submit")
+@api.post("/sora2/webapp/submit")
     async def sora2_webapp_submit(request):
         """
         Endpoint для Sora 2 WebApp: прокидывает payload в aiogram как web_app_data.
