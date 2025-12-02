@@ -720,7 +720,7 @@ async def _handle_midjourney_video_webapp_data_impl(message: Message, state: FSM
 async def _handle_kling_webapp_data_impl(message: Message, state: FSMContext, payload: dict):
     """Принимаем данные Kling WebApp и запускаем генерацию."""
     data = await state.get_data()
-    model_slug = payload.get("modelSlug") or data.get("model_slug") or data.get("selected_model") or "kling-v1"
+    model_slug = payload.get("modelSlug") or data.get("model_slug") or data.get("selected_model") or "kling-v2-5-turbo"
     try:
         model = await sync_to_async(AIModel.objects.get)(slug=model_slug, is_active=True)
     except AIModel.DoesNotExist:

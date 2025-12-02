@@ -320,7 +320,7 @@ MODEL_PRICE_PRESETS: List[Tuple[str, str]] = [
     ("🍌 Nano Banana", "nano-banana"),
     ("Ⓜ️ Midjourney", "midjourney-v7-fast"),
     ("🎞️ Midjourney Video", "midjourney-video"),
-    ("🌀 Kling v1", "kling-v1"),
+    ("🌀 Kling v2-5-turbo", "kling-v2-5-turbo"),
     ("🖼️ GPT Image 1", "gpt-image-1"),
     ("🎥 Sora 2", "sora2"),
 ]

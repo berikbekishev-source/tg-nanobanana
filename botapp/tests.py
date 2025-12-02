@@ -882,7 +882,7 @@ class ChatLoggerTests(TestCase):
         self.assertEqual(last_message.text, "Вот фото")
 
     def test_log_webapp_message_sets_readable_text(self):
-        payload = {"kind": "kling_settings", "modelSlug": "kling-v1"}
+        payload = {"kind": "kling_settings", "modelSlug": "kling-v2-5-turbo"}
         web_app_data = {"data": json.dumps(payload), "button_text": "Generate"}
         message = self._build_message(message_id=7, text=None, web_app_data=web_app_data)
 
