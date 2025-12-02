@@ -318,6 +318,7 @@ def get_image_mode_keyboard() -> InlineKeyboardMarkup:
 MODEL_PRICE_PRESETS: List[Tuple[str, str]] = [
     ("⚡ Veo 3.1 Fast", "veo3-fast"),
     ("🍌 Nano Banana", "nano-banana"),
+    ("🍌 Nano Banana Pro", "nano-banana-pro"),
     ("Ⓜ️ Midjourney", "midjourney-v7-fast"),
     ("🎞️ Midjourney Video", "midjourney-video"),
     ("🌀 Kling v2-5-turbo", "kling-v2-5-turbo"),
