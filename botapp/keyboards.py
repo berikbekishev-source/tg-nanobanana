@@ -319,6 +319,7 @@ MODEL_PRICE_PRESETS: List[Tuple[str, str]] = [
     ("⚡ Veo 3.1 Fast", "veo3-fast"),
     ("🍌 Nano Banana", "nano-banana"),
     ("Ⓜ️ Midjourney", "midjourney-v7-fast"),
+    ("🎞️ Midjourney Video", "midjourney-video"),
     ("🌀 Kling v1", "kling-v1"),
     ("🖼️ GPT Image 1", "gpt-image-1"),
     ("🎥 Sora 2", "sora2"),
@@ -360,6 +361,8 @@ def get_prices_info(balance: Decimal) -> str:
         AIModel.CostUnit.GENERATION: "за генерацию",
     }
     available_models = {m.slug: m for m in AIModel.objects.filter(is_active=True)}
+    added_slugs: set[str] = set()
+    midjourney_video_added = False
     for title, slug in MODEL_PRICE_PRESETS:
         model = available_models.get(slug)
         if not model:
@@ -367,6 +370,24 @@ def get_prices_info(balance: Decimal) -> str:
         base_price = _get_unit_price_tokens(model)
         suffix = unit_labels.get(model.cost_unit, "за генерацию")
         lines.append(f"{title} — ⚡{base_price:.2f} токенов {suffix}")
+        added_slugs.add(slug)
+        if "midjourney" in slug:
+            midjourney_video_added = midjourney_video_added or "video" in slug
+            if not midjourney_video_added:
+                candidate = available_models.get("midjourney-video") or next(
+                    (
+                        m for m in available_models.values()
+                        if m.provider == "midjourney" and m.type == "video" and m.slug not in added_slugs
+                    ),
+                    None,
+                )
+                if candidate:
+                    video_price = _get_unit_price_tokens(candidate)
+                    video_suffix = unit_labels.get(candidate.cost_unit, "за генерацию")
+                    video_title = candidate.display_name or "Midjourney Video"
+                    lines.append(f"🎞️ {video_title} — ⚡{video_price:.2f} токенов {video_suffix}")
+                    added_slugs.add(candidate.slug)
+                    midjourney_video_added = True
 
     lines.append("")
     lines.append(
