@@ -13,6 +13,9 @@ from .base import BaseVideoProvider, VideoGenerationError, VideoGenerationResult
 logger = logging.getLogger(__name__)
 
 
+logger = logging.getLogger(__name__)
+
+
 def resolve_sora_size(resolution: Optional[Any], aspect_ratio: Optional[Any]) -> Optional[str]:
     """Подбирает размеры кадра для подсказок (720p/1080p, 16:9 или 9:16)."""
     resolution_str = str(resolution).lower() if resolution else "720p"
@@ -275,6 +278,30 @@ class GeminigenSoraProvider(BaseVideoProvider):
             provider_job_id=str(job_id),
             metadata=metadata,
         )
+
+    def _log_http_error(self, status_code: Optional[int], response: Optional[httpx.Response]) -> None:
+        if not response:
+            return
+        # Логируем только краткую выжимку тела, чтобы видеть причину 5xx/429 без утечек токенов.
+        try:
+            body = response.text
+        except Exception:
+            body = "<unreadable>"
+        if body and len(body) > 500:
+            body = body[:500] + "…"
+        logger.warning("OpenAI Sora ответила ошибкой: status=%s body=%s", status_code, body)
+
+    def _should_retry(self, message: str, attempt: int, max_attempts: int) -> bool:
+        if attempt >= max_attempts:
+            return False
+        text = message.lower()
+        if "video_generation_failed" in text:
+            return True
+        if "openai sora (429" in text or "лимиты openai sora" in text:
+            return True
+        if "openai sora (5" in text or "server error" in text:
+            return True
+        return False
 
 
 register_video_provider(GeminigenSoraProvider.slug, GeminigenSoraProvider)
