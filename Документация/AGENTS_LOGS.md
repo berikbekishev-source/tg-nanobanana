@@ -9,6 +9,7 @@
 2. В ссылках на Sora WebApp передаю `price_base_duration` из `default_params.duration`, чтобы расчёт в UI совпадал с тарифом модели.
 3. В сообщении «Мой баланс (цены)» добавил цену для модели Midjourney Video рядом с Midjourney.
 4. Проверил наличие Railway CLI: `railway 4.11.0`.
+5. Убрал дублирование строки Midjourney Video в сообщении баланса, оставил единственную строку.
 
 ### Результат:
 - Локальные правки готовы, готовлю push → auto PR → merge в staging, затем проверка деплоя.
