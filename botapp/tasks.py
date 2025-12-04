@@ -93,7 +93,6 @@ def send_telegram_video(chat_id: int, video_bytes: bytes, caption: str, reply_ma
     data = {
         "chat_id": chat_id,
         "caption": _shorten_caption(caption),
-        "parse_mode": "Markdown",
         "disable_content_type_detection": True,
     }
     if reply_markup:
