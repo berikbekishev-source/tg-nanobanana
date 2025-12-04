@@ -191,6 +191,7 @@ if PUBLIC_BASE_URL:
     if public_origin and public_origin not in CSRF_TRUSTED_ORIGINS:
         CSRF_TRUSTED_ORIGINS.append(public_origin)
 GEMINI_API_KEY     = os.getenv("GEMINI_API_KEY")
+REFERENCE_SYSTEM_PROMPT = os.getenv("REFERENCE_SYSTEM_PROMPT")
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
 SUPABASE_BUCKET = os.getenv("SUPABASE_BUCKET", "bot-images")
