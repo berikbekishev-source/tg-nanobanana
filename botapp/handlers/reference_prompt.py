@@ -246,8 +246,19 @@ async def _start_prompt_generation(message: Message, state: FSMContext, modifica
     reference_payload = ReferenceInputPayload.from_state(payload_data)
 
     try:
-        user = await sync_to_async(TgUser.objects.get)(chat_id=message.from_user.id)
-    except TgUser.DoesNotExist:
+        user, created = await sync_to_async(TgUser.objects.get_or_create)(
+            chat_id=message.from_user.id,
+            defaults={
+                "username": message.from_user.username or "",
+                "first_name": message.from_user.first_name or "",
+                "last_name": message.from_user.last_name or "",
+                "language_code": message.from_user.language_code or "ru",
+            },
+        )
+        if created:
+            await sync_to_async(BalanceService.ensure_balance)(user)
+    except Exception as exc:  # pragma: no cover - страхуем редкие ошибки
+        logger.exception("reference_prompt: failed to get_or_create user: %s", exc)
         await message.answer(
             "Не удалось найти пользователя. Начните заново.",
             reply_markup=get_cancel_keyboard(),
