@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import logging
 import re
-from decimal import Decimal
 from html import escape
 from typing import List, Optional, Tuple
 from urllib.parse import quote_plus
