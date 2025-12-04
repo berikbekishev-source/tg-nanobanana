@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import re
+from html import escape
 from typing import List, Optional, Tuple
 from urllib.parse import quote_plus
 
@@ -15,21 +16,24 @@ from asgiref.sync import sync_to_async
 from django.conf import settings
 
 from botapp.error_tracker import ErrorTracker
+from botapp.business.balance import BalanceService, InsufficientBalanceError
 from botapp.keyboards import (
     get_cancel_keyboard,
     get_reference_prompt_mods_keyboard,
     get_reference_prompt_models_keyboard,
     get_video_models_keyboard,
 )
-from botapp.models import BotErrorEvent, AIModel
+from botapp.models import BotErrorEvent, AIModel, TgUser
 from botapp.reference_prompt import (
     REFERENCE_PROMPT_MODELS,
+    REFERENCE_PROMPT_PRICING_SLUG,
     ReferenceInputPayload,
     ReferencePromptService,
     get_reference_prompt_model,
 )
+from botapp.reference_prompt.service import chunk_text
 from botapp.states import BotStates
-from botapp.business.pricing import get_base_price_tokens
+from botapp.business.pricing import get_base_price_tokens, calculate_request_cost
 
 
 logger = logging.getLogger(__name__)
@@ -158,8 +162,10 @@ async def prompt_by_reference_select_model(callback: CallbackQuery, state: FSMCo
 
     await state.update_data(reference_prompt_model=model.slug)
 
+    entry_text = await _reference_prompt_entry_text()
+
     await callback.message.answer(
-        "🔗 Скиньте в бота ссылку на любой Reels, Shorts, TikTok или загрузите в чат видео и получите промт для создания точно такого же видео!",
+        entry_text,
         reply_markup=get_cancel_keyboard(),
     )
 
@@ -234,8 +240,64 @@ async def _start_prompt_generation(message: Message, state: FSMContext, modifica
         bool(modifications),
     )
 
+    ai_model = await _get_reference_ai_model()
+    if not ai_model:
+        await message.answer(
+            "❌ Модель для промта не настроена. Попробуйте позже.",
+            reply_markup=get_cancel_keyboard(),
+        )
+        await state.clear()
+        await state.set_state(BotStates.main_menu)
+        return
+
+    user = await sync_to_async(
+        TgUser.objects.filter(chat_id=message.from_user.id if message.from_user else message.chat.id).first
+    )()
+    if not user:
+        await message.answer(
+            "❌ Пользователь не найден. Используйте /start, чтобы начать заново.",
+            reply_markup=get_cancel_keyboard(),
+        )
+        await state.clear()
+        await state.set_state(BotStates.main_menu)
+        return
+
+    _, cost_tokens = await sync_to_async(calculate_request_cost)(ai_model, quantity=1, duration=None, params=None)
+    charge_tx = None
+
+    can_generate, error_message = await sync_to_async(BalanceService.check_can_generate)(
+        user,
+        ai_model,
+        quantity=1,
+        total_cost_tokens=cost_tokens,
+    )
+    if not can_generate:
+        await message.answer(
+            f"❌ {error_message}",
+            reply_markup=get_cancel_keyboard(),
+        )
+        await state.clear()
+        await state.set_state(BotStates.main_menu)
+        return
+
+    try:
+        charge_tx = await sync_to_async(BalanceService.charge_for_generation)(
+            user,
+            ai_model,
+            quantity=1,
+            total_cost_tokens=cost_tokens,
+        )
+    except InsufficientBalanceError as exc:
+        await message.answer(
+            f"❌ {exc}",
+            reply_markup=get_cancel_keyboard(),
+        )
+        await state.clear()
+        await state.set_state(BotStates.main_menu)
+        return
+
     await message.answer(
-        "Создаю промт для генерация видео по указанному референсу, ожидайте пару минут ⏳",
+        "Создаю промт для генерации видео по указанному референсу, ожидайте пару минут ⏳",
         reply_markup=get_cancel_keyboard(),
     )
     await state.set_state(BotStates.reference_prompt_processing)
@@ -255,6 +317,12 @@ async def _start_prompt_generation(message: Message, state: FSMContext, modifica
         video_keyboard = await _build_video_models_keyboard()
     except Exception as exc:  # noqa: BLE001 - логируем и отвечаем пользователю
         logger.exception("Failed to build reference prompt: %s", exc)
+        if charge_tx:
+            await sync_to_async(BalanceService.refund_generation)(
+                user,
+                charge_tx,
+                reason=str(exc)[:200],
+            )
         error_message = str(exc).strip() or "Не удалось собрать промт. Попробуйте снова или пришлите другой референс."
         await message.answer(
             f"❌ {error_message}",
@@ -275,12 +343,31 @@ async def _start_prompt_generation(message: Message, state: FSMContext, modifica
         await state.set_state(BotStates.reference_prompt_wait_reference)
         return
 
-    for chunk in result.chunks:
-        await message.answer(chunk, parse_mode="HTML", reply_markup=video_keyboard)
+    spent_tokens = abs(charge_tx.amount) if charge_tx else None
+    balance_after = charge_tx.balance_after if charge_tx else None
+
+    prompt_body = result.prompt_text or result.pretty_json or ""
+    safe_prompt = escape(prompt_body) if prompt_body else "—"
+    if safe_prompt not in {"", "—"}:
+        safe_prompt = f'"{safe_prompt}"'
+    prompt_chunks = chunk_text(safe_prompt, 3000) or ["—"]
+
+    header_lines = [
+        "✅ Готово!",
+        f"Списано ⚡{spent_tokens:.2f} токенов" if spent_tokens is not None else None,
+        f"Осталось ⚡{balance_after:.2f} токенов" if balance_after is not None else None,
+        "",
+        "Ваш промт 👇",
+        "",
+    ]
+    header = "\n".join([line for line in header_lines if line is not None])
+    first_message = f"{header}<pre>{prompt_chunks[0]}</pre>"
+    await message.answer(first_message, parse_mode="HTML", reply_markup=video_keyboard)
+    for chunk in prompt_chunks[1:]:
+        await message.answer(f"<pre>{chunk}</pre>", parse_mode="HTML")
 
     await state.clear()
     await state.set_state(BotStates.main_menu)
-
 
 async def _build_video_models_keyboard() -> Optional[InlineKeyboardMarkup]:
     """Возвращает inline-кнопки выбора модели видео, как в 'Создать видео'."""
