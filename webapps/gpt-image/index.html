@@ -237,8 +237,8 @@
             </div>
 
             <p class="label" style="margin-top: 14px;">Текстовый запрос</p>
-            <textarea id="prompt" placeholder="Опишите, что нужно сгенерировать..." maxlength="1500" enterkeyhint="done" inputmode="text"></textarea>
-            <div class="count" id="promptCount">0/1500</div>
+            <textarea id="prompt" placeholder="Опишите, что нужно сгенерировать..." maxlength="4000" enterkeyhint="done" inputmode="text"></textarea>
+            <div class="count" id="promptCount">0/4000</div>
 
             <div class="upload" id="imgBlock">
                 <p class="label" style="margin:0 0 6px;">До 4 изображений для img2img (до 5 МБ каждое)</p>
@@ -328,7 +328,7 @@
 
         function updateCounts() {
             state.prompt = els.prompt.value.trim();
-            els.promptCount.textContent = `${state.prompt.length}/1500`;
+            els.promptCount.textContent = `${state.prompt.length}/4000`;
             refreshMainButton();
         }
 

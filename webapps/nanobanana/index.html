@@ -236,8 +236,8 @@
             </div>
 
             <p class="label" style="margin-top: 14px;">Текстовый запрос</p>
-            <textarea id="prompt" placeholder="Опишите, что нужно сгенерировать..." maxlength="2000" enterkeyhint="done" inputmode="text"></textarea>
-            <div class="count" id="promptCount">0/2000</div>
+            <textarea id="prompt" placeholder="Опишите, что нужно сгенерировать..." maxlength="4000" enterkeyhint="done" inputmode="text"></textarea>
+            <div class="count" id="promptCount">0/4000</div>
 
             <div class="upload" id="imgBlock" style="display:none;">
                 <p class="label" style="margin:0 0 6px;">Загрузите до 8 изображений (до 10 МБ каждое)</p>
@@ -261,7 +261,7 @@
         const tg = window.Telegram?.WebApp;
         const params = new URLSearchParams(window.location.search);
 
-        const MAX_PROMPT = 2000;
+        const MAX_PROMPT = 4000;
         const MAX_IMAGES = 8;
         const MAX_IMAGE_BYTES = 10 * 1024 * 1024; // 10 MB
         const RATIOS = ["1:1", "2:3", "3:2", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9"];

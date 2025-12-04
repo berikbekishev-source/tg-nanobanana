@@ -325,9 +325,9 @@
         <div class="section">
             <p class="section-title">Промт</p>
             <p class="label">Текстовый запрос</p>
-            <textarea id="prompt" placeholder="Опишите сюжет или сцену..." maxlength="2500" enterkeyhint="done"
+            <textarea id="prompt" placeholder="Опишите сюжет или сцену..." maxlength="4000" enterkeyhint="done"
                 inputmode="text"></textarea>
-            <div class="count" id="promptCount">0/2500</div>
+            <div class="count" id="promptCount">0/4000</div>
 
             <div class="upload" id="uploadBlock" style="display:none;">
                 <p class="label" style="margin:0 0 6px;">Загрузите изображение (JPG/PNG/WebP, до 10 МБ)</p>
@@ -432,7 +432,7 @@
 
         function updateCounts() {
             state.prompt = els.prompt.value.trim();
-            els.promptCount.textContent = `${state.prompt.length}/2500`;
+            els.promptCount.textContent = `${state.prompt.length}/4000`;
             if (tg?.MainButton) {
                 if (state.prompt.length > 0) {
                     tg.MainButton.show();
