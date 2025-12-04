@@ -29,6 +29,7 @@ from botapp.models import TgUser, AIModel
 from botapp.business.balance import BalanceService
 from botapp.business.pricing import get_base_price_tokens
 from botapp.reference_prompt import REFERENCE_PROMPT_MODELS
+from botapp.reference_prompt.pricing import build_reference_prompt_price_line
 
 router = Router()
 
@@ -304,10 +305,14 @@ async def global_prompt_by_reference_entry(message: Message, state: FSMContext):
 
     await state.update_data(reference_prompt_model=default_model.slug)
 
-    await message.answer(
-        "🔗 Скиньте в бота ссылку на любой Reels, Shorts, TikTok или загрузите в чат видео и получите промт для создания точно такого же видео!",
-        reply_markup=get_cancel_keyboard(),
+    price_line = await build_reference_prompt_price_line()
+    intro_text = (
+        "🔗 Скиньте в бота ссылку на любой Reels, Shorts, TikTok или загрузите в чат видео и получите промт "
+        "для создания точно такого же видео!\n\n"
+        f"{price_line}"
     )
+
+    await message.answer(intro_text, reply_markup=get_cancel_keyboard())
     await state.set_state(BotStates.reference_prompt_wait_reference)
 
 
