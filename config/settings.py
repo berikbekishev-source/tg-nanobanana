@@ -10,7 +10,9 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/5.2/ref/settings/
 """
 
-import os, dj_database_url
+import logging
+import os
+import dj_database_url
 from pathlib import Path
 from dotenv import load_dotenv
 
@@ -199,6 +201,31 @@ SUPABASE_VIDEO_BUCKET = os.getenv("SUPABASE_VIDEO_BUCKET", SUPABASE_BUCKET)
 
 # --- Google Vertex AI ---
 USE_VERTEX_AI = os.getenv("USE_VERTEX_AI", "false").lower() in ("true", "1", "yes")
+DJANGO_LOG_LEVEL = os.getenv("DJANGO_LOG_LEVEL", "INFO").upper()
+
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {
+        "verbose": {
+            "format": "%(asctime)s %(levelname)s [%(name)s] %(message)s",
+        },
+    },
+    "handlers": {
+        "console": {
+            "class": "logging.StreamHandler",
+            "formatter": "verbose",
+        },
+    },
+    "root": {
+        "handlers": ["console"],
+        "level": DJANGO_LOG_LEVEL,
+    },
+    "loggers": {
+        "django.request": {"level": DJANGO_LOG_LEVEL, "handlers": ["console"], "propagate": False},
+        "botapp": {"level": DJANGO_LOG_LEVEL, "handlers": ["console"], "propagate": True},
+    },
+}
 GOOGLE_APPLICATION_CREDENTIALS_JSON = os.getenv("GOOGLE_APPLICATION_CREDENTIALS_JSON")
 GCP_PROJECT_ID = os.getenv("GCP_PROJECT_ID")
 GCP_LOCATION = os.getenv("GCP_LOCATION", "us-central1")
