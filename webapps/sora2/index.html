@@ -254,9 +254,9 @@
 
         <div class="section">
             <div class="section-title">Промт</div>
-            <textarea id="prompt" maxlength="2000"
+            <textarea id="prompt" maxlength="4000"
                 placeholder="Опишите сюжет, движение камеры, свет и звук..."></textarea>
-            <div class="count" id="promptCount">0/2000</div>
+            <div class="count" id="promptCount">0/4000</div>
         </div>
 
         <div id="imgBlock" class="section" style="display:none;">
@@ -400,7 +400,7 @@
 
         function updateCounts() {
             state.prompt = els.prompt.value.trim();
-            els.promptCount.textContent = `${state.prompt.length}/2000`;
+            els.promptCount.textContent = `${state.prompt.length}/4000`;
             if (tg?.MainButton) {
                 if (state.prompt.length > 0) {
                     setPriceLabel(state.priceLabel || "—");

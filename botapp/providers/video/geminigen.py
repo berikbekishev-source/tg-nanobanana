@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from typing import Any, Dict, List, Optional, Tuple
 
 import httpx
@@ -46,6 +47,8 @@ class GeminigenVeoProvider(BaseVideoProvider):
             if timeout_raw
             else httpx.Timeout(120.0, connect=10.0)
         )
+        self._max_retries: int = int(getattr(settings, "GEMINIGEN_MAX_RETRIES", 3) or 0)
+        self._retry_backoff: float = float(getattr(settings, "GEMINIGEN_RETRY_BACKOFF", 2.0) or 0.0)
 
     def _build_headers(self) -> Dict[str, str]:
         return {
@@ -166,29 +169,71 @@ class GeminigenVeoProvider(BaseVideoProvider):
             bool(files),
         )
 
-        try:
-            with httpx.Client(timeout=self._timeout) as client:
-                response = client.post(
-                    self._build_url(),
-                    headers=self._build_headers(),
-                    data=form_data,
-                    files=files or None,
-                    follow_redirects=True,
-                )
-                response.raise_for_status()
-        except httpx.HTTPStatusError as exc:  # type: ignore[attr-defined]
-            resp = exc.response
-            detail = ""
-            status_code = getattr(resp, "status_code", None)
-            if resp is not None:
-                try:
-                    err_payload = resp.json()
-                    detail = json.dumps(err_payload, ensure_ascii=False)
-                except Exception:
-                    detail = resp.text
-            raise VideoGenerationError(f"Geminigen вернул ошибку {status_code}: {detail}") from exc
-        except httpx.RequestError as exc:
-            raise VideoGenerationError(f"Не удалось выполнить запрос к Geminigen: {exc}") from exc
+        response = None
+        retries_done = 0
+        last_error: Optional[Exception] = None
+
+        while True:
+            try:
+                with httpx.Client(timeout=self._timeout) as client:
+                    response = client.post(
+                        self._build_url(),
+                        headers=self._build_headers(),
+                        data=form_data,
+                        files=files or None,
+                        follow_redirects=True,
+                    )
+                    response.raise_for_status()
+                break
+            except httpx.HTTPStatusError as exc:  # type: ignore[attr-defined]
+                resp = exc.response
+                status_code = getattr(resp, "status_code", None)
+                is_retryable = status_code is not None and 500 <= status_code < 600
+                detail = ""
+                if resp is not None:
+                    try:
+                        err_payload = resp.json()
+                        detail = json.dumps(err_payload, ensure_ascii=False)
+                    except Exception:
+                        detail = resp.text
+
+                if is_retryable and retries_done < self._max_retries:
+                    delay = self._retry_backoff * (2**retries_done)
+                    logger.warning(
+                        "[GEMINIGEN] Ошибка %s, попытка %s/%s, повтор через %.1fs: %s",
+                        status_code,
+                        retries_done + 1,
+                        self._max_retries,
+                        delay,
+                        detail[:500],
+                    )
+                    last_error = exc
+                    retries_done += 1
+                    if delay > 0:
+                        time.sleep(delay)
+                    continue
+
+                raise VideoGenerationError(f"Geminigen вернул ошибку {status_code}: {detail}") from exc
+            except httpx.RequestError as exc:
+                if retries_done < self._max_retries:
+                    delay = self._retry_backoff * (2**retries_done)
+                    logger.warning(
+                        "[GEMINIGEN] Сетевая ошибка, попытка %s/%s, повтор через %.1fs: %s",
+                        retries_done + 1,
+                        self._max_retries,
+                        delay,
+                        str(exc)[:500],
+                    )
+                    last_error = exc
+                    retries_done += 1
+                    if delay > 0:
+                        time.sleep(delay)
+                    continue
+
+                raise VideoGenerationError(f"Не удалось выполнить запрос к Geminigen: {exc}") from exc
+
+        if response is None and last_error:
+            raise VideoGenerationError(f"Не удалось выполнить запрос к Geminigen: {last_error}")
 
         payload: Dict[str, Any] = {}
         try:

@@ -289,9 +289,9 @@
             </div>
 
             <p class="label" style="margin-top: 12px;">Текстовый промт</p>
-            <textarea id="prompt" placeholder="Опишите, что нужно сгенерировать..." maxlength="1000" enterkeyhint="done"
+            <textarea id="prompt" placeholder="Опишите, что нужно сгенерировать..." maxlength="4000" enterkeyhint="done"
                 inputmode="text"></textarea>
-            <div class="count" id="promptCount">0/1000</div>
+            <div class="count" id="promptCount">0/4000</div>
         </div>
 
         <div class="section" id="uploadsSection" style="display:none;">
@@ -387,7 +387,7 @@
         }
 
         // Применяем динамический лимит промта из параметров, если указан
-        const effectiveMaxPrompt = Number.isFinite(MAX_PROMPT) ? MAX_PROMPT : 5000;
+        const effectiveMaxPrompt = Number.isFinite(MAX_PROMPT) ? MAX_PROMPT : 4000;
         if (els.prompt) {
             els.prompt.setAttribute("maxlength", effectiveMaxPrompt);
             els.promptCount.textContent = `0/${Number.isFinite(MAX_PROMPT) ? MAX_PROMPT : "∞"}`;
@@ -425,7 +425,7 @@
 
         function updateCounts() {
             state.prompt = els.prompt.value.trim();
-            els.promptCount.textContent = `${state.prompt.length}/${MAX_PROMPT}`;
+            els.promptCount.textContent = `${state.prompt.length}/${Number.isFinite(MAX_PROMPT) ? MAX_PROMPT : "∞"}`;
             if (tg?.MainButton) {
                 if (state.prompt.length > 0) {
                     setPriceLabel(state.priceLabel || "—");
