@@ -145,8 +145,6 @@ class ReferencePromptService:
     def __init__(self, *, model: Optional[ReferencePromptModel] = None) -> None:
         self._default_model = model
         self._system_prompt = getattr(settings, "REFERENCE_SYSTEM_PROMPT", None)
-        if not self._system_prompt:
-            raise ValueError("REFERENCE_SYSTEM_PROMPT не задан в окружении")
 
     async def generate_prompt(
         self,
@@ -158,6 +156,9 @@ class ReferencePromptService:
         user_context: Optional[Dict[str, Any]] = None,
     ) -> ReferencePromptResult:
         """Формирует текстовый промт на основе входных данных пользователя."""
+
+        if not self._system_prompt:
+            raise ValueError("REFERENCE_SYSTEM_PROMPT не задан в окружении")
 
         model = self._default_model or get_reference_prompt_model(model_slug)
         logger.info(
