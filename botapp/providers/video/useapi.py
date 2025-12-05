@@ -48,6 +48,15 @@ class UseApiRunwayVideoProvider(BaseVideoProvider):
         except Exception:
             self._max_jobs = 5
 
+        try:
+            self._asset_upload_retries: int = max(1, int(getattr(settings, "USEAPI_ASSET_RETRIES", "3") or 3))
+        except Exception:
+            self._asset_upload_retries = 3
+        try:
+            self._asset_retry_backoff: float = float(getattr(settings, "USEAPI_ASSET_RETRY_BACKOFF", "1.5") or 1.5)
+        except Exception:
+            self._asset_retry_backoff = 1.5
+
     def generate(
         self,
         *,
@@ -183,22 +192,41 @@ class UseApiRunwayVideoProvider(BaseVideoProvider):
 
     def _upload_asset(self, image_bytes: bytes, mime_type: str, file_name: str) -> Optional[str]:
         url = f"{self._base_url}{self._ASSETS_ENDPOINT}"
-        try:
-            with httpx.Client(timeout=self._request_timeout, follow_redirects=True) as client:
-                response = client.post(
-                    url,
-                    headers={"Authorization": f"Bearer {self._api_key}"},
-                    data={"mediaType": "image"},
-                    files={"file": (file_name, image_bytes, mime_type or "image/png")},
-                )
-                response.raise_for_status()
-                data = response.json()
-        except httpx.HTTPStatusError as exc:
-            raise VideoGenerationError(f"useapi: не удалось загрузить ассет ({exc.response.status_code})") from exc
-        except Exception as exc:
-            raise VideoGenerationError(f"useapi: ошибка загрузки ассета: {exc}") from exc
+        retryable_statuses = {500, 502, 503, 504, 520, 521, 522, 524}
+        last_exc: Optional[Exception] = None
 
-        return self._extract_asset_id(data)
+        for attempt in range(1, self._asset_upload_retries + 1):
+            try:
+                with httpx.Client(timeout=self._request_timeout, follow_redirects=True) as client:
+                    response = client.post(
+                        url,
+                        headers={"Authorization": f"Bearer {self._api_key}"},
+                        data={"mediaType": "image"},
+                        files={"file": (file_name, image_bytes, mime_type or "image/png")},
+                    )
+                    response.raise_for_status()
+                    data = response.json()
+                asset_id = self._extract_asset_id(data)
+                if asset_id:
+                    return asset_id
+                raise VideoGenerationError("useapi не вернул assetId для исходного изображения.")
+            except httpx.HTTPStatusError as exc:
+                last_exc = exc
+                status = exc.response.status_code if exc.response else None
+                if status in retryable_statuses and attempt < self._asset_upload_retries:
+                    time.sleep(self._asset_retry_backoff * attempt)
+                    continue
+                raise VideoGenerationError(
+                    f"useapi: не удалось загрузить ассет ({status}). Попробуйте ещё раз."
+                ) from exc
+            except Exception as exc:
+                last_exc = exc
+                if attempt < self._asset_upload_retries:
+                    time.sleep(self._asset_retry_backoff * attempt)
+                    continue
+                raise VideoGenerationError(f"useapi: ошибка загрузки ассета: {exc}") from exc
+
+        raise VideoGenerationError("useapi: не удалось загрузить ассет после нескольких попыток.") from last_exc
 
     def _poll_task(self, task_id: str) -> Dict[str, Any]:
         endpoint = self._TASK_ENDPOINT.format(task_id=task_id)
