@@ -57,6 +57,10 @@ class UseApiRunwayVideoProvider(BaseVideoProvider):
             self._asset_retry_backoff: float = float(getattr(settings, "USEAPI_ASSET_RETRY_BACKOFF", "2.0") or 2.0)
         except Exception:
             self._asset_retry_backoff = 2.0
+        # Данные аккаунта Runway (если заданы — проверим/создадим конфиг перед генерацией)
+        self._account_email: Optional[str] = getattr(settings, "USEAPI_ACCOUNT_EMAIL", None)
+        self._account_password: Optional[str] = getattr(settings, "USEAPI_ACCOUNT_PASSWORD", None)
+        self._account_ready: bool = False
 
     def generate(
         self,
@@ -95,6 +99,9 @@ class UseApiRunwayVideoProvider(BaseVideoProvider):
         seconds = self._sanitize_seconds(params.get("seconds") or params.get("duration"))
         resolution = (params.get("resolution") or "720p").lower()
         width, height = self._resolve_dimensions(resolution, aspect_ratio)
+
+        # Убедимся, что аккаунт Runway настроен в useapi, если заданы креды
+        self._ensure_account_ready()
 
         asset_id = self._upload_asset(image_bytes, mime_type, file_name)
         if not asset_id:
@@ -190,6 +197,32 @@ class UseApiRunwayVideoProvider(BaseVideoProvider):
             raise VideoGenerationError(f"useapi HTTP {exc.response.status_code if exc.response else ''}: {detail}") from exc
         except Exception as exc:
             raise VideoGenerationError(f"Ошибка запроса к useapi: {exc}") from exc
+
+    def _ensure_account_ready(self) -> None:
+        """
+        Если заданы USEAPI_ACCOUNT_EMAIL/PASSWORD, проверяем/создаем конфиг Runway аккаунта в useapi.
+        Выполняется один раз за процесс.
+        """
+        if self._account_ready or not (self._account_email and self._account_password):
+            return
+
+        endpoint = f"/v1/runwayml/accounts/{self._account_email}"
+        payload = {
+            "email": self._account_email,
+            "password": self._account_password,
+            "maxJobs": self._max_jobs,
+        }
+        try:
+            self._request("POST", endpoint, json_payload=payload)
+            self._account_ready = True
+        except VideoGenerationError:
+            # Пробуем еще раз на всякий случай (вдруг 5xx)
+            try:
+                time.sleep(2.0)
+                self._request("POST", endpoint, json_payload=payload)
+                self._account_ready = True
+            except Exception as exc:
+                raise VideoGenerationError("useapi: не удалось настроить аккаунт Runway. Попробуйте позже.") from exc
 
     def _upload_asset(self, image_bytes: bytes, mime_type: str, file_name: str) -> Optional[str]:
         url = f"{self._base_url}{self._ASSETS_ENDPOINT}"
