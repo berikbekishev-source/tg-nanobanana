@@ -71,6 +71,7 @@ class AIModel(models.Model):
         ('midjourney', 'Midjourney'),
         ('openai_image', 'OpenAI GPT Image'),
         ('imagen', 'Google Imagen'),
+        ('useapi', 'useapi'),
     ]
 
     slug = models.SlugField(unique=True, db_index=True)
