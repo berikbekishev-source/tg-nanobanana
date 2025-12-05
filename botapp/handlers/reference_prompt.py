@@ -249,7 +249,7 @@ async def _start_prompt_generation(message: Message, state: FSMContext, modifica
     try:
         user = await sync_to_async(TgUser.objects.get)(chat_id=message.from_user.id)
     except TgUser.DoesNotExist:
-        # Фолбек: вдруг чат отличается от from_user (группы/каналы)
+        # Фолбек: вдруг chat_id отличается от from_user (группы/каналы)
         try:
             user = await sync_to_async(TgUser.objects.get)(chat_id=message.chat.id)
         except TgUser.DoesNotExist:
