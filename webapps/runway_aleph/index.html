@@ -251,6 +251,7 @@
 
     <script>
         const tg = window.Telegram?.WebApp || null;
+        const PROMPT_LIMIT = 4000;
         const params = new URLSearchParams(window.location.search);
 
         const ratios = ["16:9", "9:16", "1:1", "3:4", "4:3", "21:9"];
@@ -296,7 +297,7 @@
 
         function updateCounts() {
             state.prompt = els.prompt.value.trim();
-            els.promptCount.textContent = `${state.prompt.length}/1000`;
+            els.promptCount.textContent = `${state.prompt.length}/${PROMPT_LIMIT}`;
             updateMainButton();
         }
 
@@ -469,6 +470,7 @@
         }
 
         applyInitialSelections();
+        els.prompt.maxLength = PROMPT_LIMIT;
         updateCounts();
 
         if (tg) {
