@@ -49,13 +49,13 @@ class UseApiRunwayVideoProvider(BaseVideoProvider):
             self._max_jobs = 5
 
         try:
-            self._asset_upload_retries: int = max(1, int(getattr(settings, "USEAPI_ASSET_RETRIES", "3") or 3))
+            self._asset_upload_retries: int = max(1, int(getattr(settings, "USEAPI_ASSET_RETRIES", "5") or 5))
         except Exception:
-            self._asset_upload_retries = 3
+            self._asset_upload_retries = 5
         try:
-            self._asset_retry_backoff: float = float(getattr(settings, "USEAPI_ASSET_RETRY_BACKOFF", "1.5") or 1.5)
+            self._asset_retry_backoff: float = float(getattr(settings, "USEAPI_ASSET_RETRY_BACKOFF", "2.0") or 2.0)
         except Exception:
-            self._asset_retry_backoff = 1.5
+            self._asset_retry_backoff = 2.0
 
     def generate(
         self,
@@ -200,7 +200,10 @@ class UseApiRunwayVideoProvider(BaseVideoProvider):
                 with httpx.Client(timeout=self._request_timeout, follow_redirects=True) as client:
                     response = client.post(
                         url,
-                        headers={"Authorization": f"Bearer {self._api_key}"},
+                        headers={
+                            "Authorization": f"Bearer {self._api_key}",
+                            "Accept": "application/json",
+                        },
                         data={"mediaType": "image"},
                         files={"file": (file_name, image_bytes, mime_type or "image/png")},
                     )
@@ -214,7 +217,8 @@ class UseApiRunwayVideoProvider(BaseVideoProvider):
                 last_exc = exc
                 status = exc.response.status_code if exc.response else None
                 if status in retryable_statuses and attempt < self._asset_upload_retries:
-                    time.sleep(self._asset_retry_backoff * attempt)
+                    delay = self._asset_retry_backoff * (2 ** (attempt - 1))
+                    time.sleep(delay)
                     continue
                 raise VideoGenerationError(
                     f"useapi: не удалось загрузить ассет ({status}). Попробуйте ещё раз."
@@ -222,7 +226,8 @@ class UseApiRunwayVideoProvider(BaseVideoProvider):
             except Exception as exc:
                 last_exc = exc
                 if attempt < self._asset_upload_retries:
-                    time.sleep(self._asset_retry_backoff * attempt)
+                    delay = self._asset_retry_backoff * (2 ** (attempt - 1))
+                    time.sleep(delay)
                     continue
                 raise VideoGenerationError(f"useapi: ошибка загрузки ассета: {exc}") from exc
 
