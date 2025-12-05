@@ -124,6 +124,7 @@ def get_video_models_keyboard(
     veo_webapps: Optional[dict] = None,
     sora_webapps: Optional[dict] = None,
     midjourney_video_webapps: Optional[dict] = None,
+    runway_webapps: Optional[dict] = None,
 ) -> InlineKeyboardMarkup:
     """Шаг 1: Выбор модели для видео"""
     builder = InlineKeyboardBuilder()
@@ -131,6 +132,7 @@ def get_video_models_keyboard(
     veo_webapps = veo_webapps or {}
     sora_webapps = sora_webapps or {}
     midjourney_video_webapps = midjourney_video_webapps or {}
+    runway_webapps = runway_webapps or {}
 
     for model in models:
         if model.type == 'video' and model.is_active:
@@ -155,6 +157,11 @@ def get_video_models_keyboard(
                 builder.button(
                     text=model.display_name,
                     web_app=WebAppInfo(url=midjourney_video_webapps[model.slug]),
+                )
+            elif model.provider == "useapi" and runway_webapps.get(model.slug):
+                builder.button(
+                    text=model.display_name,
+                    web_app=WebAppInfo(url=runway_webapps[model.slug]),
                 )
             else:
                 builder.button(
