@@ -440,6 +440,7 @@ class ChatThreadAdmin(admin.ModelAdmin):
         "kling_settings": "Kling",
         "veo_video_settings": "Veo",
         "sora2_settings": "Sora 2",
+        "runway_settings": "Runway",
     }
 
     @staticmethod

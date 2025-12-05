@@ -398,6 +398,7 @@ async def _build_video_models_keyboard() -> Optional[InlineKeyboardMarkup]:
     veo_webapps = {}
     sora_webapps = {}
     midjourney_video_webapps = {}
+    runway_webapps = {}
 
     if public_base_url:
         for model in models:
@@ -436,6 +437,22 @@ async def _build_video_models_keyboard() -> Optional[InlineKeyboardMarkup]:
                     f"model={quote_plus(model.slug)}&price={quote_plus(price_label)}"
                     f"&max_prompt={quote_plus(str(model.max_prompt_length))}"
                 )
+            if model.provider == "useapi":
+                base_duration = None
+                if isinstance(model.default_params, dict):
+                    try:
+                        base_duration = int(model.default_params.get("duration") or 0)
+                    except (TypeError, ValueError):
+                        base_duration = None
+                base_duration = base_duration if base_duration and base_duration > 0 else 5
+                api_model_name = model.api_model_name or model.slug
+                runway_webapps[model.slug] = (
+                    f"{public_base_url}/runway/?"
+                    f"model={quote_plus(model.slug)}&price={quote_plus(price_label)}"
+                    f"&price_base_duration={quote_plus(str(base_duration))}"
+                    f"&api_model={quote_plus(api_model_name)}"
+                    f"&max_prompt={quote_plus(str(model.max_prompt_length))}"
+                )
 
     return get_video_models_keyboard(
         models,
@@ -443,4 +460,5 @@ async def _build_video_models_keyboard() -> Optional[InlineKeyboardMarkup]:
         veo_webapps=veo_webapps,
         sora_webapps=sora_webapps,
         midjourney_video_webapps=midjourney_video_webapps,
+        runway_webapps=runway_webapps,
     )

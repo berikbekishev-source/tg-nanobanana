@@ -196,6 +196,7 @@ async def global_create_video_start(message: Message, state: FSMContext):
     kling_webapps = {}
     veo_webapps = {}
     midjourney_video_webapps = {}
+    runway_webapps = {}
     if PUBLIC_BASE_URL:
         for model in models:
             if model.provider == "kling":
@@ -229,7 +230,24 @@ async def global_create_video_start(message: Message, state: FSMContext):
                     f"model={quote_plus(model.slug)}&price={quote_plus(price_label)}"
                     f"&max_prompt={quote_plus(str(model.max_prompt_length))}"
                 )
-
+            if model.provider == "useapi":
+                cost = await sync_to_async(get_base_price_tokens)(model)
+                price_label = f"⚡{cost:.2f} токенов"
+                base_duration = None
+                if isinstance(model.default_params, dict):
+                    try:
+                        base_duration = int(model.default_params.get("duration") or 0)
+                    except (TypeError, ValueError):
+                        base_duration = None
+                base_duration = base_duration if base_duration and base_duration > 0 else 5
+                api_model_name = model.api_model_name or model.slug
+                runway_webapps[model.slug] = (
+                    f"{PUBLIC_BASE_URL}/runway/?"
+                    f"model={quote_plus(model.slug)}&price={quote_plus(price_label)}"
+                    f"&price_base_duration={quote_plus(str(base_duration))}"
+                    f"&api_model={quote_plus(api_model_name)}"
+                    f"&max_prompt={quote_plus(str(model.max_prompt_length))}"
+                )
 
     sora_webapps = {}
     if PUBLIC_BASE_URL:
@@ -261,6 +279,7 @@ async def global_create_video_start(message: Message, state: FSMContext):
             veo_webapps=veo_webapps,
             sora_webapps=sora_webapps,
             midjourney_video_webapps=midjourney_video_webapps,
+            runway_webapps=runway_webapps,
         )
     )
 

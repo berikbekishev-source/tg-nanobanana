@@ -371,6 +371,7 @@ class ChatLogger:
             "kling_settings": "Kling",
             "veo_video_settings": "Veo",
             "sora2_settings": "Sora 2",
+            "runway_settings": "Runway",
         }
         if kind and kind in mapping:
             return mapping[kind]

@@ -17,7 +17,6 @@ def midjourney_webapp(request):
     return HttpResponse(html_content, content_type="text/html")
 
 
-
 @csrf_exempt
 @xframe_options_exempt
 def midjourney_video_webapp(request):
@@ -29,6 +28,7 @@ def midjourney_video_webapp(request):
     with open(page_path, "r", encoding="utf-8") as f:
         html_content = f.read()
     return HttpResponse(html_content, content_type="text/html")
+
 
 @csrf_exempt
 @xframe_options_exempt
@@ -67,6 +67,20 @@ def sora2_webapp(request):
     with open(page_path, "r", encoding="utf-8") as f:
         html_content = f.read()
     return HttpResponse(html_content, content_type="text/html")
+
+
+@csrf_exempt
+@xframe_options_exempt
+def runway_webapp(request):
+    """Отдаёт статический WebApp настроек Runway."""
+    base_dir = os.path.dirname(__file__)
+    page_path = os.path.join(base_dir, "runway", "index.html")
+    if not os.path.exists(page_path):
+        raise Http404("Runway WebApp not found")
+    with open(page_path, "r", encoding="utf-8") as f:
+        html_content = f.read()
+    return HttpResponse(html_content, content_type="text/html")
+
 
 @csrf_exempt
 @xframe_options_exempt

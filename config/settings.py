@@ -292,6 +292,15 @@ MIDJOURNEY_KIE_POLL_INTERVAL = int(os.getenv("MIDJOURNEY_KIE_POLL_INTERVAL", str
 MIDJOURNEY_KIE_POLL_TIMEOUT = int(os.getenv("MIDJOURNEY_KIE_POLL_TIMEOUT", str(KIE_POLL_TIMEOUT)))
 MIDJOURNEY_KIE_REQUEST_TIMEOUT = os.getenv("MIDJOURNEY_KIE_REQUEST_TIMEOUT", KIE_REQUEST_TIMEOUT)
 
+# --- Runway via useapi.net ---
+USEAPI_API_KEY = os.getenv("USEAPI_API_KEY")
+USEAPI_BASE_URL = os.getenv("USEAPI_BASE_URL", "https://api.useapi.net")
+USEAPI_POLL_INTERVAL = int(os.getenv("USEAPI_POLL_INTERVAL", "5"))
+USEAPI_POLL_TIMEOUT = int(os.getenv("USEAPI_POLL_TIMEOUT", str(12 * 60)))
+_useapi_request_timeout = os.getenv("USEAPI_REQUEST_TIMEOUT")
+USEAPI_REQUEST_TIMEOUT = float(_useapi_request_timeout) if _useapi_request_timeout else None
+USEAPI_MAX_JOBS = int(os.getenv("USEAPI_MAX_JOBS", "5"))
+
 # --- Lava.top Payment ---
 LAVA_WEBHOOK_SECRET = os.getenv("LAVA_WEBHOOK_SECRET")
 LAVA_API_KEY = os.getenv("LAVA_API_KEY")
