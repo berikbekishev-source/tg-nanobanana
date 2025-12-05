@@ -25,6 +25,7 @@ from botapp.keyboards import (
 )
 from botapp.models import BotErrorEvent, AIModel, TgUser
 from botapp.reference_prompt import (
+    REFERENCE_PROMPT_PRICING_SLUG,
     REFERENCE_PROMPT_MODELS,
     ReferenceInputPayload,
     ReferencePromptService,
@@ -395,7 +396,9 @@ async def _build_video_models_keyboard() -> Optional[InlineKeyboardMarkup]:
     """Возвращает inline-кнопки выбора модели видео, как в 'Создать видео'."""
 
     models = await sync_to_async(list)(
-        AIModel.objects.filter(type="video", is_active=True).order_by("order")
+        AIModel.objects.filter(type="video", is_active=True)
+        .exclude(slug=REFERENCE_PROMPT_PRICING_SLUG)
+        .order_by("order")
     )
     if not models:
         return None

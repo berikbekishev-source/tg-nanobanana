@@ -11,6 +11,7 @@ from aiogram.types import (
 )
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from botapp.models import AIModel
+from botapp.reference_prompt import REFERENCE_PROMPT_PRICING_SLUG
 from botapp.business.pricing import (
     get_base_price_tokens,
     get_pricing_settings,
@@ -133,6 +134,8 @@ def get_video_models_keyboard(
 
     for model in models:
         if model.type == 'video' and model.is_active:
+            if model.slug == REFERENCE_PROMPT_PRICING_SLUG:
+                continue
             if model.provider == "kling" and kling_webapps.get(model.slug):
                 builder.button(
                     text=model.display_name,
