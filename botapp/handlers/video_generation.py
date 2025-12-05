@@ -11,6 +11,7 @@ from aiogram import Router, F
 from aiogram.filters import StateFilter
 from aiogram.types import Message, CallbackQuery
 from aiogram.fsm.context import FSMContext
+from django.conf import settings
 
 from botapp.states import BotStates
 from botapp.keyboards import (
@@ -534,6 +535,21 @@ async def _handle_runway_webapp_data_impl(message: Message, state: FSMContext, p
     if model.type != "video":
         await message.answer(
             "Эта WebApp работает только с видео-моделью Runway.",
+            reply_markup=get_main_menu_inline_keyboard(),
+        )
+        await state.clear()
+        return
+
+    if not getattr(settings, "USEAPI_API_KEY", None):
+        await ErrorTracker.alog(
+            origin=BotErrorEvent.Origin.TELEGRAM,
+            severity=BotErrorEvent.Severity.ERROR,
+            handler="video_generation.handle_runway_webapp_data",
+            chat_id=message.chat.id,
+            payload={"reason": "missing_useapi_api_key"},
+        )
+        await message.answer(
+            "Runway временно недоступна: не настроен API ключ провайдера. Мы уже чиним.",
             reply_markup=get_main_menu_inline_keyboard(),
         )
         await state.clear()
