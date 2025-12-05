@@ -18,9 +18,9 @@ class UseApiRunwayVideoProvider(BaseVideoProvider):
     slug = "useapi"
 
     _DEFAULT_BASE_URL = "https://api.useapi.net"
-    _ASSETS_ENDPOINT = "/v1/assets"
+    _ASSETS_ENDPOINT = "/v1/runwayml/assets"
     _CREATE_ENDPOINT = "/v1/runwayml/gen4/create"
-    _TASK_ENDPOINT = "/v1/tasks/{task_id}"
+    _TASK_ENDPOINT = "/v1/runwayml/tasks/{task_id}"
 
     _SUCCESS_STATUSES = {"SUCCEEDED", "SUCCESS", "COMPLETED", "DONE"}
     _FAIL_STATUSES = {"FAILED", "ERROR", "CANCELLED", "CANCELED", "REJECTED", "MODERATED"}
@@ -47,6 +47,7 @@ class UseApiRunwayVideoProvider(BaseVideoProvider):
             self._max_jobs: int = int(getattr(settings, "USEAPI_MAX_JOBS", "5") or 5)
         except Exception:
             self._max_jobs = 5
+        self._account_email: Optional[str] = getattr(settings, "USEAPI_ACCOUNT_EMAIL", None)
 
         try:
             self._asset_upload_retries: int = max(1, int(getattr(settings, "USEAPI_ASSET_RETRIES", "5") or 5))
@@ -192,6 +193,9 @@ class UseApiRunwayVideoProvider(BaseVideoProvider):
 
     def _upload_asset(self, image_bytes: bytes, mime_type: str, file_name: str) -> Optional[str]:
         url = f"{self._base_url}{self._ASSETS_ENDPOINT}"
+        params: Dict[str, Any] = {"name": file_name}
+        if self._account_email:
+            params["email"] = self._account_email
         retryable_statuses = {500, 502, 503, 504, 520, 521, 522, 524}
         last_exc: Optional[Exception] = None
 
@@ -200,12 +204,13 @@ class UseApiRunwayVideoProvider(BaseVideoProvider):
                 with httpx.Client(timeout=self._request_timeout, follow_redirects=True) as client:
                     response = client.post(
                         url,
+                        params=params,
                         headers={
                             "Authorization": f"Bearer {self._api_key}",
                             "Accept": "application/json",
+                            "Content-Type": mime_type or "image/png",
                         },
-                        data={"mediaType": "image"},
-                        files={"file": (file_name, image_bytes, mime_type or "image/png")},
+                        content=image_bytes,
                     )
                     response.raise_for_status()
                     data = response.json()
@@ -237,9 +242,10 @@ class UseApiRunwayVideoProvider(BaseVideoProvider):
         endpoint = self._TASK_ENDPOINT.format(task_id=task_id)
         deadline = time.time() + self._poll_timeout
         last_payload: Dict[str, Any] = {}
+        params = {"email": self._account_email} if self._account_email else None
 
         while time.time() < deadline:
-            last_payload = self._request("GET", endpoint)
+            last_payload = self._request("GET", endpoint, params=params)
             status = self._extract_status(last_payload)
             if status and status in self._SUCCESS_STATUSES:
                 return last_payload
