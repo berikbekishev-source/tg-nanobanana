@@ -159,8 +159,9 @@ def get_video_models_keyboard(
                     web_app=WebAppInfo(url=midjourney_video_webapps[model.slug]),
                 )
             elif model.provider == "useapi" and runway_webapps.get(model.slug):
+                button_text = "🎞️ Runway Aleph" if model.slug == "runway_aleph" else model.display_name
                 builder.button(
-                    text=model.display_name,
+                    text=button_text,
                     web_app=WebAppInfo(url=runway_webapps[model.slug]),
                 )
             else:
