@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import time
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Optional
 
 import httpx
 from django.conf import settings
@@ -98,7 +98,6 @@ class UseApiRunwayVideoProvider(BaseVideoProvider):
         )
         seconds = self._sanitize_seconds(params.get("seconds") or params.get("duration"))
         resolution = (params.get("resolution") or "720p").lower()
-        width, height = self._resolve_dimensions(resolution, aspect_ratio)
 
         # Убедимся, что аккаунт Runway настроен в useapi, если заданы креды
         self._ensure_account_ready()
@@ -114,11 +113,6 @@ class UseApiRunwayVideoProvider(BaseVideoProvider):
             "seconds": seconds,
             "maxJobs": self._max_jobs,
         }
-        if width and height:
-            create_payload["width"] = width
-            create_payload["height"] = height
-        if model_name:
-            create_payload["model"] = model_name
 
         create_response = self._request(
             "POST",
@@ -360,23 +354,6 @@ class UseApiRunwayVideoProvider(BaseVideoProvider):
         except Exception:
             ivalue = 5
         return 10 if ivalue >= 10 else 5
-
-    @staticmethod
-    def _resolve_dimensions(resolution: str, aspect_ratio: str) -> Tuple[Optional[int], Optional[int]]:
-        res = (resolution or "720p").lower()
-        height = 720 if res.startswith("720") else 1080
-
-        ratio = aspect_ratio.replace(" ", "")
-        mapping = {
-            "16:9": (16, 9),
-            "9:16": (9, 16),
-            "1:1": (1, 1),
-            "3:4": (3, 4),
-            "4:3": (4, 3),
-        }
-        w_part, h_part = mapping.get(ratio, (16, 9))
-        width = int(height * (w_part / h_part))
-        return width, height
 
     @staticmethod
     def _extract_number(payload: Dict[str, Any], keys: Any) -> Optional[float]:
