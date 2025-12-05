@@ -335,6 +335,8 @@ MODEL_PRICE_PRESETS: List[Tuple[str, str]] = [
     ("🌀 Kling v2-5-turbo", "kling-v2-5-turbo"),
     ("🖼️ GPT Image 1", "gpt-image-1"),
     ("🎥 Sora 2", "sora2"),
+    ("🏁 Runway Gen-4", "runway_gen4"),
+    ("🏁 Runway Aleph", "runway_aleph"),
 ]
 
 
