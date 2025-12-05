@@ -56,7 +56,6 @@ class UseApiRunwayVideoProvider(BaseVideoProvider):
             self._asset_retry_backoff: float = float(getattr(settings, "USEAPI_ASSET_RETRY_BACKOFF", "2.0") or 2.0)
         except Exception:
             self._asset_retry_backoff = 2.0
-
         # Данные аккаунта Runway (если заданы — проверим/создадим конфиг перед генерацией)
         self._account_email: Optional[str] = getattr(settings, "USEAPI_ACCOUNT_EMAIL", None)
         self._account_password: Optional[str] = getattr(settings, "USEAPI_ACCOUNT_PASSWORD", None)
