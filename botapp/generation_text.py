@@ -109,6 +109,8 @@ def resolve_video_mode_label(generation_type: str) -> str:
     mode = (generation_type or "").lower()
     if mode == "image2video":
         return "Изображение → Видео"
+    if mode == "video2video":
+        return "Видео → Видео"
     return "Текст → Видео"
 
 

@@ -30,7 +30,7 @@ from botapp.business.pricing import calculate_request_cost, get_base_price_token
 from botapp.tasks import generate_video_task, extend_video_task
 from botapp.providers.video.openai_sora import resolve_sora_dimensions
 from asgiref.sync import sync_to_async
-from botapp.services import supabase_upload_png
+from botapp.services import supabase_upload_png, supabase_upload_video
 from botapp.error_tracker import ErrorTracker
 
 router = Router()
@@ -108,6 +108,7 @@ def _format_image_hint_text(dimensions: Optional[Tuple[int, int]]) -> Optional[s
 
 
 MAX_KLING_IMAGE_BYTES = 10 * 1024 * 1024
+MAX_RUNWAY_ALEPH_VIDEO_BYTES = 10 * 1024 * 1024
 
 
 def _convert_to_png_bytes(raw: bytes, mime: Optional[str]) -> bytes:
@@ -301,6 +302,8 @@ async def handle_webapp_data_dispatcher(message: Message, state: FSMContext):
         await _handle_sora_webapp_data_impl(message, state, payload)
     elif kind == "runway_settings":
         await _handle_runway_webapp_data_impl(message, state, payload)
+    elif kind == "runway_aleph_settings":
+        await _handle_runway_aleph_webapp_data_impl(message, state, payload)
     elif kind == "midjourney_video_settings":
         await _handle_midjourney_video_webapp_data_impl(message, state, payload)
     elif kind == "kling_settings":
@@ -501,6 +504,204 @@ async def _handle_sora_webapp_data_impl(message: Message, state: FSMContext, pay
             aspect_ratio=aspect_ratio,
             resolution=resolution,
             duration=duration_value,
+            prompt=prompt,
+        ),
+    )
+
+    generate_video_task.delay(gen_request.id)
+    await state.clear()
+
+
+async def _handle_runway_aleph_webapp_data_impl(message: Message, state: FSMContext, payload: dict):
+    """Принимаем данные Runway Aleph WebApp и запускаем генерацию (video2video)."""
+    data = await state.get_data()
+    model_slug = payload.get("modelSlug") or data.get("model_slug") or data.get("selected_model") or "runway_aleph"
+
+    try:
+        model = await sync_to_async(AIModel.objects.get)(slug=model_slug, is_active=True)
+    except AIModel.DoesNotExist:
+        await message.answer(
+            "Модель Runway Aleph недоступна. Выберите её заново из списка моделей.",
+            reply_markup=get_main_menu_inline_keyboard(),
+        )
+        await state.clear()
+        return
+
+    if model.provider != "useapi":
+        await message.answer(
+            "Эта WebApp работает только с моделью Runway Aleph.",
+            reply_markup=get_main_menu_inline_keyboard(),
+        )
+        await state.clear()
+        return
+
+    if model.type != "video":
+        await message.answer(
+            "Эта WebApp работает только с видео-моделью Runway Aleph.",
+            reply_markup=get_main_menu_inline_keyboard(),
+        )
+        await state.clear()
+        return
+
+    if not getattr(settings, "USEAPI_API_KEY", None):
+        await ErrorTracker.alog(
+            origin=BotErrorEvent.Origin.TELEGRAM,
+            severity=BotErrorEvent.Severity.ERROR,
+            handler="video_generation.handle_runway_aleph_webapp_data",
+            chat_id=message.chat.id,
+            payload={"reason": "missing_useapi_api_key"},
+        )
+        await message.answer(
+            "Runway временно недоступна: не настроен API ключ провайдера. Мы уже чиним.",
+            reply_markup=get_main_menu_inline_keyboard(),
+        )
+        await state.clear()
+        return
+
+    await state.update_data(model_id=int(model.id), model_slug=str(model.slug), model_provider=str(model.provider))
+
+    prompt = (payload.get("prompt") or "").strip()
+    if not prompt:
+        await message.answer("Введите промт в окне Runway Aleph и отправьте ещё раз.", reply_markup=get_cancel_keyboard())
+        return
+    if len(prompt) > model.max_prompt_length:
+        await message.answer(
+            f"❌ Промт слишком длинный! Максимум {model.max_prompt_length} символов.",
+            reply_markup=get_cancel_keyboard(),
+        )
+        return
+
+    allowed_aspects = _extract_allowed_aspect_ratios(model) or ["16:9", "9:16", "1:1", "3:4", "4:3", "21:9"]
+    requested_aspect = (
+        payload.get("aspectRatio")
+        or payload.get("aspect_ratio")
+        or (model.default_params or {}).get("aspect_ratio")
+        or allowed_aspects[0]
+    )
+    aspect_ratio = requested_aspect if requested_aspect in allowed_aspects else allowed_aspects[0]
+
+    video_b64 = payload.get("videoData")
+    if not video_b64:
+        await message.answer("Загрузите видео для режима Видео → Видео.", reply_markup=get_cancel_keyboard())
+        return
+    try:
+        raw = base64.b64decode(video_b64)
+    except Exception:
+        await message.answer(
+            "Не удалось прочитать видео. Загрузите файл ещё раз.",
+            reply_markup=get_cancel_keyboard(),
+        )
+        return
+    if len(raw) > MAX_RUNWAY_ALEPH_VIDEO_BYTES:
+        await message.answer(
+            "Видео слишком большое. Максимум 10 МБ.",
+            reply_markup=get_cancel_keyboard(),
+        )
+        return
+
+    mime = payload.get("videoMime") or "video/mp4"
+    file_name = payload.get("videoName") or "video.mp4"
+    try:
+        upload_obj = await sync_to_async(supabase_upload_video)(raw, mime_type=mime)
+    except Exception as exc:  # pragma: no cover - сеть/хранилище
+        await ErrorTracker.alog(
+            origin=BotErrorEvent.Origin.TELEGRAM,
+            severity=BotErrorEvent.Severity.WARNING,
+            handler="video_generation.handle_runway_aleph_webapp_data",
+            chat_id=message.chat.id,
+            payload={"reason": "supabase_video_upload_failed"},
+            exc=exc,
+        )
+        await message.answer(
+            "Не удалось загрузить видео в хранилище. Попробуйте другой файл.",
+            reply_markup=get_cancel_keyboard(),
+        )
+        await state.clear()
+        return
+
+    video_url = _extract_public_url(upload_obj)
+    if not video_url:
+        await message.answer(
+            "Не удалось получить ссылку на видео. Попробуйте снова.",
+            reply_markup=get_cancel_keyboard(),
+        )
+        await state.clear()
+        return
+
+    params = {
+        "aspect_ratio": aspect_ratio,
+        "video_url": video_url,
+        "input_video_mime_type": mime,
+    }
+    if model.api_model_name:
+        params.setdefault("api_model", model.api_model_name)
+
+    source_media = {
+        "file_name": file_name,
+        "mime_type": mime,
+        "storage_url": video_url,
+        "size_bytes": len(raw),
+        "source": "runway_aleph_webapp",
+    }
+
+    try:
+        user = await sync_to_async(TgUser.objects.get)(chat_id=message.from_user.id)
+    except TgUser.DoesNotExist:
+        await message.answer(
+            "Не удалось найти пользователя. Начните заново.",
+            reply_markup=get_main_menu_inline_keyboard(),
+        )
+        await state.clear()
+        return
+
+    try:
+        gen_request = await sync_to_async(GenerationService.create_generation_request)(
+            user=user,
+            ai_model=model,
+            prompt=prompt,
+            quantity=1,
+            generation_type="video2video",
+            generation_params=params,
+            duration=None,
+            video_resolution=None,
+            aspect_ratio=aspect_ratio,
+            source_media=source_media,
+        )
+    except InsufficientBalanceError as exc:
+        await message.answer(str(exc), reply_markup=get_main_menu_inline_keyboard())
+        await state.clear()
+        return
+    except ValueError as exc:
+        await message.answer(str(exc), reply_markup=get_main_menu_inline_keyboard())
+        await state.clear()
+        return
+    except Exception as exc:
+        await message.answer(
+            "❌ Произошла ошибка при подготовке генерации. Попробуйте ещё раз.",
+            reply_markup=get_main_menu_inline_keyboard(),
+        )
+        await ErrorTracker.alog(
+            origin=BotErrorEvent.Origin.TELEGRAM,
+            severity=BotErrorEvent.Severity.ERROR,
+            handler="video_generation.handle_runway_aleph_webapp_data",
+            chat_id=message.chat.id,
+            payload={
+                "aspect_ratio": aspect_ratio,
+                "mime_type": mime,
+            },
+            exc=exc,
+        )
+        await state.clear()
+        return
+
+    await _send_generation_start_message(
+        message,
+        get_generation_start_message(
+            model=model.display_name,
+            mode="video2video",
+            aspect_ratio=aspect_ratio,
+            resolution=None,
+            duration=None,
             prompt=prompt,
         ),
     )

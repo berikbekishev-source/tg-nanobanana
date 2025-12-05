@@ -20,6 +20,7 @@ class UseApiRunwayVideoProvider(BaseVideoProvider):
     _DEFAULT_BASE_URL = "https://api.useapi.net"
     _ASSETS_ENDPOINT = "/v1/runwayml/assets/"
     _CREATE_ENDPOINT = "/v1/runwayml/gen4/create"
+    _VIDEO_ENDPOINT = "/v1/runwayml/gen4/video"
     _TASK_ENDPOINT = "/v1/runwayml/tasks/{task_id}"
 
     _SUCCESS_STATUSES = {"SUCCEEDED", "SUCCESS", "COMPLETED", "DONE"}
@@ -73,9 +74,30 @@ class UseApiRunwayVideoProvider(BaseVideoProvider):
         input_mime_type: Optional[str] = None,
     ) -> VideoGenerationResult:
         generation_type = (generation_type or "").lower()
-        if generation_type != "image2video":
-            raise VideoGenerationError("Runway (useapi) поддерживает только режим image2video.")
+        if generation_type == "image2video":
+            return self._generate_image_to_video(
+                prompt=prompt,
+                params=params,
+                input_media=input_media,
+                input_mime_type=input_mime_type,
+            )
+        if generation_type == "video2video":
+            return self._generate_video_to_video(
+                prompt=prompt,
+                params=params,
+                input_media=input_media,
+                input_mime_type=input_mime_type,
+            )
+        raise VideoGenerationError("Runway (useapi) поддерживает режимы image2video и video2video.")
 
+    def _generate_image_to_video(
+        self,
+        *,
+        prompt: str,
+        params: Dict[str, Any],
+        input_media: Optional[bytes],
+        input_mime_type: Optional[str],
+    ) -> VideoGenerationResult:
         image_bytes = input_media
         if not image_bytes and params.get("image_url"):
             try:
@@ -99,7 +121,6 @@ class UseApiRunwayVideoProvider(BaseVideoProvider):
         seconds = self._sanitize_seconds(params.get("seconds") or params.get("duration"))
         resolution = (params.get("resolution") or "720p").lower()
 
-        # Убедимся, что аккаунт Runway настроен в useapi, если заданы креды
         self._ensure_account_ready()
 
         asset_id = self._upload_asset(image_bytes, mime_type, file_name)
@@ -148,6 +169,101 @@ class UseApiRunwayVideoProvider(BaseVideoProvider):
 
         return VideoGenerationResult(
             content=video_bytes,
+            mime_type="video/mp4",
+            duration=int(duration_value) if isinstance(duration_value, (int, float)) else None,
+            aspect_ratio=aspect_ratio,
+            resolution=resolution,
+            provider_job_id=task_id,
+            metadata=metadata,
+        )
+
+    def _generate_video_to_video(
+        self,
+        *,
+        prompt: str,
+        params: Dict[str, Any],
+        input_media: Optional[bytes],
+        input_mime_type: Optional[str],
+    ) -> VideoGenerationResult:
+        video_bytes = input_media
+        if not video_bytes and params.get("video_url"):
+            try:
+                video_bytes = _download_binary_file(str(params["video_url"]))
+            except Exception as exc:
+                raise VideoGenerationError("Не удалось скачать исходное видео.") from exc
+
+        if not video_bytes:
+            raise VideoGenerationError("Не передано видео для режима video2video.")
+
+        mime_type = (input_mime_type or params.get("input_video_mime_type") or "video/mp4").strip() or "video/mp4"
+        file_name = params.get("videoName") or params.get("video_name") or "video.mp4"
+        aspect_ratio = (
+            params.get("aspect_ratio")
+            or params.get("aspectRatio")
+            or params.get("ratio")
+            or "16:9"
+        )
+        seed = self._sanitize_seed(params.get("seed"))
+        explore_mode = params.get("exploreMode")
+        reply_url = params.get("replyUrl") or params.get("reply_url")
+        reply_ref = params.get("replyRef") or params.get("reply_ref")
+        max_jobs = self._sanitize_max_jobs(params.get("maxJobs"))
+
+        self._ensure_account_ready()
+
+        video_asset_id = self._upload_asset(video_bytes, mime_type, file_name)
+        if not video_asset_id:
+            raise VideoGenerationError("useapi не вернул assetId для исходного видео.")
+
+        create_payload: Dict[str, Any] = {
+            "video_assetId": video_asset_id,
+            "text_prompt": prompt,
+            "maxJobs": max_jobs,
+        }
+        if seed is not None:
+            create_payload["seed"] = seed
+        if isinstance(explore_mode, bool):
+            create_payload["exploreMode"] = explore_mode
+        if reply_url:
+            create_payload["replyUrl"] = str(reply_url)
+        if reply_ref:
+            create_payload["replyRef"] = str(reply_ref)
+
+        create_response = self._request(
+            "POST",
+            self._VIDEO_ENDPOINT,
+            json_payload=create_payload,
+        )
+        task_id = self._extract_task_id(create_response)
+        if not task_id:
+            raise VideoGenerationError(f"useapi не вернул taskId: {create_response}")
+
+        task_payload = self._poll_task(task_id)
+
+        status = self._extract_status(task_payload)
+        if status and status in self._FAIL_STATUSES:
+            raise VideoGenerationError(f"Runway завершилась с ошибкой: {task_payload}")
+
+        video_url = self._extract_video_url(task_payload)
+        if not video_url:
+            raise VideoGenerationError("Не удалось получить ссылку на видео в ответе Runway.")
+
+        try:
+            final_video_bytes = _download_binary_file(video_url)
+        except Exception as exc:
+            raise VideoGenerationError("Не удалось скачать видео из Runway.") from exc
+
+        duration_value = self._extract_number(task_payload, ["seconds", "duration"])
+        resolution = self._extract_resolution(task_payload)
+
+        metadata = {
+            "createResponse": create_response,
+            "task": task_payload,
+            "request": create_payload,
+        }
+
+        return VideoGenerationResult(
+            content=final_video_bytes,
             mime_type="video/mp4",
             duration=int(duration_value) if isinstance(duration_value, (int, float)) else None,
             aspect_ratio=aspect_ratio,
@@ -346,6 +462,25 @@ class UseApiRunwayVideoProvider(BaseVideoProvider):
                     return val
         return None
 
+    def _sanitize_max_jobs(self, value: Any) -> int:
+        try:
+            jobs = int(value)
+        except (TypeError, ValueError):
+            jobs = self._max_jobs
+        if jobs <= 0:
+            jobs = self._max_jobs
+        return min(max(1, jobs), 10)
+
+    @staticmethod
+    def _sanitize_seed(value: Any) -> Optional[int]:
+        try:
+            seed_value = int(value)
+        except (TypeError, ValueError):
+            return None
+        if 1 <= seed_value <= 4294967294:
+            return seed_value
+        return None
+
     @staticmethod
     def _sanitize_seconds(value: Any) -> int:
         try:
@@ -353,6 +488,35 @@ class UseApiRunwayVideoProvider(BaseVideoProvider):
         except Exception:
             ivalue = 5
         return 10 if ivalue >= 10 else 5
+
+    @staticmethod
+    def _extract_resolution(payload: Dict[str, Any]) -> Optional[str]:
+        if not isinstance(payload, dict):
+            return None
+
+        candidates: list[Dict[str, Any]] = [payload]
+        task = payload.get("task")
+        if isinstance(task, dict):
+            candidates.append(task)
+            options = task.get("options")
+            if isinstance(options, dict):
+                candidates.append(options)
+
+        width = None
+        height = None
+        for item in candidates:
+            maybe_w = item.get("width") if isinstance(item, dict) else None
+            maybe_h = item.get("height") if isinstance(item, dict) else None
+            if width is None and isinstance(maybe_w, (int, float)):
+                width = int(maybe_w)
+            if height is None and isinstance(maybe_h, (int, float)):
+                height = int(maybe_h)
+            if width is not None and height is not None:
+                break
+
+        if width and height:
+            return f"{width}x{height}"
+        return None
 
     @staticmethod
     def _extract_number(payload: Dict[str, Any], keys: Any) -> Optional[float]:

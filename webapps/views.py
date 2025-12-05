@@ -84,6 +84,19 @@ def runway_webapp(request):
 
 @csrf_exempt
 @xframe_options_exempt
+def runway_aleph_webapp(request):
+    """Отдаёт статический WebApp настроек Runway Aleph (video-to-video)."""
+    base_dir = os.path.dirname(__file__)
+    page_path = os.path.join(base_dir, "runway_aleph", "index.html")
+    if not os.path.exists(page_path):
+        raise Http404("Runway Aleph WebApp not found")
+    with open(page_path, "r", encoding="utf-8") as f:
+        html_content = f.read()
+    return HttpResponse(html_content, content_type="text/html")
+
+
+@csrf_exempt
+@xframe_options_exempt
 def gpt_image_webapp(request):
     """Отдаёт статический WebApp для настроек GPT Image."""
     base_dir = os.path.dirname(__file__)

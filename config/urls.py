@@ -22,7 +22,7 @@ from django.conf.urls.static import static
 from botapp.api import api  # Ninja API
 from lavatop.api import miniapp_api  # Payment API
 from lavatop.views import miniapp_payment
-from webapps.views import midjourney_webapp, midjourney_video_webapp, kling_webapp, veo_webapp, sora2_webapp, runway_webapp, gpt_image_webapp, nanobanana_webapp
+from webapps.views import midjourney_webapp, midjourney_video_webapp, kling_webapp, veo_webapp, sora2_webapp, runway_webapp, runway_aleph_webapp, gpt_image_webapp, nanobanana_webapp
 
 urlpatterns = [
     path("admin/", admin.site.urls),
@@ -35,6 +35,7 @@ urlpatterns = [
     path("veo/", veo_webapp, name='veo_webapp'),  # Veo WebApp
     path("sora2/", sora2_webapp, name='sora2_webapp'),  # Sora 2 WebApp
     path("runway/", runway_webapp, name='runway_webapp'),  # Runway WebApp
+    path("runway-aleph/", runway_aleph_webapp, name='runway_aleph_webapp'),  # Runway Aleph WebApp
     path("gpt-image/", gpt_image_webapp, name='gpt_image_webapp'),  # GPT Image WebApp
     path("nanobanana/", nanobanana_webapp, name='nanobanana_webapp'),  # Nano Banana WebApp
     path("dashboard/", include("dashboard.urls")),

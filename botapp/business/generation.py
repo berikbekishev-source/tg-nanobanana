@@ -152,7 +152,7 @@ class GenerationService:
             user.settings.total_generations += 1
             if generation_type in ['text2image', 'image2image']:
                 user.settings.total_images_generated += quantity
-            elif generation_type in ['text2video', 'image2video']:
+            elif generation_type in ['text2video', 'image2video', 'video2video']:
                 user.settings.total_videos_generated += quantity
             user.settings.last_generation_at = timezone.now()
             user.settings.save()

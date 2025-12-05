@@ -243,8 +243,9 @@ async def global_create_video_start(message: Message, state: FSMContext):
                         base_duration = None
                 base_duration = base_duration if base_duration and base_duration > 0 else 5
                 api_model_name = model.api_model_name or model.slug
+                webapp_path = "runway-aleph" if model.slug.startswith("runway_aleph") else "runway"
                 runway_webapps[model.slug] = (
-                    f"{PUBLIC_BASE_URL}/runway/?"
+                    f"{PUBLIC_BASE_URL}/{webapp_path}/?"
                     f"model={quote_plus(model.slug)}&price={quote_plus(price_label)}"
                     f"&price_base_duration={quote_plus(str(base_duration))}"
                     f"&api_model={quote_plus(api_model_name)}"
