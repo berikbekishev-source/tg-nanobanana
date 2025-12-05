@@ -269,10 +269,9 @@ class UseApiRunwayVideoProvider(BaseVideoProvider):
         endpoint = self._TASK_ENDPOINT.format(task_id=task_id)
         deadline = time.time() + self._poll_timeout
         last_payload: Dict[str, Any] = {}
-        params = {"email": self._account_email} if self._account_email else None
 
         while time.time() < deadline:
-            last_payload = self._request("GET", endpoint, params=params)
+            last_payload = self._request("GET", endpoint)
             status = self._extract_status(last_payload)
             if status and status in self._SUCCESS_STATUSES:
                 return last_payload
