@@ -157,6 +157,7 @@ class GenRequest(models.Model):
         ('image2image', 'Image to Image'),
         ('text2video', 'Text to Video'),
         ('image2video', 'Image to Video'),
+        ('video2video', 'Video to Video'),
     ]
 
     STATUS_CHOICES = [
