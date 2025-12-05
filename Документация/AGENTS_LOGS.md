@@ -1,3 +1,16 @@
+## [2025-12-05] Обновление себестоимости видео моделей
+
+**Агент:** Codex  
+**Ветка:** worktree/agent-codex-staging-agents-latest  
+**PR:** (не создан, пуш не делал)  
+**Коммит:** f10c10093bed4462132625582e7715bfd88377be
+
+### Выполненные действия:
+1. Добавил миграцию `0046_update_video_base_costs.py`: выставил base_cost_usd/unit_cost_usd для sora2 (0.02), veo3-fast (0.05), runway_aleph (0.5), runway_gen4 (0.02), midjourney-video (0.015) с перерасчётом price при наличии PricingSettings.
+
+### Результат:
+- Готово к пушу в staging после подтверждения.
+
 ## [2025-12-02] Kling v2-5-turbo
 
 **Агент:** Codex  
