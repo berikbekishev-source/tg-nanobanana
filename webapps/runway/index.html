@@ -275,6 +275,7 @@
         const ratios = ["16:9", "9:16", "1:1", "3:4", "4:3"];
         const resolutions = ["720p", "1080p"];
         const MAX_IMAGE_SIZE = 10 * 1024 * 1024; // 10 MB
+        const PROMPT_LIMIT = 4000;
 
         function sanitizeDuration(value) {
             const num = Number(value);
@@ -295,6 +296,28 @@
             return resolutions.includes(val.toLowerCase()) ? val.toLowerCase() : resolutions[0];
         }
 
+        const parseTokens = (label) => {
+            if (!label) return null;
+            const match = String(label).replace(",", ".").match(/([0-9]+(?:\.[0-9]+)?)/);
+            if (!match) return null;
+            const value = Number(match[1]);
+            return Number.isFinite(value) ? value : null;
+        };
+
+        const formatPrice = (tokens) => {
+            if (!Number.isFinite(tokens)) return "—";
+            return `⚡${tokens.toFixed(2)} токенов`;
+        };
+
+        const initialPriceLabel = params.get("price") ? decodeURIComponent(params.get("price")) : "—";
+        const initialTokensPerSecond = (() => {
+            const tokens = parseTokens(initialPriceLabel);
+            const baseDurationRaw = params.get("price_base_duration");
+            const baseDuration = baseDurationRaw ? Number(baseDurationRaw) : durations[0];
+            if (!Number.isFinite(tokens) || !Number.isFinite(baseDuration) || baseDuration <= 0) return null;
+            return tokens / baseDuration;
+        })();
+
         const state = {
             modelSlug: params.get("model") || "runway",
             modelName: params.get("api_model") || "runway-gen4",
@@ -305,6 +328,8 @@
             imageData: null,
             imageMime: null,
             imageName: null,
+            priceLabel: initialPriceLabel || "—",
+            tokensPerSecond: initialTokensPerSecond,
         };
 
         const els = {
@@ -330,12 +355,29 @@
             if (text && tg) tg.showAlert(text);
         }
 
+        function setPriceLabel(label) {
+            state.priceLabel = label || "—";
+            if (tg?.MainButton) {
+                const btnText = state.priceLabel === "—" ? "Сгенерировать" : `Сгенерировать · ${state.priceLabel}`;
+                tg.MainButton.setText(btnText);
+            }
+        }
+
+        function updatePriceForDuration() {
+            if (!Number.isFinite(state.tokensPerSecond)) {
+                setPriceLabel(state.priceLabel || "—");
+                return;
+            }
+            const total = state.tokensPerSecond * state.duration;
+            setPriceLabel(formatPrice(total));
+        }
+
         function updateCounts() {
             state.prompt = els.prompt.value.trim();
-            els.promptCount.textContent = `${state.prompt.length}/4000`;
+            els.promptCount.textContent = `${state.prompt.length}/${PROMPT_LIMIT}`;
             if (tg?.MainButton) {
                 if (state.prompt.length > 0) {
-                    tg.MainButton.setText("Сгенерировать");
+                    setPriceLabel(state.priceLabel || "—");
                     tg.MainButton.show();
                 } else {
                     tg.MainButton.hide();
@@ -501,6 +543,7 @@
             e.preventDefault();
             setActive(els.durationGrid, btn);
             state.duration = sanitizeDuration(btn.dataset.duration);
+            updatePriceForDuration();
         });
 
         els.resolutionGrid.addEventListener("click", (e) => {
@@ -524,6 +567,8 @@
         }
 
         applyInitialSelections();
+        els.prompt.maxLength = PROMPT_LIMIT;
+        updatePriceForDuration();
         updateCounts();
 
         if (tg) {

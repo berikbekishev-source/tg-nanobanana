@@ -23,7 +23,7 @@ def add_runway_aleph_model(apps, schema_editor):
         price=Decimal("0.00"),
         unit_cost_usd=Decimal("0.0500"),
         base_cost_usd=Decimal("0.0500"),
-        cost_unit="second",
+        cost_unit="generation",
         api_endpoint="https://api.useapi.net/v1/runwayml/gen4/video",
         api_model_name="runway-gen4-aleph",
         max_prompt_length=4000,

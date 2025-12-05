@@ -252,6 +252,17 @@
     <script>
         const tg = window.Telegram?.WebApp || null;
         const PROMPT_LIMIT = 4000;
+        const parseTokens = (label) => {
+            if (!label) return null;
+            const match = String(label).replace(",", ".").match(/([0-9]+(?:\.[0-9]+)?)/);
+            if (!match) return null;
+            const value = Number(match[1]);
+            return Number.isFinite(value) ? value : null;
+        };
+        const formatPrice = (tokens) => {
+            if (!Number.isFinite(tokens)) return "—";
+            return `⚡${tokens.toFixed(2)} токенов`;
+        };
         const params = new URLSearchParams(window.location.search);
 
         const ratios = ["16:9", "9:16", "1:1", "3:4", "4:3", "21:9"];
@@ -264,6 +275,8 @@
             return ratios.includes(finalValue) ? finalValue : ratios[0];
         }
 
+        const initialPriceLabel = params.get("price") ? decodeURIComponent(params.get("price")) : "—";
+
         const state = {
             modelSlug: params.get("model") || "runway_aleph",
             modelName: params.get("api_model") || "runway-gen4-aleph",
@@ -272,6 +285,7 @@
             videoData: null,
             videoMime: null,
             videoName: null,
+            priceLabel: initialPriceLabel || "—",
         };
 
         const els = {
@@ -299,6 +313,14 @@
             state.prompt = els.prompt.value.trim();
             els.promptCount.textContent = `${state.prompt.length}/${PROMPT_LIMIT}`;
             updateMainButton();
+        }
+
+        function setPriceLabel(label) {
+            state.priceLabel = label || "—";
+            if (tg?.MainButton) {
+                const btnText = state.priceLabel === "—" ? "Сгенерировать" : `Сгенерировать · ${state.priceLabel}`;
+                tg.MainButton.setText(btnText);
+            }
         }
 
         function updateMainButton() {
@@ -478,6 +500,7 @@
                 tg.ready();
                 tg.expand();
                 if (!state.prompt || !state.videoData) tg.MainButton.hide();
+                setPriceLabel(formatPrice(parseTokens(state.priceLabel)));
                 tg.onEvent("mainButtonClicked", sendData);
             } catch (e) { /* ignore */ }
         } else {
