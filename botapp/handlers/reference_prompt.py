@@ -25,6 +25,7 @@ from botapp.keyboards import (
 )
 from botapp.models import BotErrorEvent, AIModel, TgUser
 from botapp.reference_prompt import (
+    REFERENCE_PROMPT_PRICING_SLUG,
     REFERENCE_PROMPT_MODELS,
     ReferenceInputPayload,
     ReferencePromptService,
@@ -245,22 +246,30 @@ async def _start_prompt_generation(message: Message, state: FSMContext, modifica
 
     reference_payload = ReferenceInputPayload.from_state(payload_data)
 
+    user = None
     try:
-        user, created = await sync_to_async(TgUser.objects.get_or_create)(
-            chat_id=message.from_user.id,
-            defaults={
-                "username": message.from_user.username or "",
-                "first_name": message.from_user.first_name or "",
-                "last_name": message.from_user.last_name or "",
-                "language_code": message.from_user.language_code or "ru",
-            },
-        )
-        if created:
-            await sync_to_async(BalanceService.ensure_balance)(user)
-    except Exception as exc:  # pragma: no cover - страхуем редкие ошибки
-        logger.exception("reference_prompt: failed to get_or_create user: %s", exc)
+        user = await sync_to_async(TgUser.objects.get)(chat_id=message.from_user.id)
+    except TgUser.DoesNotExist:
+        # Фолбек: вдруг chat_id отличается от from_user (группы/каналы)
+        try:
+            user = await sync_to_async(TgUser.objects.get)(chat_id=message.chat.id)
+        except TgUser.DoesNotExist:
+            pass
+
+    if not user:
         await message.answer(
-            "Не удалось найти пользователя. Начните заново.",
+            "Не удалось найти пользователя. Нажмите /start в боте, чтобы инициализировать профиль, и попробуйте ещё раз.",
+            reply_markup=get_cancel_keyboard(),
+        )
+        await state.clear()
+        return
+
+    try:
+        await sync_to_async(BalanceService.ensure_balance)(user)
+    except Exception as exc:  # pragma: no cover - редкий случай проблем с балансом
+        logger.exception("reference_prompt: failed to ensure balance: %s", exc)
+        await message.answer(
+            "Не удалось получить ваш баланс. Попробуйте ещё раз или нажмите /start.",
             reply_markup=get_cancel_keyboard(),
         )
         await state.clear()
@@ -387,7 +396,9 @@ async def _build_video_models_keyboard() -> Optional[InlineKeyboardMarkup]:
     """Возвращает inline-кнопки выбора модели видео, как в 'Создать видео'."""
 
     models = await sync_to_async(list)(
-        AIModel.objects.filter(type="video", is_active=True).order_by("order")
+        AIModel.objects.filter(type="video", is_active=True)
+        .exclude(slug=REFERENCE_PROMPT_PRICING_SLUG)
+        .order_by("order")
     )
     if not models:
         return None

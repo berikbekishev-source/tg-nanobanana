@@ -28,7 +28,7 @@ from botapp.keyboards import (
 from botapp.models import TgUser, AIModel
 from botapp.business.balance import BalanceService
 from botapp.business.pricing import get_base_price_tokens
-from botapp.reference_prompt import REFERENCE_PROMPT_MODELS
+from botapp.reference_prompt import REFERENCE_PROMPT_MODELS, REFERENCE_PROMPT_PRICING_SLUG
 from botapp.reference_prompt.pricing import build_reference_prompt_price_line
 
 router = Router()
@@ -182,7 +182,9 @@ async def global_create_video_start(message: Message, state: FSMContext):
     
     # Получаем активные модели для видео
     models = await sync_to_async(list)(
-        AIModel.objects.filter(type='video', is_active=True).order_by('order')
+        AIModel.objects.filter(type='video', is_active=True)
+        .exclude(slug=REFERENCE_PROMPT_PRICING_SLUG)
+        .order_by('order')
     )
 
     if not models:
