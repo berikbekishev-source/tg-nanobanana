@@ -18,7 +18,7 @@ class UseApiRunwayVideoProvider(BaseVideoProvider):
     slug = "useapi"
 
     _DEFAULT_BASE_URL = "https://api.useapi.net"
-    _ASSETS_ENDPOINT = "/v1/runwayml/assets"
+    _ASSETS_ENDPOINT = "/v1/runwayml/assets/"
     _CREATE_ENDPOINT = "/v1/runwayml/gen4/create"
     _TASK_ENDPOINT = "/v1/runwayml/tasks/{task_id}"
 
