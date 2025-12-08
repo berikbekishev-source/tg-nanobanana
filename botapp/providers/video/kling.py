@@ -409,14 +409,7 @@ class KlingVideoProvider(BaseVideoProvider):
         return None
 
     def _extract_duration(self, payload: Dict[str, Any]) -> Optional[int]:
-        for work in self._collect_works(payload):
-            if not isinstance(work, dict):
-                continue
-            resource = work.get("resource")
-            if isinstance(resource, dict):
-                duration_value = resource.get("duration")
-                if isinstance(duration_value, (int, float)):
-                    return int(duration_value)
+        # Сначала проверяем arguments - там duration в секундах
         arguments = self._extract_arguments_map(payload)
         for key in ("duration", "seconds"):
             if key in arguments:
@@ -424,6 +417,16 @@ class KlingVideoProvider(BaseVideoProvider):
                     return int(float(arguments[key]))
                 except (TypeError, ValueError):
                     continue
+        # Fallback: resource.duration в миллисекундах - конвертируем в секунды
+        for work in self._collect_works(payload):
+            if not isinstance(work, dict):
+                continue
+            resource = work.get("resource")
+            if isinstance(resource, dict):
+                duration_value = resource.get("duration")
+                if isinstance(duration_value, (int, float)) and duration_value > 0:
+                    # Kling API возвращает duration в миллисекундах
+                    return int(duration_value / 1000)
         return None
 
     def _extract_aspect_ratio(self, payload: Dict[str, Any]) -> Optional[str]:
@@ -607,8 +610,9 @@ class KlingVideoProvider(BaseVideoProvider):
                 response.raise_for_status()
         except httpx.HTTPError as exc:  # type: ignore[attr-defined]
             raise VideoGenerationError(f"Не удалось скачать видео Kling: {exc}") from exc
-        mime_type = response.headers.get("Content-Type", "video/mp4")
-        return response.content, mime_type
+        # Kling всегда возвращает mp4, но CDN может отдавать неправильный Content-Type
+        # Принудительно используем video/mp4 для корректного сохранения
+        return response.content, "video/mp4"
 
     def _download_raw(self, url: str) -> Tuple[bytes, Optional[str]]:
         try:
