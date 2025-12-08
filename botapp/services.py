@@ -3,12 +3,15 @@ import httpx
 import uuid
 import json
 import io
+import logging
 import re
 import os
 import time
 from json import JSONDecoder
 from typing import Any, Dict, List, Optional, Tuple
 from django.conf import settings
+
+logger = logging.getLogger(__name__)
 from google.oauth2 import service_account
 from google.auth.transport.requests import AuthorizedSession
 try:
