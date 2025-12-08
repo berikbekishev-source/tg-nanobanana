@@ -301,6 +301,10 @@ _useapi_request_timeout = os.getenv("USEAPI_REQUEST_TIMEOUT")
 USEAPI_REQUEST_TIMEOUT = float(_useapi_request_timeout) if _useapi_request_timeout else None
 USEAPI_MAX_JOBS = int(os.getenv("USEAPI_MAX_JOBS", "5"))
 USEAPI_ACCOUNT_EMAIL = os.getenv("USEAPI_ACCOUNT_EMAIL")
+USEAPI_ACCOUNT_PASSWORD = os.getenv("USEAPI_ACCOUNT_PASSWORD")
+USEAPI_KLING_ACCOUNT_EMAIL = os.getenv("USEAPI_KLING_ACCOUNT_EMAIL")
+USEAPI_KLING_ACCOUNT_PASSWORD = os.getenv("USEAPI_KLING_ACCOUNT_PASSWORD")
+USEAPI_KLING_MAX_JOBS = int(os.getenv("USEAPI_KLING_MAX_JOBS", os.getenv("USEAPI_MAX_JOBS", "5")))
 
 # --- Lava.top Payment ---
 LAVA_WEBHOOK_SECRET = os.getenv("LAVA_WEBHOOK_SECRET")
