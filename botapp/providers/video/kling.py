@@ -54,9 +54,10 @@ class KlingVideoProvider(BaseVideoProvider):
         max_jobs_raw = (
             getattr(settings, "USEAPI_KLING_MAX_JOBS", None)
             or getattr(settings, "USEAPI_MAX_JOBS", None)
-            or 5
         )
-        self._max_jobs: int = self._sanitize_max_jobs(max_jobs_raw)
+        self._max_jobs: Optional[int] = (
+            self._sanitize_max_jobs(max_jobs_raw) if max_jobs_raw is not None else None
+        )
 
         self._account_email: Optional[str] = getattr(settings, "USEAPI_KLING_ACCOUNT_EMAIL", None)
         self._account_password: Optional[str] = getattr(settings, "USEAPI_KLING_ACCOUNT_PASSWORD", None)
@@ -251,8 +252,9 @@ class KlingVideoProvider(BaseVideoProvider):
         if normalized_model:
             payload["model_name"] = normalized_model
 
-        max_jobs_value = params.get("maxJobs") or params.get("max_jobs")
-        payload["maxJobs"] = self._sanitize_max_jobs(max_jobs_value if max_jobs_value is not None else self._max_jobs)
+        max_jobs_value = params.get("maxJobs") or params.get("max_jobs") or self._max_jobs
+        if max_jobs_value is not None:
+            payload["maxJobs"] = self._sanitize_max_jobs(max_jobs_value)
 
         if self._account_email:
             payload["email"] = self._account_email
@@ -279,8 +281,9 @@ class KlingVideoProvider(BaseVideoProvider):
         payload = {
             "email": self._account_email,
             "password": self._account_password,
-            "maxJobs": self._max_jobs,
         }
+        if self._max_jobs is not None:
+            payload["maxJobs"] = self._max_jobs
 
         try:
             self._request("POST", "/v1/kling/accounts", json_payload=payload)
@@ -352,7 +355,11 @@ class KlingVideoProvider(BaseVideoProvider):
         if not work_id:
             return None
 
-        params: Dict[str, Any] = {"workIds": str(work_id)}
+        # ВАЖНО: fileTypes=MP4 нужен чтобы получить mp4 файл, а не zip архив
+        params: Dict[str, Any] = {
+            "workIds": str(work_id),
+            "fileTypes": "MP4",
+        }
         if self._account_email:
             params["email"] = self._account_email
 
@@ -406,14 +413,7 @@ class KlingVideoProvider(BaseVideoProvider):
         return None
 
     def _extract_duration(self, payload: Dict[str, Any]) -> Optional[int]:
-        for work in self._collect_works(payload):
-            if not isinstance(work, dict):
-                continue
-            resource = work.get("resource")
-            if isinstance(resource, dict):
-                duration_value = resource.get("duration")
-                if isinstance(duration_value, (int, float)):
-                    return int(duration_value)
+        # Сначала проверяем arguments - там duration в секундах
         arguments = self._extract_arguments_map(payload)
         for key in ("duration", "seconds"):
             if key in arguments:
@@ -421,6 +421,16 @@ class KlingVideoProvider(BaseVideoProvider):
                     return int(float(arguments[key]))
                 except (TypeError, ValueError):
                     continue
+        # Fallback: resource.duration в миллисекундах - конвертируем в секунды
+        for work in self._collect_works(payload):
+            if not isinstance(work, dict):
+                continue
+            resource = work.get("resource")
+            if isinstance(resource, dict):
+                duration_value = resource.get("duration")
+                if isinstance(duration_value, (int, float)) and duration_value > 0:
+                    # Kling API возвращает duration в миллисекундах
+                    return int(duration_value / 1000)
         return None
 
     def _extract_aspect_ratio(self, payload: Dict[str, Any]) -> Optional[str]:
@@ -561,23 +571,29 @@ class KlingVideoProvider(BaseVideoProvider):
         input_media: Optional[bytes],
         input_mime_type: Optional[str],
     ) -> str:
-        """
-        По новой доке Kling требует загрузки ассетов через POST /v1/kling/assets.
-        Всегда грузим исходное изображение в Kling и используем его URL.
-        """
+        # Если передан URL изображения - проверяем его
         raw_url = params.get("image_url") or params.get("imageUrl") or params.get("reference_image")
-        # Если есть байты (WebApp/Telegram) — сразу грузим их в Kling.
-        if input_media:
-            png_bytes = self._convert_to_png(input_media, input_mime_type)
-            return self._upload_image_asset(png_bytes, mime_type="image/png", file_name="image.png")
-
-        # Если пришёл внешний URL — скачиваем и перезаливаем в Kling.
         if raw_url:
-            if self._is_useapi_asset(str(raw_url)):
-                return str(raw_url)
-            content, mime = self._download_raw(str(raw_url))
-            png_bytes = self._convert_to_png(content, mime)
-            return self._upload_image_asset(png_bytes, mime_type="image/png", file_name="image.png")
+            url_str = str(raw_url)
+            # Если URL уже с домена Kling - используем как есть
+            if self._is_useapi_asset(url_str):
+                return url_str
+            # Иначе скачиваем и загружаем через Kling assets API
+            # (Kling API не может получить доступ к внешним URL напрямую)
+            image_bytes, mime = self._download_raw(url_str)
+            return self._upload_image_asset(
+                image_bytes,
+                mime_type=mime or input_mime_type,
+                file_name="reference_image.png",
+            )
+
+        # Если передан бинарный контент - загружаем через Kling assets API
+        if input_media:
+            return self._upload_image_asset(
+                input_media,
+                mime_type=input_mime_type,
+                file_name="input_image.png",
+            )
 
         raise VideoGenerationError("Для режима image2video необходимо загрузить изображение.")
 
@@ -585,11 +601,7 @@ class KlingVideoProvider(BaseVideoProvider):
         tail_image = params.get("image_tail") or params.get("tail_image") or params.get("imageTail")
         if not tail_image:
             return None
-        if self._is_useapi_asset(str(tail_image)):
-            return str(tail_image)
-        content, mime = self._download_raw(str(tail_image))
-        png_bytes = self._convert_to_png(content, mime)
-        return self._upload_image_asset(png_bytes, mime_type="image/png", file_name="tail.png")
+        return str(tail_image)
 
     def _download_file(self, url: str) -> Tuple[bytes, Optional[str]]:
         try:
@@ -598,8 +610,9 @@ class KlingVideoProvider(BaseVideoProvider):
                 response.raise_for_status()
         except httpx.HTTPError as exc:  # type: ignore[attr-defined]
             raise VideoGenerationError(f"Не удалось скачать видео Kling: {exc}") from exc
-        mime_type = response.headers.get("Content-Type", "video/mp4")
-        return response.content, mime_type
+        # Kling всегда возвращает mp4, но CDN может отдавать неправильный Content-Type
+        # Принудительно используем video/mp4 для корректного сохранения
+        return response.content, "video/mp4"
 
     def _download_raw(self, url: str) -> Tuple[bytes, Optional[str]]:
         try:
@@ -648,15 +661,23 @@ class KlingVideoProvider(BaseVideoProvider):
         return f"{base_url}{endpoint}"
 
     def _upload_image_asset(self, content: bytes, *, mime_type: Optional[str], file_name: str) -> str:
+        """Загружает изображение в Kling через useapi assets API."""
+        # Лимит Kling: 10MB для изображений
+        max_size = 10 * 1024 * 1024  # 10MB
+
+        # Если изображение больше лимита - сжимаем в JPEG
+        if len(content) > max_size:
+            content, mime_type = self._compress_image(content, max_size)
+
         mime = (mime_type or "image/png").split(";")[0].strip() or "image/png"
         if not mime.startswith("image/"):
             mime = "image/png"
 
         url = self._resolve_url("/v1/kling/assets/")
+        # Согласно документации useapi Kling assets - только email в query params
         params: Dict[str, Any] = {}
         if self._account_email:
             params["email"] = self._account_email
-        params["name"] = file_name
 
         headers = {
             "Authorization": f"Bearer {self._api_key}",
@@ -682,6 +703,45 @@ class KlingVideoProvider(BaseVideoProvider):
         if not (isinstance(asset_url, str) and asset_url.startswith("http")):
             raise VideoGenerationError(f"useapi не вернул ссылку на ассет Kling: {data}")
         return asset_url
+
+    def _compress_image(self, content: bytes, max_size: int) -> Tuple[bytes, str]:
+        """Сжимает изображение до указанного размера."""
+        try:
+            from PIL import Image
+        except ImportError:
+            logger.warning("PIL не установлен, сжатие изображения невозможно")
+            return content, "image/png"
+
+        try:
+            img = Image.open(BytesIO(content))
+            # Конвертируем в RGB если нужно (для JPEG)
+            if img.mode in ("RGBA", "P"):
+                img = img.convert("RGB")
+
+            # Пробуем разные уровни качества
+            for quality in [85, 70, 50, 30]:
+                buffer = BytesIO()
+                img.save(buffer, format="JPEG", quality=quality, optimize=True)
+                compressed = buffer.getvalue()
+                if len(compressed) <= max_size:
+                    logger.info(f"Изображение сжато: {len(content)} -> {len(compressed)} байт (quality={quality})")
+                    return compressed, "image/jpeg"
+
+            # Если всё ещё большое - уменьшаем размер
+            width, height = img.size
+            while len(compressed) > max_size and width > 300 and height > 300:
+                width = int(width * 0.8)
+                height = int(height * 0.8)
+                resized = img.resize((width, height), Image.Resampling.LANCZOS)
+                buffer = BytesIO()
+                resized.save(buffer, format="JPEG", quality=70, optimize=True)
+                compressed = buffer.getvalue()
+
+            logger.info(f"Изображение сжато с ресайзом: {len(content)} -> {len(compressed)} байт")
+            return compressed, "image/jpeg"
+        except Exception as exc:
+            logger.warning(f"Ошибка сжатия изображения: {exc}")
+            return content, "image/png"
 
     @staticmethod
     def _is_useapi_asset(url: str) -> bool:
