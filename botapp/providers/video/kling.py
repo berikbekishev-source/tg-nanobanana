@@ -54,9 +54,10 @@ class KlingVideoProvider(BaseVideoProvider):
         max_jobs_raw = (
             getattr(settings, "USEAPI_KLING_MAX_JOBS", None)
             or getattr(settings, "USEAPI_MAX_JOBS", None)
-            or 5
         )
-        self._max_jobs: int = self._sanitize_max_jobs(max_jobs_raw)
+        self._max_jobs: Optional[int] = (
+            self._sanitize_max_jobs(max_jobs_raw) if max_jobs_raw is not None else None
+        )
 
         self._account_email: Optional[str] = getattr(settings, "USEAPI_KLING_ACCOUNT_EMAIL", None)
         self._account_password: Optional[str] = getattr(settings, "USEAPI_KLING_ACCOUNT_PASSWORD", None)
@@ -251,8 +252,9 @@ class KlingVideoProvider(BaseVideoProvider):
         if normalized_model:
             payload["model_name"] = normalized_model
 
-        max_jobs_value = params.get("maxJobs") or params.get("max_jobs")
-        payload["maxJobs"] = self._sanitize_max_jobs(max_jobs_value if max_jobs_value is not None else self._max_jobs)
+        max_jobs_value = params.get("maxJobs") or params.get("max_jobs") or self._max_jobs
+        if max_jobs_value is not None:
+            payload["maxJobs"] = self._sanitize_max_jobs(max_jobs_value)
 
         if self._account_email:
             payload["email"] = self._account_email
@@ -279,8 +281,9 @@ class KlingVideoProvider(BaseVideoProvider):
         payload = {
             "email": self._account_email,
             "password": self._account_password,
-            "maxJobs": self._max_jobs,
         }
+        if self._max_jobs is not None:
+            payload["maxJobs"] = self._max_jobs
 
         try:
             self._request("POST", "/v1/kling/accounts", json_payload=payload)
