@@ -25,7 +25,7 @@ from .keyboards import get_generation_complete_message
 from .media_utils import detect_reference_mime, ensure_png_format
 from .models import BotErrorEvent, GenRequest, TgUser
 from .providers import VideoGenerationError, get_video_provider
-from .services import generate_images_for_model, supabase_upload_png, supabase_upload_video
+from .services import generate_images_for_model, supabase_upload_png, supabase_upload_video, GeminiBlockedError
 
 logger = logging.getLogger(__name__)
 
@@ -93,7 +93,6 @@ def send_telegram_video(chat_id: int, video_bytes: bytes, caption: str, reply_ma
     data = {
         "chat_id": chat_id,
         "caption": _shorten_caption(caption),
-        "parse_mode": "Markdown",
         "disable_content_type_detection": True,
     }
     if reply_markup:
@@ -693,15 +692,38 @@ def generate_image_task(self, request_id: int):
             input_images_payload = []
 
         # Вызываем сервис генерации изображений
-        imgs = generate_images_for_model(
-            model,
-            prompt,
-            quantity,
-            params,
-            generation_type=generation_type,
-            input_images=input_images_payload,
-            image_mode=image_mode,
-        )
+        try:
+            imgs = generate_images_for_model(
+                model,
+                prompt,
+                quantity,
+                params,
+                generation_type=generation_type,
+                input_images=input_images_payload,
+                image_mode=image_mode,
+            )
+        except GeminiBlockedError as blocked_err:
+            # Gemini заблокировал запрос - retry бесполезен, сразу сообщаем пользователю
+            logger.error(f"[TASK] Gemini заблокировал запрос {req.id}: {blocked_err}")
+            req.status = "error"
+            req.error_message = str(blocked_err)
+            req.save(update_fields=["status", "error_message"])
+
+            send_telegram_message(
+                req.chat_id,
+                f"❌ {blocked_err}",
+                reply_markup=get_inline_menu_markup(),
+                parse_mode=None,
+            )
+            return  # Выходим без retry
+
+        # Проверка что генерация вернула результаты
+        if not imgs:
+            error_msg = f"Генерация не вернула изображений. Model: {model.display_name}, Type: {generation_type}, Mode: {image_mode}"
+            logger.error(f"[TASK] {error_msg}")
+            raise ValueError(error_msg)
+
+        logger.info(f"[TASK] Успешно сгенерировано {len(imgs)} изображений для запроса {req.id}")
 
         # Проверка что генерация вернула результаты
         if not imgs:
@@ -846,8 +868,11 @@ def generate_video_task(self, request_id: int):
         source_media = req.source_media if isinstance(req.source_media, dict) else {}
         telegram_file_id = params.get("input_image_file_id") or source_media.get("telegram_file_id")
 
+        media_to_video = generation_type in {"image2video", "video2video"}
+        default_media_mime = "video/mp4" if generation_type == "video2video" else "image/png"
+
         inline_entry: Optional[Dict[str, Any]] = None
-        if generation_type == "image2video":
+        if media_to_video:
             for entry in req.input_images or []:
                 if not isinstance(entry, dict):
                     continue
@@ -856,36 +881,58 @@ def generate_video_task(self, request_id: int):
                     inline_entry = entry
                     break
 
-        if generation_type == "image2video" and inline_entry:
+        if media_to_video and inline_entry:
             raw_b64 = inline_entry.get("content_base64") or inline_entry.get("base64") or inline_entry.get("data")
             try:
                 input_media = base64.b64decode(raw_b64)
             except Exception as exc:
-                raise VideoGenerationError("Не удалось прочитать изображение из WebApp.") from exc
+                raise VideoGenerationError("Не удалось прочитать входные данные из WebApp.") from exc
             input_mime_type = (
                 inline_entry.get("mime_type")
                 or inline_entry.get("mime")
                 or inline_entry.get("content_type")
-                or "image/png"
+                or default_media_mime
             )
-        elif generation_type == 'image2video' and telegram_file_id:
+        elif media_to_video and telegram_file_id:
             input_media, input_mime_type = download_telegram_file(telegram_file_id)
-            preferred_mime = params.get("input_image_mime_type") or source_media.get("mime_type")
+            preferred_mime = (
+                params.get("input_image_mime_type")
+                or params.get("input_video_mime_type")
+                or source_media.get("mime_type")
+            )
             if preferred_mime:
                 input_mime_type = preferred_mime
-        elif generation_type == 'image2video':
-            storage_url = source_media.get("storage_url") or params.get("image_url")
-            base64_data = source_media.get("base64") or params.get("image_base64")
+        elif media_to_video:
+            storage_url = (
+                source_media.get("storage_url")
+                or params.get("image_url")
+                or params.get("video_url")
+            )
+            base64_data = (
+                source_media.get("base64")
+                or params.get("image_base64")
+                or params.get("video_base64")
+            )
             if storage_url:
                 try:
                     input_media = fetch_remote_file(storage_url)
-                    input_mime_type = source_media.get("mime_type") or params.get("input_image_mime_type") or "image/png"
+                    input_mime_type = (
+                        source_media.get("mime_type")
+                        or params.get("input_image_mime_type")
+                        or params.get("input_video_mime_type")
+                        or default_media_mime
+                    )
                 except Exception as exc:
                     logger.warning("Failed to fetch image from storage_url=%s: %s", storage_url, exc, exc_info=exc)
             elif base64_data:
                 try:
                     input_media = base64.b64decode(base64_data)
-                    input_mime_type = source_media.get("mime_type") or params.get("input_image_mime_type") or "image/png"
+                    input_mime_type = (
+                        source_media.get("mime_type")
+                        or params.get("input_image_mime_type")
+                        or params.get("input_video_mime_type")
+                        or default_media_mime
+                    )
                 except Exception as exc:
                     logger.warning("Failed to decode base64 image for video generation: %s", exc, exc_info=exc)
 

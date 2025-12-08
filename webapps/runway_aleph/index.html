@@ -1,0 +1,514 @@
+<!DOCTYPE html>
+<html lang="ru">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Runway Aleph · INTEGER</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <script>
+        // Показываем алерт при критических ошибках фронтенда
+        window.onerror = function (msg, url, line) {
+            const tg = window.Telegram?.WebApp;
+            if (tg) {
+                tg.showAlert(`JS Error: ${msg}\nLine: ${line}`);
+            }
+            return false;
+        };
+    </script>
+    <style>
+        :root {
+            --bg: #0f1c2d;
+            --pane: #14263c;
+            --pane-2: #1a324f;
+            --text: #f2f4f8;
+            --muted: #9fb4cc;
+            --accent: #f19b28;
+            --accent-2: #f6b24f;
+            --danger: #ff6b6b;
+            --border: #223956;
+            --radius: 18px;
+            --shadow: 0 12px 35px rgba(0, 0, 0, 0.35);
+            --dot: radial-gradient(circle, rgba(255, 255, 255, 0.06) 1px, transparent 0);
+            --font: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            padding: 18px 16px 26px;
+            font-family: var(--font);
+            color: var(--text);
+            background: var(--bg);
+            background-image: var(--dot);
+            background-size: 22px 22px;
+        }
+
+        .card {
+            background: linear-gradient(145deg, var(--pane) 0%, #111c2f 60%, #0f1c2d 100%);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            box-shadow: var(--shadow);
+            padding: 16px;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .card::after {
+            content: "";
+            position: absolute;
+            inset: 0;
+            background: radial-gradient(circle at 20% 20%, rgba(241, 155, 40, 0.16), transparent 45%),
+                radial-gradient(circle at 80% 10%, rgba(246, 178, 79, 0.1), transparent 35%);
+            pointer-events: none;
+        }
+
+        .header {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 10px;
+        }
+
+        .badge {
+            width: 48px;
+            height: 48px;
+            border-radius: 15px;
+            background: linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 100%);
+            color: #04101f;
+            font-weight: 900;
+            font-size: 18px;
+            display: grid;
+            place-items: center;
+            box-shadow: 0 12px 30px rgba(79, 209, 197, 0.35);
+        }
+
+        h1 {
+            margin: 0;
+            font-size: 19px;
+            font-weight: 800;
+            letter-spacing: 0.1px;
+        }
+
+        .sub {
+            margin: 3px 0 0;
+            color: var(--muted);
+            font-size: 13px;
+        }
+
+        .section {
+            background: rgba(12, 19, 36, 0.82);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 12px;
+            margin: 12px 0;
+        }
+
+        .section-title {
+            margin: 0 0 10px;
+            font-size: 14px;
+            font-weight: 700;
+        }
+
+        .label {
+            font-size: 13px;
+            color: var(--muted);
+            margin: 10px 0 6px;
+        }
+
+        textarea {
+            width: 100%;
+            min-height: 120px;
+            padding: 12px;
+            background: #0a1220;
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            color: var(--text);
+            font-size: 14px;
+            resize: vertical;
+            outline: none;
+            transition: border-color 0.14s ease;
+        }
+
+        textarea:focus {
+            border-color: var(--accent);
+        }
+
+        .count {
+            font-size: 12px;
+            color: var(--muted);
+            text-align: right;
+            margin-top: 4px;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 8px;
+        }
+
+        .pill {
+            background: #0e1726;
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 10px;
+            text-align: center;
+            font-weight: 700;
+            font-size: 14px;
+            color: var(--text);
+            cursor: pointer;
+            transition: all 0.14s ease;
+        }
+
+        .pill.active {
+            background: linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 100%);
+            color: #031019;
+            box-shadow: 0 8px 20px rgba(79, 209, 197, 0.28);
+        }
+
+        .upload {
+            border: 1px dashed var(--border);
+            border-radius: 12px;
+            padding: 12px;
+            background: rgba(18, 29, 49, 0.78);
+        }
+
+        .upload input {
+            width: 100%;
+            margin-top: 8px;
+        }
+
+        .hint {
+            font-size: 12px;
+            color: var(--muted);
+            margin-top: 4px;
+        }
+
+        .error {
+            display: none;
+            color: var(--danger);
+            font-size: 13px;
+            margin-top: 6px;
+        }
+
+        .footer {
+            margin-top: 12px;
+            font-size: 12px;
+            color: var(--muted);
+            line-height: 1.4;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="card">
+        <div class="header">
+            <div class="badge">RA</div>
+            <div>
+                <h1>Runway Aleph</h1>
+                <p class="sub">Видео → Видео · MP4/WEBM/MOV ≤ 10 МБ · 16:9, 9:16, 1:1, 3:4, 4:3, 21:9</p>
+            </div>
+        </div>
+
+        <div class="section">
+            <div class="section-title">Промт</div>
+            <textarea id="prompt" maxlength="4000" placeholder="Опишите, как изменить стиль и содержание исходного видео..."></textarea>
+            <div class="count" id="promptCount">0/4000</div>
+        </div>
+
+        <div class="section">
+            <div class="section-title">Исходное видео (обязательно)</div>
+            <div class="upload">
+                <div class="label" style="margin:0 0 6px;">Нажмите, чтобы выбрать видео · MP4/WEBM/MOV · до 10 МБ.</div>
+                <input type="file" id="videoInput" accept="video/mp4,video/webm,video/quicktime">
+                <div class="hint" id="videoPreview">Файл не выбран</div>
+            </div>
+        </div>
+
+        <div class="section">
+            <div class="section-title">Настройки</div>
+            <div class="label" style="margin-top:0;">Соотношение сторон</div>
+            <div id="ratioGrid" class="grid">
+                <div class="pill active" data-ratio="16:9">16:9</div>
+                <div class="pill" data-ratio="9:16">9:16</div>
+                <div class="pill" data-ratio="1:1">1:1</div>
+                <div class="pill" data-ratio="3:4">3:4</div>
+                <div class="pill" data-ratio="4:3">4:3</div>
+                <div class="pill" data-ratio="21:9">21:9</div>
+            </div>
+        </div>
+
+        <div class="error" id="error"></div>
+        <div class="footer">
+            • Aleph преобразует ваше видео по текстовому промту.<br>
+            • Если запрос долго висит, подождите и отправьте снова.<br>
+            • Кнопка отправки появится после ввода промта и выбора видео.
+        </div>
+    </div>
+
+    <script>
+        const tg = window.Telegram?.WebApp || null;
+        const PROMPT_LIMIT = 4000;
+        const parseTokens = (label) => {
+            if (!label) return null;
+            const match = String(label).replace(",", ".").match(/([0-9]+(?:\.[0-9]+)?)/);
+            if (!match) return null;
+            const value = Number(match[1]);
+            return Number.isFinite(value) ? value : null;
+        };
+        const formatPrice = (tokens) => {
+            if (!Number.isFinite(tokens)) return "—";
+            return `⚡${tokens.toFixed(2)} токенов`;
+        };
+        const params = new URLSearchParams(window.location.search);
+
+        const ratios = ["16:9", "9:16", "1:1", "3:4", "4:3", "21:9"];
+        const MAX_VIDEO_SIZE = 10 * 1024 * 1024; // 10 MB
+        const ALLOWED_VIDEO_TYPES = ["video/mp4", "video/webm", "video/quicktime"];
+
+        function sanitizeRatio(value) {
+            const cleaned = (value || "").replace(/\s+/g, "");
+            const finalValue = cleaned.includes(":") ? cleaned : value;
+            return ratios.includes(finalValue) ? finalValue : ratios[0];
+        }
+
+        const initialPriceLabel = params.get("price") ? decodeURIComponent(params.get("price")) : "—";
+
+        const state = {
+            modelSlug: params.get("model") || "runway_aleph",
+            modelName: params.get("api_model") || "runway-gen4-aleph",
+            prompt: "",
+            aspectRatio: sanitizeRatio(params.get("aspect_ratio") || params.get("ratio")),
+            videoData: null,
+            videoMime: null,
+            videoName: null,
+            priceLabel: initialPriceLabel || "—",
+        };
+
+        const els = {
+            ratioGrid: document.getElementById("ratioGrid"),
+            prompt: document.getElementById("prompt"),
+            promptCount: document.getElementById("promptCount"),
+            videoInput: document.getElementById("videoInput"),
+            videoPreview: document.getElementById("videoPreview"),
+            error: document.getElementById("error"),
+        };
+
+        function setActive(container, target) {
+            if (!target) return;
+            container.querySelectorAll(".pill").forEach(btn => btn.classList.remove("active"));
+            target.classList.add("active");
+        }
+
+        function setError(text) {
+            els.error.textContent = text || "";
+            els.error.style.display = text ? "block" : "none";
+            if (text && tg) tg.showAlert(text);
+        }
+
+        function updateCounts() {
+            state.prompt = els.prompt.value.trim();
+            els.promptCount.textContent = `${state.prompt.length}/${PROMPT_LIMIT}`;
+            updateMainButton();
+        }
+
+        function setPriceLabel(label) {
+            state.priceLabel = label || "—";
+            if (tg?.MainButton) {
+                const btnText = state.priceLabel === "—" ? "Сгенерировать" : `Сгенерировать · ${state.priceLabel}`;
+                tg.MainButton.setText(btnText);
+            }
+        }
+
+        function updateMainButton() {
+            if (tg?.MainButton) {
+                if (state.prompt.length > 0 && state.videoData) {
+                    const btnText = state.priceLabel === "—" ? "Сгенерировать" : `Сгенерировать · ${state.priceLabel}`;
+                    tg.MainButton.setText(btnText);
+                    tg.MainButton.show();
+                } else {
+                    tg.MainButton.hide();
+                }
+            }
+        }
+
+        function resetVideo() {
+            state.videoData = null;
+            state.videoMime = null;
+            state.videoName = null;
+            els.videoInput.value = "";
+            els.videoPreview.textContent = "Файл не выбран";
+            updateMainButton();
+        }
+
+        els.videoInput.addEventListener("change", (e) => {
+            try {
+                const file = e.target.files?.[0];
+                if (!file) {
+                    resetVideo();
+                    return;
+                }
+                if (!ALLOWED_VIDEO_TYPES.includes(file.type)) {
+                    setError("Поддерживаются только MP4, WEBM или MOV.");
+                    resetVideo();
+                    return;
+                }
+                if (file.size > MAX_VIDEO_SIZE) {
+                    setError("Видео слишком большое (макс. 10 МБ).");
+                    resetVideo();
+                    return;
+                }
+                const reader = new FileReader();
+                reader.onload = () => {
+                    try {
+                        const result = reader.result;
+                        if (typeof result === "string") {
+                            const base64 = result.split(",")[1] || result;
+                            state.videoData = base64;
+                            state.videoMime = file.type;
+                            state.videoName = file.name;
+                            const sizeMb = (file.size / (1024 * 1024)).toFixed(2);
+                            els.videoPreview.textContent = `${file.name} · ${sizeMb} МБ`;
+                            setError("");
+                            updateMainButton();
+                        }
+                    } catch (err) {
+                        console.error("[Runway Aleph WebApp] File parse error:", err);
+                        setError("Не удалось обработать файл.");
+                        resetVideo();
+                    }
+                };
+                reader.onerror = () => {
+                    setError("Не удалось прочитать файл.");
+                    resetVideo();
+                };
+                reader.readAsDataURL(file);
+            } catch (err) {
+                console.error("[Runway Aleph WebApp] File load error:", err);
+                setError("Не удалось загрузить файл. Попробуйте другой.");
+                resetVideo();
+            }
+        });
+
+        function sendData() {
+            try {
+                els.prompt.blur();
+                setError("");
+
+                if (!state.prompt) {
+                    tg?.showAlert("Введите промт, чтобы продолжить.");
+                    if (!tg) alert("Введите промт и откройте страницу через Telegram.");
+                    return;
+                }
+                if (!state.videoData) {
+                    tg?.showAlert("Загрузите видео (MP4/WEBM/MOV до 10 МБ).");
+                    if (!tg) alert("Загрузите видео и откройте страницу через Telegram.");
+                    return;
+                }
+
+                const payload = {
+                    kind: "runway_aleph_settings",
+                    modelSlug: state.modelSlug,
+                    model: state.modelName,
+                    generationType: "video2video",
+                    prompt: state.prompt,
+                    aspectRatio: state.aspectRatio,
+                    aspect_ratio: state.aspectRatio,
+                    videoData: state.videoData,
+                    videoMime: state.videoMime,
+                    videoName: state.videoName,
+                };
+
+                if (!tg) {
+                    alert("Откройте страницу через Telegram, чтобы отправить настройки.");
+                    return;
+                }
+
+                const userId = tg.initDataUnsafe?.user?.id;
+                if (!userId) {
+                    tg.showAlert("Не удалось получить ID пользователя. Откройте WebApp из Telegram.");
+                    return;
+                }
+
+                console.log("[Runway Aleph WebApp] Sending payload:", JSON.stringify(payload));
+                tg.MainButton.showProgress();
+
+                const fetchPromise = fetch("/api/runway-aleph/webapp/submit", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ user_id: userId, data: payload }),
+                    keepalive: false
+                });
+
+                const timeoutPromise = new Promise((_, reject) =>
+                    setTimeout(() => reject(new Error("Время ожидания истекло")), 30000)
+                );
+
+                Promise.race([fetchPromise, timeoutPromise])
+                    .then((response) => {
+                        if (response.ok) {
+                            console.log("[Runway Aleph WebApp] Success, closing...");
+                            tg.close();
+                        } else {
+                            tg.MainButton.hideProgress();
+                            tg.showAlert("Ошибка сервера. Попробуйте позже.");
+                            console.error("[Runway Aleph WebApp] Server error", response.status);
+                        }
+                    })
+                    .catch((error) => {
+                        tg.MainButton.hideProgress();
+                        if (error.message.includes("Время ожидания")) {
+                            tg.showAlert("Время ожидания истекло. Попробуйте ещё раз.");
+                        } else {
+                            tg.showAlert("Ошибка сети: " + error.message);
+                        }
+                        console.error("[Runway Aleph WebApp] Network error", error);
+                    });
+            } catch (error) {
+                console.error("[Runway Aleph WebApp] Exception:", error);
+                if (tg) {
+                    tg.MainButton.hideProgress();
+                    tg.showAlert("Критическая ошибка: " + error.message);
+                }
+            }
+        }
+
+        els.prompt.addEventListener("input", updateCounts);
+
+        els.ratioGrid.addEventListener("click", (e) => {
+            const btn = e.target.closest(".pill");
+            if (!btn) return;
+            e.preventDefault();
+            setActive(els.ratioGrid, btn);
+            state.aspectRatio = sanitizeRatio(btn.dataset.ratio);
+        });
+
+        function applyInitialSelections() {
+            const ratioBtn = els.ratioGrid.querySelector(`[data-ratio="${state.aspectRatio}"]`) || els.ratioGrid.querySelector(".pill");
+            setActive(els.ratioGrid, ratioBtn);
+            state.aspectRatio = ratioBtn?.dataset?.ratio || state.aspectRatio;
+        }
+
+        applyInitialSelections();
+        els.prompt.maxLength = PROMPT_LIMIT;
+        updateCounts();
+
+        if (tg) {
+            try {
+                tg.ready();
+                tg.expand();
+                if (!state.prompt || !state.videoData) tg.MainButton.hide();
+                setPriceLabel(formatPrice(parseTokens(state.priceLabel)));
+                tg.onEvent("mainButtonClicked", sendData);
+            } catch (e) { /* ignore */ }
+        } else {
+            alert("Откройте страницу через Telegram, чтобы отправить настройки.");
+        }
+
+    </script>
+</body>
+
+</html>

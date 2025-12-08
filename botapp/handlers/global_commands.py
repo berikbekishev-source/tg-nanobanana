@@ -28,7 +28,8 @@ from botapp.keyboards import (
 from botapp.models import TgUser, AIModel
 from botapp.business.balance import BalanceService
 from botapp.business.pricing import get_base_price_tokens
-from botapp.reference_prompt import REFERENCE_PROMPT_MODELS
+from botapp.reference_prompt import REFERENCE_PROMPT_MODELS, REFERENCE_PROMPT_PRICING_SLUG
+from botapp.reference_prompt.pricing import build_reference_prompt_price_line
 
 router = Router()
 
@@ -108,6 +109,13 @@ async def global_create_image_start(message: Message, state: FSMContext):
         .exclude(slug="nano-banana")
         .order_by('order')
     )
+    # Гарантируем наличие Nano Banana Pro, если она активна (иногда убирается из списка по порядку)
+    nano_banana_pro = await sync_to_async(
+        lambda: AIModel.objects.filter(slug="nano-banana-pro", is_active=True).first()
+    )()
+    if nano_banana_pro and not any(m.slug == nano_banana_pro.slug for m in models):
+        models.append(nano_banana_pro)
+        models.sort(key=lambda m: m.order if m.order is not None else 0)
 
     if not models:
         await message.answer(
@@ -174,7 +182,9 @@ async def global_create_video_start(message: Message, state: FSMContext):
     
     # Получаем активные модели для видео
     models = await sync_to_async(list)(
-        AIModel.objects.filter(type='video', is_active=True).order_by('order')
+        AIModel.objects.filter(type='video', is_active=True)
+        .exclude(slug=REFERENCE_PROMPT_PRICING_SLUG)
+        .order_by('order')
     )
 
     if not models:
@@ -188,6 +198,7 @@ async def global_create_video_start(message: Message, state: FSMContext):
     kling_webapps = {}
     veo_webapps = {}
     midjourney_video_webapps = {}
+    runway_webapps = {}
     if PUBLIC_BASE_URL:
         for model in models:
             if model.provider == "kling":
@@ -221,7 +232,25 @@ async def global_create_video_start(message: Message, state: FSMContext):
                     f"model={quote_plus(model.slug)}&price={quote_plus(price_label)}"
                     f"&max_prompt={quote_plus(str(model.max_prompt_length))}"
                 )
-
+            if model.provider == "useapi":
+                cost = await sync_to_async(get_base_price_tokens)(model)
+                price_label = f"⚡{cost:.2f} токенов"
+                base_duration = None
+                if isinstance(model.default_params, dict):
+                    try:
+                        base_duration = int(model.default_params.get("duration") or 0)
+                    except (TypeError, ValueError):
+                        base_duration = None
+                base_duration = base_duration if base_duration and base_duration > 0 else 5
+                api_model_name = model.api_model_name or model.slug
+                webapp_path = "runway-aleph" if model.slug.startswith("runway_aleph") else "runway"
+                runway_webapps[model.slug] = (
+                    f"{PUBLIC_BASE_URL}/{webapp_path}/?"
+                    f"model={quote_plus(model.slug)}&price={quote_plus(price_label)}"
+                    f"&price_base_duration={quote_plus(str(base_duration))}"
+                    f"&api_model={quote_plus(api_model_name)}"
+                    f"&max_prompt={quote_plus(str(model.max_prompt_length))}"
+                )
 
     sora_webapps = {}
     if PUBLIC_BASE_URL:
@@ -253,6 +282,7 @@ async def global_create_video_start(message: Message, state: FSMContext):
             veo_webapps=veo_webapps,
             sora_webapps=sora_webapps,
             midjourney_video_webapps=midjourney_video_webapps,
+            runway_webapps=runway_webapps,
         )
     )
 
@@ -297,10 +327,14 @@ async def global_prompt_by_reference_entry(message: Message, state: FSMContext):
 
     await state.update_data(reference_prompt_model=default_model.slug)
 
-    await message.answer(
-        "🔗 Скиньте в бота ссылку на любой Reels, Shorts, TikTok или загрузите в чат видео и получите промт для создания точно такого же видео!",
-        reply_markup=get_cancel_keyboard(),
+    price_line = await build_reference_prompt_price_line()
+    intro_text = (
+        "🔗 Скиньте в бота ссылку на любой Reels, Shorts, TikTok или загрузите в чат видео и получите промт "
+        "для создания точно такого же видео!\n\n"
+        f"{price_line}"
     )
+
+    await message.answer(intro_text, reply_markup=get_cancel_keyboard())
     await state.set_state(BotStates.reference_prompt_wait_reference)
 
 

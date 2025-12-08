@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import re
+from decimal import Decimal
 from typing import List, Optional, Tuple
 from urllib.parse import quote_plus
 
@@ -14,6 +15,7 @@ from aiogram.types import CallbackQuery, Message, InlineKeyboardMarkup
 from asgiref.sync import sync_to_async
 from django.conf import settings
 
+from botapp.business.balance import BalanceService, InsufficientBalanceError
 from botapp.error_tracker import ErrorTracker
 from botapp.keyboards import (
     get_cancel_keyboard,
@@ -21,12 +23,17 @@ from botapp.keyboards import (
     get_reference_prompt_models_keyboard,
     get_video_models_keyboard,
 )
-from botapp.models import BotErrorEvent, AIModel
+from botapp.models import BotErrorEvent, AIModel, TgUser
 from botapp.reference_prompt import (
+    REFERENCE_PROMPT_PRICING_SLUG,
     REFERENCE_PROMPT_MODELS,
     ReferenceInputPayload,
     ReferencePromptService,
     get_reference_prompt_model,
+)
+from botapp.reference_prompt.pricing import (
+    build_reference_prompt_price_line,
+    get_reference_pricing_model_and_cost,
 )
 from botapp.states import BotStates
 from botapp.business.pricing import get_base_price_tokens
@@ -38,6 +45,22 @@ router = Router()
 service = ReferencePromptService()
 
 URL_RE = re.compile(r"(https?://[^\s]+|www\.[^\s]+)", re.IGNORECASE)
+
+
+def _chunk_plain_text(text: str, limit: int = 3500) -> List[str]:
+    """Безопасно режет текст на части для Telegram."""
+    if not text:
+        return [""]
+    return [text[i : i + limit] for i in range(0, len(text), limit)]
+
+
+async def _build_intro_message() -> str:
+    price_line = await build_reference_prompt_price_line()
+    return (
+        "🔗 Скиньте в бота ссылку на любой Reels, Shorts, TikTok или загрузите в чат видео и получите промт "
+        "для создания точно такого же видео!\n\n"
+        f"{price_line}"
+    )
 
 
 def _extract_urls(text: Optional[str]) -> List[str]:
@@ -158,10 +181,8 @@ async def prompt_by_reference_select_model(callback: CallbackQuery, state: FSMCo
 
     await state.update_data(reference_prompt_model=model.slug)
 
-    await callback.message.answer(
-        "🔗 Скиньте в бота ссылку на любой Reels, Shorts, TikTok или загрузите в чат видео и получите промт для создания точно такого же видео!",
-        reply_markup=get_cancel_keyboard(),
-    )
+    intro_text = await _build_intro_message()
+    await callback.message.answer(intro_text, reply_markup=get_cancel_keyboard())
 
     await state.set_state(BotStates.reference_prompt_wait_reference)
 
@@ -225,6 +246,70 @@ async def _start_prompt_generation(message: Message, state: FSMContext, modifica
 
     reference_payload = ReferenceInputPayload.from_state(payload_data)
 
+    user = None
+    try:
+        user = await sync_to_async(TgUser.objects.get)(chat_id=message.from_user.id)
+    except TgUser.DoesNotExist:
+        # Фолбек: вдруг chat_id отличается от from_user (группы/каналы)
+        try:
+            user = await sync_to_async(TgUser.objects.get)(chat_id=message.chat.id)
+        except TgUser.DoesNotExist:
+            pass
+
+    if not user:
+        await message.answer(
+            "Не удалось найти пользователя. Нажмите /start в боте, чтобы инициализировать профиль, и попробуйте ещё раз.",
+            reply_markup=get_cancel_keyboard(),
+        )
+        await state.clear()
+        return
+
+    try:
+        await sync_to_async(BalanceService.ensure_balance)(user)
+    except Exception as exc:  # pragma: no cover - редкий случай проблем с балансом
+        logger.exception("reference_prompt: failed to ensure balance: %s", exc)
+        await message.answer(
+            "Не удалось получить ваш баланс. Попробуйте ещё раз или нажмите /start.",
+            reply_markup=get_cancel_keyboard(),
+        )
+        await state.clear()
+        return
+
+    pricing_model, cost_tokens = await get_reference_pricing_model_and_cost()
+    if not pricing_model or cost_tokens is None:
+        await message.answer(
+            "Стоимость генерации временно недоступна. Попробуйте позже.",
+            reply_markup=get_cancel_keyboard(),
+        )
+        await state.clear()
+        return
+
+    can_generate, error_msg = await sync_to_async(BalanceService.check_can_generate)(
+        user,
+        pricing_model,
+        total_cost_tokens=cost_tokens,
+    )
+    if not can_generate:
+        await message.answer(
+            f"❌ {error_msg}",
+            reply_markup=get_cancel_keyboard(),
+        )
+        await state.clear()
+        return
+
+    charge_tx = None
+    try:
+        charge_tx = await sync_to_async(BalanceService.charge_for_generation)(
+            user,
+            pricing_model,
+            quantity=1,
+            total_cost_tokens=cost_tokens,
+        )
+    except InsufficientBalanceError as exc:
+        await message.answer(str(exc), reply_markup=get_cancel_keyboard())
+        await state.clear()
+        return
+
     logger.info(
         "reference_prompt: handler start chat_id=%s user_id=%s model=%s input_type=%s mods=%s",
         message.chat.id,
@@ -235,7 +320,7 @@ async def _start_prompt_generation(message: Message, state: FSMContext, modifica
     )
 
     await message.answer(
-        "Создаю промт для генерация видео по указанному референсу, ожидайте пару минут ⏳",
+        "Создаю промт для генерации видео по указанному референсу, ожидайте пару минут ⏳",
         reply_markup=get_cancel_keyboard(),
     )
     await state.set_state(BotStates.reference_prompt_processing)
@@ -255,6 +340,15 @@ async def _start_prompt_generation(message: Message, state: FSMContext, modifica
         video_keyboard = await _build_video_models_keyboard()
     except Exception as exc:  # noqa: BLE001 - логируем и отвечаем пользователю
         logger.exception("Failed to build reference prompt: %s", exc)
+        if charge_tx:
+            try:
+                await sync_to_async(BalanceService.refund_generation)(
+                    user,
+                    charge_tx,
+                    reason="reference_prompt_failed",
+                )
+            except Exception as refund_exc:  # pragma: no cover - логируем сбой возврата
+                logger.warning("Не удалось вернуть токены за reference prompt: %s", refund_exc)
         error_message = str(exc).strip() or "Не удалось собрать промт. Попробуйте снова или пришлите другой референс."
         await message.answer(
             f"❌ {error_message}",
@@ -275,8 +369,24 @@ async def _start_prompt_generation(message: Message, state: FSMContext, modifica
         await state.set_state(BotStates.reference_prompt_wait_reference)
         return
 
-    for chunk in result.chunks:
-        await message.answer(chunk, parse_mode="HTML", reply_markup=video_keyboard)
+    spent_label = f"{cost_tokens.quantize(Decimal('0.01')):.2f}" if cost_tokens is not None else "0.00"
+    remaining_tokens = (
+        Decimal(charge_tx.balance_after).quantize(Decimal("0.01")) if charge_tx else None
+    )
+    remaining_label = f"{remaining_tokens:.2f}" if remaining_tokens is not None else "—"
+
+    prompt_text = result.prompt_text or ""
+    header = (
+        "✅ Готово!\n"
+        f"Списано ⚡{spent_label} токенов\n"
+        f"Осталось ⚡{remaining_label} токенов\n\n"
+        "Ваш промт 👇\n\n"
+    )
+    full_text = f'{header}"{prompt_text}"'
+    chunks = _chunk_plain_text(full_text)
+
+    for idx, chunk in enumerate(chunks):
+        await message.answer(chunk, reply_markup=video_keyboard if idx == 0 else None)
 
     await state.clear()
     await state.set_state(BotStates.main_menu)
@@ -286,7 +396,9 @@ async def _build_video_models_keyboard() -> Optional[InlineKeyboardMarkup]:
     """Возвращает inline-кнопки выбора модели видео, как в 'Создать видео'."""
 
     models = await sync_to_async(list)(
-        AIModel.objects.filter(type="video", is_active=True).order_by("order")
+        AIModel.objects.filter(type="video", is_active=True)
+        .exclude(slug=REFERENCE_PROMPT_PRICING_SLUG)
+        .order_by("order")
     )
     if not models:
         return None
@@ -296,6 +408,8 @@ async def _build_video_models_keyboard() -> Optional[InlineKeyboardMarkup]:
     kling_webapps = {}
     veo_webapps = {}
     sora_webapps = {}
+    midjourney_video_webapps = {}
+    runway_webapps = {}
 
     if public_base_url:
         for model in models:
@@ -328,10 +442,34 @@ async def _build_video_models_keyboard() -> Optional[InlineKeyboardMarkup]:
                     f"{public_base_url}/sora2/?"
                     f"model={quote_plus(model.slug)}&price={quote_plus(price_label)}"
                 )
+            if model.provider == "midjourney":
+                midjourney_video_webapps[model.slug] = (
+                    f"{public_base_url}/midjourney_video/?"
+                    f"model={quote_plus(model.slug)}&price={quote_plus(price_label)}"
+                    f"&max_prompt={quote_plus(str(model.max_prompt_length))}"
+                )
+            if model.provider == "useapi":
+                base_duration = None
+                if isinstance(model.default_params, dict):
+                    try:
+                        base_duration = int(model.default_params.get("duration") or 0)
+                    except (TypeError, ValueError):
+                        base_duration = None
+                base_duration = base_duration if base_duration and base_duration > 0 else 5
+                api_model_name = model.api_model_name or model.slug
+                runway_webapps[model.slug] = (
+                    f"{public_base_url}/runway/?"
+                    f"model={quote_plus(model.slug)}&price={quote_plus(price_label)}"
+                    f"&price_base_duration={quote_plus(str(base_duration))}"
+                    f"&api_model={quote_plus(api_model_name)}"
+                    f"&max_prompt={quote_plus(str(model.max_prompt_length))}"
+                )
 
     return get_video_models_keyboard(
         models,
         kling_webapps=kling_webapps,
         veo_webapps=veo_webapps,
         sora_webapps=sora_webapps,
+        midjourney_video_webapps=midjourney_video_webapps,
+        runway_webapps=runway_webapps,
     )

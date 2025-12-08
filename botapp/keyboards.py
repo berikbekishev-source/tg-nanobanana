@@ -11,6 +11,7 @@ from aiogram.types import (
 )
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from botapp.models import AIModel
+from botapp.reference_prompt import REFERENCE_PROMPT_PRICING_SLUG
 from botapp.business.pricing import (
     get_base_price_tokens,
     get_pricing_settings,
@@ -123,6 +124,7 @@ def get_video_models_keyboard(
     veo_webapps: Optional[dict] = None,
     sora_webapps: Optional[dict] = None,
     midjourney_video_webapps: Optional[dict] = None,
+    runway_webapps: Optional[dict] = None,
 ) -> InlineKeyboardMarkup:
     """Шаг 1: Выбор модели для видео"""
     builder = InlineKeyboardBuilder()
@@ -130,9 +132,12 @@ def get_video_models_keyboard(
     veo_webapps = veo_webapps or {}
     sora_webapps = sora_webapps or {}
     midjourney_video_webapps = midjourney_video_webapps or {}
+    runway_webapps = runway_webapps or {}
 
     for model in models:
         if model.type == 'video' and model.is_active:
+            if model.slug == REFERENCE_PROMPT_PRICING_SLUG:
+                continue
             if model.provider == "kling" and kling_webapps.get(model.slug):
                 builder.button(
                     text=model.display_name,
@@ -152,6 +157,12 @@ def get_video_models_keyboard(
                 builder.button(
                     text=model.display_name,
                     web_app=WebAppInfo(url=midjourney_video_webapps[model.slug]),
+                )
+            elif model.provider == "useapi" and runway_webapps.get(model.slug):
+                button_text = "🎞️ Runway Aleph" if model.slug == "runway_aleph" else model.display_name
+                builder.button(
+                    text=button_text,
+                    web_app=WebAppInfo(url=runway_webapps[model.slug]),
                 )
             else:
                 builder.button(
@@ -318,11 +329,14 @@ def get_image_mode_keyboard() -> InlineKeyboardMarkup:
 MODEL_PRICE_PRESETS: List[Tuple[str, str]] = [
     ("⚡ Veo 3.1 Fast", "veo3-fast"),
     ("🍌 Nano Banana", "nano-banana"),
+    ("🍌 Nano Banana Pro", "nano-banana-pro"),
     ("Ⓜ️ Midjourney", "midjourney-v7-fast"),
     ("🎞️ Midjourney Video", "midjourney-video"),
     ("🌀 Kling v2-5-turbo", "kling-v2-5-turbo"),
     ("🖼️ GPT Image 1", "gpt-image-1"),
     ("🎥 Sora 2", "sora2"),
+    ("🏁 Runway Gen-4", "runway_gen4"),
+    ("🏁 Runway Aleph", "runway_aleph"),
 ]
 
 
@@ -364,13 +378,23 @@ def get_prices_info(balance: Decimal) -> str:
     has_midjourney_video_preset = any(slug == "midjourney-video" for _, slug in MODEL_PRICE_PRESETS)
     added_slugs: set[str] = set()
     midjourney_video_added = False
+    image_price_lines: List[str] = []
+    video_price_lines: List[str] = []
+
+    def _push_price_line(model_obj: AIModel, title_label: str) -> None:
+        base_price = _get_unit_price_tokens(model_obj)
+        suffix = unit_labels.get(model_obj.cost_unit, "за генерацию")
+        line = f"{title_label} — ⚡{base_price:.2f} токенов {suffix}"
+        if model_obj.type == "video":
+            video_price_lines.append(line)
+        else:
+            image_price_lines.append(line)
+
     for title, slug in MODEL_PRICE_PRESETS:
         model = available_models.get(slug)
         if not model:
             continue
-        base_price = _get_unit_price_tokens(model)
-        suffix = unit_labels.get(model.cost_unit, "за генерацию")
-        lines.append(f"{title} — ⚡{base_price:.2f} токенов {suffix}")
+        _push_price_line(model, title)
         added_slugs.add(slug)
         if "midjourney" in slug:
             midjourney_video_added = midjourney_video_added or "video" in slug
@@ -383,12 +407,19 @@ def get_prices_info(balance: Decimal) -> str:
                     None,
                 )
                 if candidate:
-                    video_price = _get_unit_price_tokens(candidate)
-                    video_suffix = unit_labels.get(candidate.cost_unit, "за генерацию")
                     video_title = candidate.display_name or "Midjourney Video"
-                    lines.append(f"🎞️ {video_title} — ⚡{video_price:.2f} токенов {video_suffix}")
+                    _push_price_line(candidate, f"🎞️ {video_title}")
                     added_slugs.add(candidate.slug)
                     midjourney_video_added = True
+
+    if image_price_lines:
+        lines.append("🖼️ Генерация изображений:")
+        lines.extend(image_price_lines)
+        lines.append("")
+    if video_price_lines:
+        lines.append("🎬 Генерация видео:")
+        lines.extend(video_price_lines)
+        lines.append("")
 
     lines.append("")
     lines.append(

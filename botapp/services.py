@@ -3,12 +3,15 @@ import httpx
 import uuid
 import json
 import io
+import logging
 import re
 import os
 import time
 from json import JSONDecoder
 from typing import Any, Dict, List, Optional, Tuple
 from django.conf import settings
+
+logger = logging.getLogger(__name__)
 from google.oauth2 import service_account
 from google.auth.transport.requests import AuthorizedSession
 try:
@@ -171,6 +174,15 @@ def vertex_edit_images(
             results.append(base64.b64decode(b64_data))
     return results
 
+class GeminiBlockedError(Exception):
+    """Исключение когда Gemini заблокировал генерацию."""
+    def __init__(self, message: str, finish_reason: str = None, block_reason: str = None, safety_ratings: list = None):
+        super().__init__(message)
+        self.finish_reason = finish_reason
+        self.block_reason = block_reason
+        self.safety_ratings = safety_ratings or []
+
+
 def gemini_generate_images(
     prompt: str,
     quantity: int,
@@ -182,6 +194,9 @@ def gemini_generate_images(
     image_mode: Optional[str] = None,
 ) -> List[bytes]:
     """Возвращает список байтов изображений через публичный Gemini API."""
+    import logging
+    logger = logging.getLogger(__name__)
+
     if not model_name:
         raise ValueError("model_name обязателен для Gemini image генерации и должен приходить из AIModel.api_model_name")
 
@@ -234,11 +249,20 @@ def gemini_generate_images(
 
     imgs: List[bytes] = []
     with httpx.Client(timeout=120) as client:
-        for _ in range(quantity):
+        for i in range(quantity):
             r = client.post(url, headers=headers, json=payload)
             r.raise_for_status()
             data = r.json()
-            parts_resp = (data.get("candidates") or [{}])[0].get("content", {}).get("parts", [])
+
+            # Извлекаем информацию о блокировке из ответа
+            candidates = data.get("candidates") or []
+            candidate = candidates[0] if candidates else {}
+            finish_reason = candidate.get("finishReason")
+            safety_ratings = candidate.get("safetyRatings") or []
+            prompt_feedback = data.get("promptFeedback") or {}
+            block_reason = prompt_feedback.get("blockReason")
+
+            parts_resp = candidate.get("content", {}).get("parts", [])
             inline = next((p.get("inlineData", {}).get("data") for p in parts_resp if p.get("inlineData")), None)
             if inline:
                 imgs.append(base64.b64decode(inline))
@@ -249,6 +273,39 @@ def gemini_generate_images(
                 fr.raise_for_status()
                 imgs.append(fr.content)
                 continue
+
+            # Если изображение не получено - логируем и выбрасываем информативную ошибку
+            logger.error(
+                f"[GEMINI_IMAGE] Изображение не получено (итерация {i+1}/{quantity}). "
+                f"finishReason={finish_reason}, blockReason={block_reason}, "
+                f"safetyRatings={safety_ratings}, promptFeedback={prompt_feedback}"
+            )
+            logger.debug(f"[GEMINI_IMAGE] Полный ответ API: {json.dumps(data, ensure_ascii=False)[:2000]}")
+
+            # Формируем понятное сообщение об ошибке
+            error_parts = []
+            if finish_reason and finish_reason != "STOP":
+                error_parts.append(f"finishReason: {finish_reason}")
+            if block_reason:
+                error_parts.append(f"blockReason: {block_reason}")
+            if safety_ratings:
+                high_risk = [r for r in safety_ratings if r.get("probability") in ("HIGH", "MEDIUM")]
+                if high_risk:
+                    categories = [r.get("category", "UNKNOWN") for r in high_risk]
+                    error_parts.append(f"safetyCategories: {', '.join(categories)}")
+
+            if error_parts:
+                error_msg = f"Gemini отклонил запрос: {'; '.join(error_parts)}"
+            else:
+                error_msg = "Gemini не вернул изображение без указания причины"
+
+            raise GeminiBlockedError(
+                error_msg,
+                finish_reason=finish_reason,
+                block_reason=block_reason,
+                safety_ratings=safety_ratings
+            )
+
     return imgs
 
 def openai_generate_images(
@@ -262,7 +319,9 @@ def openai_generate_images(
     image_mode: Optional[str] = None,
 ) -> List[bytes]:
     """Генерация изображений через OpenAI GPT-Image API."""
+    logger.info(f"[OPENAI_IMAGE] Начало генерации: type={generation_type}, quantity={quantity}, prompt={prompt[:100]}...")
     if not settings.OPENAI_API_KEY:
+        logger.error("[OPENAI_IMAGE] OPENAI_API_KEY не задан")
         raise ValueError("OPENAI_API_KEY is not configured for OpenAI image generation")
 
     effective_params = dict(params or {})
@@ -385,6 +444,7 @@ def openai_generate_images(
             if key in payload:
                 data_fields[key] = str(payload[key])
 
+        logger.debug(f"[OPENAI_IMAGE] Edit payload: {json.dumps(data_fields, ensure_ascii=False)[:500]}")
         response = client.post(
             OPENAI_IMAGE_EDIT_URL,
             headers=headers,
@@ -395,14 +455,17 @@ def openai_generate_images(
             response.raise_for_status()
         except httpx.HTTPStatusError as exc:
             detail = _format_openai_error(exc.response)
+            logger.error(f"[OPENAI_IMAGE] HTTP ошибка при edit: status={exc.response.status_code}, detail={detail[:500]}")
             raise ValueError(f"OpenAI image generation failed: {detail}") from exc
 
         data = response.json()
+        logger.info(f"[OPENAI_IMAGE] Edit response: {json.dumps(data, ensure_ascii=False)[:500]}")
         entries = data.get("data") or []
         results: List[bytes] = []
         for entry in entries:
             if entry.get("b64_json"):
                 results.append(base64.b64decode(entry["b64_json"]))
+        logger.info(f"[OPENAI_IMAGE] Edit завершен: получено {len(results)} изображений")
         return results
 
     imgs: List[bytes] = []
@@ -418,26 +481,33 @@ def openai_generate_images(
                 input_images=input_images or [],
             )
 
-        for _ in range(quantity):
+        logger.debug(f"[OPENAI_IMAGE] Generate payload: {json.dumps(payload_base, ensure_ascii=False)[:500]}")
+        for idx in range(quantity):
+            logger.debug(f"[OPENAI_IMAGE] Генерация изображения {idx + 1}/{quantity}")
             response = client.post(OPENAI_IMAGE_URL, headers=json_headers, json=payload_base)
             try:
                 response.raise_for_status()
             except httpx.HTTPStatusError as exc:
                 detail = _format_openai_error(exc.response)
+                logger.error(f"[OPENAI_IMAGE] HTTP ошибка: status={exc.response.status_code}, detail={detail[:500]}")
                 raise ValueError(f"OpenAI image generation failed: {detail}") from exc
             data = response.json()
+            logger.debug(f"[OPENAI_IMAGE] Response {idx + 1}: {json.dumps(data, ensure_ascii=False)[:300]}")
             entries = data.get("data") or []
             if not entries:
+                logger.warning(f"[OPENAI_IMAGE] Пустой ответ для изображения {idx + 1}")
                 continue
             entry = entries[0]
             if entry.get("b64_json"):
                 imgs.append(base64.b64decode(entry["b64_json"]))
                 continue
             if entry.get("url"):
+                logger.debug(f"[OPENAI_IMAGE] Скачивание по URL: {entry['url'][:100]}...")
                 file_resp = client.get(entry["url"])
                 file_resp.raise_for_status()
                 imgs.append(file_resp.content)
                 continue
+    logger.info(f"[OPENAI_IMAGE] Генерация завершена: получено {len(imgs)} изображений")
     return imgs
 
 

@@ -243,9 +243,9 @@
         <div class="section">
             <p class="section-title">Промт</p>
             <p class="label">Текстовый запрос</p>
-            <textarea id="prompt" placeholder="Опишите движение и стиль..." maxlength="5000" enterkeyhint="done"
+            <textarea id="prompt" placeholder="Опишите движение и стиль..." maxlength="4000" enterkeyhint="done"
                 inputmode="text"></textarea>
-            <div class="count" id="promptCount">0/—</div>
+            <div class="count" id="promptCount">0/4000</div>
 
             <div class="upload">
                 <p class="label" style="margin:0 0 6px;">Загрузите изображение (JPG/PNG/WebP, до 10 МБ)</p>
@@ -290,7 +290,7 @@
         };
 
         // Применяем лимит промта из параметров (если передан)
-        const effectiveMaxPrompt = Number.isFinite(MAX_PROMPT) ? MAX_PROMPT : 5000;
+        const effectiveMaxPrompt = Number.isFinite(MAX_PROMPT) ? MAX_PROMPT : 4000;
         if (els.prompt) {
             els.prompt.setAttribute("maxlength", effectiveMaxPrompt);
             els.promptCount.textContent = `0/${Number.isFinite(MAX_PROMPT) ? MAX_PROMPT : "∞"}`;

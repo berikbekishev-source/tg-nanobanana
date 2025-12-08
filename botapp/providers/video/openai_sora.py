@@ -13,9 +13,6 @@ from .base import BaseVideoProvider, VideoGenerationError, VideoGenerationResult
 logger = logging.getLogger(__name__)
 
 
-logger = logging.getLogger(__name__)
-
-
 def resolve_sora_size(resolution: Optional[Any], aspect_ratio: Optional[Any]) -> Optional[str]:
     """Подбирает размеры кадра для подсказок (720p/1080p, 16:9 или 9:16)."""
     resolution_str = str(resolution).lower() if resolution else "720p"
@@ -225,6 +222,8 @@ class GeminigenSoraProvider(BaseVideoProvider):
         except Exception:
             payload = {"raw_text": response.text}
 
+        logger.info(f"[GEMINIGEN_SORA] API response: {json.dumps(payload, ensure_ascii=False)[:500]}")
+
         job_id = (
             payload.get("uuid")
             or payload.get("id")
@@ -238,6 +237,7 @@ class GeminigenSoraProvider(BaseVideoProvider):
             or (payload.get("data") or {}).get("media_url")
             or (payload.get("data") or {}).get("mediaUrl")
         )
+        logger.debug(f"[GEMINIGEN_SORA] Parsed: job_id={job_id}, media_url={str(media_url)[:100] if media_url else None}")
 
         metadata = {
             "response": payload,
@@ -248,7 +248,9 @@ class GeminigenSoraProvider(BaseVideoProvider):
             metadata["hasReferenceImage"] = True
 
         if media_url:
+            logger.info(f"[GEMINIGEN_SORA] Скачивание видео: {str(media_url)[:100]}...")
             video_bytes, mime_type = self._download_media(str(media_url))
+            logger.info(f"[GEMINIGEN_SORA] Видео скачано: {len(video_bytes)} bytes, mime={mime_type}")
             return VideoGenerationResult(
                 content=video_bytes,
                 mime_type=mime_type or "video/mp4",
@@ -302,7 +304,6 @@ class GeminigenSoraProvider(BaseVideoProvider):
         if "openai sora (5" in text or "server error" in text:
             return True
         return False
-
 
 # Обратная совместимость для старых импортов (старое имя провайдера Sora)
 OpenAISoraProvider = GeminigenSoraProvider

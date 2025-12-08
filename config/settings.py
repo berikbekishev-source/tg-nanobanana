@@ -10,7 +10,9 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/5.2/ref/settings/
 """
 
-import os, dj_database_url
+import logging
+import os
+import dj_database_url
 from pathlib import Path
 from dotenv import load_dotenv
 
@@ -191,6 +193,7 @@ if PUBLIC_BASE_URL:
     if public_origin and public_origin not in CSRF_TRUSTED_ORIGINS:
         CSRF_TRUSTED_ORIGINS.append(public_origin)
 GEMINI_API_KEY     = os.getenv("GEMINI_API_KEY")
+REFERENCE_SYSTEM_PROMPT = os.getenv("REFERENCE_SYSTEM_PROMPT")
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
 SUPABASE_BUCKET = os.getenv("SUPABASE_BUCKET", "bot-images")
@@ -198,6 +201,31 @@ SUPABASE_VIDEO_BUCKET = os.getenv("SUPABASE_VIDEO_BUCKET", SUPABASE_BUCKET)
 
 # --- Google Vertex AI ---
 USE_VERTEX_AI = os.getenv("USE_VERTEX_AI", "false").lower() in ("true", "1", "yes")
+DJANGO_LOG_LEVEL = os.getenv("DJANGO_LOG_LEVEL", "INFO").upper()
+
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {
+        "verbose": {
+            "format": "%(asctime)s %(levelname)s [%(name)s] %(message)s",
+        },
+    },
+    "handlers": {
+        "console": {
+            "class": "logging.StreamHandler",
+            "formatter": "verbose",
+        },
+    },
+    "root": {
+        "handlers": ["console"],
+        "level": DJANGO_LOG_LEVEL,
+    },
+    "loggers": {
+        "django.request": {"level": DJANGO_LOG_LEVEL, "handlers": ["console"], "propagate": False},
+        "botapp": {"level": DJANGO_LOG_LEVEL, "handlers": ["console"], "propagate": True},
+    },
+}
 GOOGLE_APPLICATION_CREDENTIALS_JSON = os.getenv("GOOGLE_APPLICATION_CREDENTIALS_JSON")
 GCP_PROJECT_ID = os.getenv("GCP_PROJECT_ID")
 GCP_LOCATION = os.getenv("GCP_LOCATION", "us-central1")
@@ -263,6 +291,20 @@ MIDJOURNEY_KIE_IMAGE_MODEL = os.getenv("MIDJOURNEY_KIE_IMAGE_MODEL", "midjourney
 MIDJOURNEY_KIE_POLL_INTERVAL = int(os.getenv("MIDJOURNEY_KIE_POLL_INTERVAL", str(KIE_POLL_INTERVAL)))
 MIDJOURNEY_KIE_POLL_TIMEOUT = int(os.getenv("MIDJOURNEY_KIE_POLL_TIMEOUT", str(KIE_POLL_TIMEOUT)))
 MIDJOURNEY_KIE_REQUEST_TIMEOUT = os.getenv("MIDJOURNEY_KIE_REQUEST_TIMEOUT", KIE_REQUEST_TIMEOUT)
+
+# --- Runway via useapi.net ---
+USEAPI_API_KEY = os.getenv("USEAPI_API_KEY")
+USEAPI_BASE_URL = os.getenv("USEAPI_BASE_URL", "https://api.useapi.net")
+USEAPI_POLL_INTERVAL = int(os.getenv("USEAPI_POLL_INTERVAL", "5"))
+USEAPI_POLL_TIMEOUT = int(os.getenv("USEAPI_POLL_TIMEOUT", str(12 * 60)))
+_useapi_request_timeout = os.getenv("USEAPI_REQUEST_TIMEOUT")
+USEAPI_REQUEST_TIMEOUT = float(_useapi_request_timeout) if _useapi_request_timeout else None
+USEAPI_MAX_JOBS = int(os.getenv("USEAPI_MAX_JOBS", "5"))
+USEAPI_ACCOUNT_EMAIL = os.getenv("USEAPI_ACCOUNT_EMAIL")
+USEAPI_ACCOUNT_PASSWORD = os.getenv("USEAPI_ACCOUNT_PASSWORD")
+USEAPI_KLING_ACCOUNT_EMAIL = os.getenv("USEAPI_KLING_ACCOUNT_EMAIL")
+USEAPI_KLING_ACCOUNT_PASSWORD = os.getenv("USEAPI_KLING_ACCOUNT_PASSWORD")
+USEAPI_KLING_MAX_JOBS = int(os.getenv("USEAPI_KLING_MAX_JOBS", os.getenv("USEAPI_MAX_JOBS", "5")))
 
 # --- Lava.top Payment ---
 LAVA_WEBHOOK_SECRET = os.getenv("LAVA_WEBHOOK_SECRET")

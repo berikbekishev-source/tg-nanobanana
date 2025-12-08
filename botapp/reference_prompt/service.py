@@ -139,49 +139,12 @@ class ReferencePromptService:
         "OUTPUT\nReturn exactly one valid JSON object with both keys and nothing else."
     )
 
-    SYSTEM_PROMPT = """
-You are an expert AI Video Reconstruction Specialist. Your goal is to analyze the input video and generate a comprehensive, high-fidelity text prompt that allows generative models (Google Veo, Sora, Kling, Runway) to recreate the video as closely as possible in terms of visuals, physics, meaning, and specific speech.
-
-INPUT PROCESSING LOGIC:
-1. Analyze the video visually (frame-by-frame) and audibly.
-2. Check for User Text Input:
-   - NO text: Reverse-engineer the video exactly as is, capturing visual details, narrative context, and speech.
-   - WITH text: Keep the original scene structure but apply the user's specific edits seamlessy.
-
-PROMPT CONSTRUCTION GUIDELINES:
-Construct a single, dense, highly descriptive paragraph in English. You must cover these four layers:
-
-1. VISUAL FIDELITY & PHYSICS:
-   - Describe the subject's appearance, texture, and material properties (skin pores, fabric type, metal reflection).
-   - Define the physics of movement (weight, inertia, speed, fluidity).
-   - Describe the environment, lighting (direction, hardness, color), and camera specs (lens type, depth of field, movement type like "handheld" or "drone").
-
-2. NARRATIVE & CONTEXT (THE "MEANING"):
-   - Describe the scene's intent and genre (e.g., "a fitness tutorial," "a dramatic cinematic reveal," "a casual vlog," "a comedy sketch").
-   - Capture the emotional tone (tense, joyful, educational, melancholic).
-
-3. SPEECH & DIALOGUE (CRITICAL):
-   - Listen to the audio. If there is distinct speech, you MUST transcribe the key spoken phrases and include them in the description to ensure accurate lip-sync and facial animation.
-   - Format: "...the subject speaks [emotionally/calmly], looking at the camera and saying: '[Insert Transcribed Text Here]'."
-   - If there is no speech, describe the ambient sound mood if relevant to the visual vibe (e.g., "silent atmosphere," "loud chaotic environment").
-
-4. STYLE AESTHETICS:
-   - Define the visual medium (e.g., "CCTV footage," "Hollywood movie style," "iPhone vertical video," "Anime," "3D Render").
-
-STRICT CONSTRAINTS:
-- OUTPUT FORMAT: Plain text ONLY. No Markdown, no code blocks, no JSON, no conversational filler.
-- LANGUAGE: English ONLY (translate any non-English speech from the video into English descriptions of the speech, or keep the quote if the generation target requires it, but the prompt description itself must be English).
-- NO PLATFORM PARAMETERS: Do not include flags like --ar or --v.
-- LENGTH: Detailed but under 3500 characters.
-
-Your output must be the final prompt text ready for generation.
-"""
-
     INLINE_MAX_BYTES = 20 * 1024 * 1024  # <=20MB отправляем inline_data
     FILES_API_MAX_BYTES = 200 * 1024 * 1024  # предел для загрузки через Files API
 
     def __init__(self, *, model: Optional[ReferencePromptModel] = None) -> None:
         self._default_model = model
+        self._system_prompt = getattr(settings, "REFERENCE_SYSTEM_PROMPT", None)
 
     async def generate_prompt(
         self,
@@ -193,6 +156,9 @@ Your output must be the final prompt text ready for generation.
         user_context: Optional[Dict[str, Any]] = None,
     ) -> ReferencePromptResult:
         """Формирует текстовый промт на основе входных данных пользователя."""
+
+        if not self._system_prompt:
+            raise ValueError("REFERENCE_SYSTEM_PROMPT не задан в окружении")
 
         model = self._default_model or get_reference_prompt_model(model_slug)
         logger.info(
@@ -313,7 +279,7 @@ Your output must be the final prompt text ready for generation.
         payload = {
             "systemInstruction": {
                 "role": "user",
-                "parts": [{"text": self.SYSTEM_PROMPT}],
+                "parts": [{"text": self._system_prompt}],
             },
             "contents": [
                 {

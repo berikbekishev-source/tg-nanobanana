@@ -34,3 +34,4 @@ from . import geminigen  # noqa: E402,F401
 from . import openai_sora  # noqa: E402,F401
 from . import kling  # noqa: E402,F401
 from . import midjourney  # noqa: E402,F401
+from . import useapi  # noqa: E402,F401
