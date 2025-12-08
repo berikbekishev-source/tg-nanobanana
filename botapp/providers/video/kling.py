@@ -767,6 +767,19 @@ class KlingVideoProvider(BaseVideoProvider):
         try:
             data = response.json()
             if isinstance(data, dict):
+                # Извлекаем читаемое сообщение из известных полей
+                for key in ("message", "error", "detail", "failMsg", "fail_message", "reason"):
+                    value = data.get(key)
+                    if isinstance(value, str) and value.strip():
+                        return value.strip()
+                # Проверяем вложенный объект error
+                error_obj = data.get("error")
+                if isinstance(error_obj, dict):
+                    for key in ("message", "detail", "reason"):
+                        value = error_obj.get(key)
+                        if isinstance(value, str) and value.strip():
+                            return value.strip()
+                # Fallback - весь JSON если ничего не нашли
                 return str(data)
         except Exception:
             pass
