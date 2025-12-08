@@ -564,23 +564,23 @@ class KlingVideoProvider(BaseVideoProvider):
         input_media: Optional[bytes],
         input_mime_type: Optional[str],
     ) -> str:
-        """
-        По новой доке Kling требует загрузки ассетов через POST /v1/kling/assets.
-        Всегда грузим исходное изображение в Kling и используем его URL.
-        """
         raw_url = params.get("image_url") or params.get("imageUrl") or params.get("reference_image")
-        # Если есть байты (WebApp/Telegram) — сразу грузим их в Kling.
+        if raw_url:
+            return str(raw_url)
+
         if input_media:
             png_bytes = self._convert_to_png(input_media, input_mime_type)
-            return self._upload_image_asset(png_bytes, mime_type="image/png", file_name="image.png")
-
-        # Если пришёл внешний URL — скачиваем и перезаливаем в Kling.
-        if raw_url:
-            if self._is_useapi_asset(str(raw_url)):
-                return str(raw_url)
-            content, mime = self._download_raw(str(raw_url))
-            png_bytes = self._convert_to_png(content, mime)
-            return self._upload_image_asset(png_bytes, mime_type="image/png", file_name="image.png")
+            upload_obj = supabase_upload_png(png_bytes)
+            image_url = (
+                upload_obj.get("public_url")
+                or upload_obj.get("publicUrl")
+                or upload_obj.get("publicURL")
+                if isinstance(upload_obj, dict)
+                else upload_obj
+            )
+            if image_url:
+                return str(image_url)
+            raise VideoGenerationError("Не удалось загрузить изображение для Kling.")
 
         raise VideoGenerationError("Для режима image2video необходимо загрузить изображение.")
 
@@ -588,11 +588,7 @@ class KlingVideoProvider(BaseVideoProvider):
         tail_image = params.get("image_tail") or params.get("tail_image") or params.get("imageTail")
         if not tail_image:
             return None
-        if self._is_useapi_asset(str(tail_image)):
-            return str(tail_image)
-        content, mime = self._download_raw(str(tail_image))
-        png_bytes = self._convert_to_png(content, mime)
-        return self._upload_image_asset(png_bytes, mime_type="image/png", file_name="tail.png")
+        return str(tail_image)
 
     def _download_file(self, url: str) -> Tuple[bytes, Optional[str]]:
         try:
