@@ -355,7 +355,11 @@ class KlingVideoProvider(BaseVideoProvider):
         if not work_id:
             return None
 
-        params: Dict[str, Any] = {"workIds": str(work_id)}
+        # ВАЖНО: fileTypes=MP4 нужен чтобы получить mp4 файл, а не zip архив
+        params: Dict[str, Any] = {
+            "workIds": str(work_id),
+            "fileTypes": "MP4",
+        }
         if self._account_email:
             params["email"] = self._account_email
 
