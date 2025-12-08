@@ -657,15 +657,16 @@ class KlingVideoProvider(BaseVideoProvider):
         return f"{base_url}{endpoint}"
 
     def _upload_image_asset(self, content: bytes, *, mime_type: Optional[str], file_name: str) -> str:
+        """Загружает изображение в Kling через useapi assets API."""
         mime = (mime_type or "image/png").split(";")[0].strip() or "image/png"
         if not mime.startswith("image/"):
             mime = "image/png"
 
         url = self._resolve_url("/v1/kling/assets/")
+        # Согласно документации useapi Kling assets - только email в query params
         params: Dict[str, Any] = {}
         if self._account_email:
             params["email"] = self._account_email
-        params["name"] = file_name
 
         headers = {
             "Authorization": f"Bearer {self._api_key}",
