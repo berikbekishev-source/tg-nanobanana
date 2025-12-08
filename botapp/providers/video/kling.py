@@ -259,8 +259,10 @@ class KlingVideoProvider(BaseVideoProvider):
             payload["replyRef"] = reply_ref
 
         mode = params.get("mode")
-        if isinstance(mode, str) and mode.strip():
-            payload["mode"] = mode.strip()
+        if isinstance(mode, str):
+            normalized_mode = mode.strip().lower()
+            if normalized_mode in {"std", "pro"}:
+                payload["mode"] = normalized_mode
 
         kling_version = params.get("kling_version")
         if kling_version:
