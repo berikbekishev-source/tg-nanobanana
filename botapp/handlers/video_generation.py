@@ -1140,6 +1140,8 @@ async def _handle_midjourney_video_webapp_data_impl(message: Message, state: FSM
 
 async def _handle_kling_webapp_data_impl(message: Message, state: FSMContext, payload: dict):
     """Принимаем данные Kling WebApp и запускаем генерацию."""
+    import asyncio
+
     data = await state.get_data()
     model_slug = payload.get("modelSlug") or data.get("model_slug") or data.get("selected_model") or "kling-v2-5-turbo"
     try:
@@ -1241,7 +1243,9 @@ async def _handle_kling_webapp_data_impl(message: Message, state: FSMContext, pa
         "aspect_ratio": aspect_ratio,
     }
 
-    source_media = None
+    # Для image2video - валидируем изображение, но НЕ загружаем в Supabase
+    # Загрузка будет выполнена в фоне
+    image_data_for_background = None
 
     if generation_type == "image2video":
         image_b64 = payload.get("imageData")
@@ -1270,32 +1274,78 @@ async def _handle_kling_webapp_data_impl(message: Message, state: FSMContext, pa
         mime = payload.get("imageMime") or "image/png"
         file_name = payload.get("imageName") or "image.png"
 
+        # Сохраняем данные для фоновой обработки
+        image_data_for_background = {
+            "raw": raw,
+            "mime": mime,
+            "file_name": file_name,
+        }
+
+    # Сразу отправляем сообщение и закрываем state - webapp закроется мгновенно
+    await message.answer("⏳ Подготовка генерации...")
+    await state.clear()
+
+    # Запускаем фоновую задачу для тяжёлой работы
+    asyncio.create_task(
+        _kling_background_process(
+            message=message,
+            user=user,
+            model=model,
+            prompt=prompt,
+            generation_type=generation_type,
+            params=params,
+            duration_value=duration_value,
+            aspect_ratio=aspect_ratio,
+            image_data=image_data_for_background,
+        )
+    )
+
+
+async def _kling_background_process(
+    *,
+    message: Message,
+    user,
+    model,
+    prompt: str,
+    generation_type: str,
+    params: dict,
+    duration_value: int,
+    aspect_ratio: str,
+    image_data: dict | None,
+):
+    """Фоновая обработка Kling генерации - загрузка изображения и запуск задачи."""
+    source_media = None
+
+    # Загружаем изображение в Supabase если нужно
+    if generation_type == "image2video" and image_data:
+        raw = image_data["raw"]
+        mime = image_data["mime"]
+        file_name = image_data["file_name"]
+
         png_bytes = _convert_to_png_bytes(raw, mime)
         try:
             upload_obj = await sync_to_async(supabase_upload_png)(png_bytes)
-        except Exception as exc:  # pragma: no cover - сеть/хранилище
+        except Exception as exc:
             await ErrorTracker.alog(
                 origin=BotErrorEvent.Origin.TELEGRAM,
                 severity=BotErrorEvent.Severity.WARNING,
-                handler="video_generation.handle_kling_webapp_data",
+                handler="video_generation._kling_background_process",
                 chat_id=message.chat.id,
                 payload={"reason": "supabase_upload_failed"},
                 exc=exc,
             )
             await message.answer(
-                "Не удалось загрузить изображение в хранилище. Попробуйте другой файл.",
-                reply_markup=get_cancel_keyboard(),
+                "❌ Не удалось загрузить изображение. Попробуйте ещё раз.",
+                reply_markup=get_main_menu_inline_keyboard(),
             )
-            await state.clear()
             return
 
         image_url = _extract_public_url(upload_obj)
         if not image_url:
             await message.answer(
-                "Не удалось получить ссылку на изображение. Попробуйте снова.",
-                reply_markup=get_cancel_keyboard(),
+                "❌ Не удалось получить ссылку на изображение. Попробуйте снова.",
+                reply_markup=get_main_menu_inline_keyboard(),
             )
-            await state.clear()
             return
 
         params["image_url"] = image_url
@@ -1307,6 +1357,7 @@ async def _handle_kling_webapp_data_impl(message: Message, state: FSMContext, pa
             "source": "kling_webapp",
         }
 
+    # Создаём запрос на генерацию
     try:
         gen_request = await sync_to_async(GenerationService.create_generation_request)(
             user=user,
@@ -1321,11 +1372,9 @@ async def _handle_kling_webapp_data_impl(message: Message, state: FSMContext, pa
         )
     except InsufficientBalanceError as exc:
         await message.answer(str(exc), reply_markup=get_main_menu_inline_keyboard())
-        await state.clear()
         return
     except ValueError as exc:
         await message.answer(str(exc), reply_markup=get_main_menu_inline_keyboard())
-        await state.clear()
         return
     except Exception as exc:
         await message.answer(
@@ -1335,7 +1384,7 @@ async def _handle_kling_webapp_data_impl(message: Message, state: FSMContext, pa
         await ErrorTracker.alog(
             origin=BotErrorEvent.Origin.TELEGRAM,
             severity=BotErrorEvent.Severity.ERROR,
-            handler="video_generation.handle_kling_webapp_data",
+            handler="video_generation._kling_background_process",
             chat_id=message.chat.id,
             payload={
                 "generation_type": generation_type,
@@ -1344,9 +1393,9 @@ async def _handle_kling_webapp_data_impl(message: Message, state: FSMContext, pa
             },
             exc=exc,
         )
-        await state.clear()
         return
 
+    # Отправляем сообщение о начале генерации
     await _send_generation_start_message(
         message,
         get_generation_start_message(
@@ -1359,8 +1408,8 @@ async def _handle_kling_webapp_data_impl(message: Message, state: FSMContext, pa
         ),
     )
 
+    # Запускаем Celery задачу
     generate_video_task.delay(gen_request.id)
-    await state.clear()
 
 
 async def _handle_veo_webapp_data_impl(message: Message, state: FSMContext, payload: dict):
