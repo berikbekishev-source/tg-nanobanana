@@ -25,6 +25,7 @@ class KlingVideoProvider(BaseVideoProvider):
     _TEXT2VIDEO_ENDPOINT = "/v1/kling/videos/text2video"
     _IMAGE2VIDEO_ENDPOINT = "/v1/kling/videos/image2video-frames"
     _TASK_ENDPOINT = "/v1/kling/tasks/{task_id}"
+    _TASK_ENDPOINT_FALLBACK = "/v1/tasks/{task_id}"
     _ASSETS_DOWNLOAD_ENDPOINT = "/v1/kling/assets/download"
 
     _SUCCESS_STATUSES = {"SUCCEED", "SUCCEEDED", "SUCCESS", "DONE", "99"}
@@ -300,11 +301,7 @@ class KlingVideoProvider(BaseVideoProvider):
 
         while time.time() < deadline:
             try:
-                last_payload = self._request(
-                    "GET",
-                    self._TASK_ENDPOINT.format(task_id=task_id),
-                    params=self._task_params(),
-                )
+                last_payload = self._fetch_task_payload(task_id)
             except VideoGenerationError as exc:
                 message = str(exc)
                 if "404" in message or "ResourceNotFound" in message:
@@ -319,6 +316,33 @@ class KlingVideoProvider(BaseVideoProvider):
             time.sleep(self._poll_interval)
 
         raise VideoGenerationError(f"useapi: ожидание результата Kling превысило {self._poll_timeout} секунд.")
+
+    def _fetch_task_payload(self, task_id: str) -> Dict[str, Any]:
+        """
+        В новых доках useapi статус задач Kling доступен по /v1/tasks/{task_id},
+        но для обратной совместимости пробуем и старый путь /v1/kling/tasks/{task_id}.
+        """
+        endpoints = (
+            self._TASK_ENDPOINT.format(task_id=task_id),
+            self._TASK_ENDPOINT_FALLBACK.format(task_id=task_id),
+        )
+        last_error: Optional[VideoGenerationError] = None
+        for endpoint in endpoints:
+            try:
+                return self._request(
+                    "GET",
+                    endpoint,
+                    params=self._task_params(),
+                )
+            except VideoGenerationError as exc:
+                last_error = exc
+                message = str(exc)
+                if "404" in message or "ResourceNotFound" in message:
+                    continue
+                raise
+        if last_error:
+            raise last_error
+        raise VideoGenerationError("useapi Kling: не удалось получить статус задачи.")
 
     def _raise_if_failed(self, payload: Dict[str, Any], task_id: str) -> None:
         status, status_final = self._extract_status(payload)
@@ -599,7 +623,10 @@ class KlingVideoProvider(BaseVideoProvider):
     def _resolve_url(self, endpoint: str) -> str:
         if endpoint.startswith("http"):
             return endpoint
-        return f"{self._base_url}{endpoint}"
+        base_url = self._base_url
+        if base_url.endswith("/v1") and endpoint.startswith("/v1/"):
+            base_url = base_url[:-3]
+        return f"{base_url}{endpoint}"
 
     def _build_headers(self) -> Dict[str, str]:
         return {
