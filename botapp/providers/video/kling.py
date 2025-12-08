@@ -575,17 +575,13 @@ class KlingVideoProvider(BaseVideoProvider):
             if self._is_useapi_asset(url_str):
                 return url_str
             # Иначе скачиваем и загружаем через Kling assets API
-            try:
-                image_bytes, mime = self._download_raw(url_str)
-                return self._upload_image_asset(
-                    image_bytes,
-                    mime_type=mime or input_mime_type,
-                    file_name="reference_image.png",
-                )
-            except Exception as exc:
-                logger.warning("Не удалось перезагрузить изображение через Kling assets: %s", exc)
-                # Пробуем использовать оригинальный URL как fallback
-                return url_str
+            # (Kling API не может получить доступ к внешним URL напрямую)
+            image_bytes, mime = self._download_raw(url_str)
+            return self._upload_image_asset(
+                image_bytes,
+                mime_type=mime or input_mime_type,
+                file_name="reference_image.png",
+            )
 
         # Если передан бинарный контент - загружаем через Kling assets API
         if input_media:
@@ -662,6 +658,13 @@ class KlingVideoProvider(BaseVideoProvider):
 
     def _upload_image_asset(self, content: bytes, *, mime_type: Optional[str], file_name: str) -> str:
         """Загружает изображение в Kling через useapi assets API."""
+        # Лимит Kling: 10MB для изображений
+        max_size = 10 * 1024 * 1024  # 10MB
+
+        # Если изображение больше лимита - сжимаем в JPEG
+        if len(content) > max_size:
+            content, mime_type = self._compress_image(content, max_size)
+
         mime = (mime_type or "image/png").split(";")[0].strip() or "image/png"
         if not mime.startswith("image/"):
             mime = "image/png"
@@ -696,6 +699,45 @@ class KlingVideoProvider(BaseVideoProvider):
         if not (isinstance(asset_url, str) and asset_url.startswith("http")):
             raise VideoGenerationError(f"useapi не вернул ссылку на ассет Kling: {data}")
         return asset_url
+
+    def _compress_image(self, content: bytes, max_size: int) -> Tuple[bytes, str]:
+        """Сжимает изображение до указанного размера."""
+        try:
+            from PIL import Image
+        except ImportError:
+            logger.warning("PIL не установлен, сжатие изображения невозможно")
+            return content, "image/png"
+
+        try:
+            img = Image.open(BytesIO(content))
+            # Конвертируем в RGB если нужно (для JPEG)
+            if img.mode in ("RGBA", "P"):
+                img = img.convert("RGB")
+
+            # Пробуем разные уровни качества
+            for quality in [85, 70, 50, 30]:
+                buffer = BytesIO()
+                img.save(buffer, format="JPEG", quality=quality, optimize=True)
+                compressed = buffer.getvalue()
+                if len(compressed) <= max_size:
+                    logger.info(f"Изображение сжато: {len(content)} -> {len(compressed)} байт (quality={quality})")
+                    return compressed, "image/jpeg"
+
+            # Если всё ещё большое - уменьшаем размер
+            width, height = img.size
+            while len(compressed) > max_size and width > 300 and height > 300:
+                width = int(width * 0.8)
+                height = int(height * 0.8)
+                resized = img.resize((width, height), Image.Resampling.LANCZOS)
+                buffer = BytesIO()
+                resized.save(buffer, format="JPEG", quality=70, optimize=True)
+                compressed = buffer.getvalue()
+
+            logger.info(f"Изображение сжато с ресайзом: {len(content)} -> {len(compressed)} байт")
+            return compressed, "image/jpeg"
+        except Exception as exc:
+            logger.warning(f"Ошибка сжатия изображения: {exc}")
+            return content, "image/png"
 
     @staticmethod
     def _is_useapi_asset(url: str) -> bool:
