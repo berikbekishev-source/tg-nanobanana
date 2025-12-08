@@ -241,9 +241,12 @@ class GeminigenVeoProvider(BaseVideoProvider):
         except Exception:
             payload = {"raw_text": response.text}
 
+        logger.info(f"[GEMINIGEN] API response: {json.dumps(payload, ensure_ascii=False)[:500]}")
+
         job_id = self._extract_field(payload, "uuid", "id", "job_id", "jobId")
         status = self._extract_field(payload, "status", "status_code", "statusCode")
         media_url = self._extract_field(payload, "media_url", "mediaUrl")
+        logger.debug(f"[GEMINIGEN] Parsed: job_id={job_id}, status={status}, media_url={str(media_url)[:100] if media_url else None}")
 
         metadata = {
             "response": payload,
@@ -256,7 +259,9 @@ class GeminigenVeoProvider(BaseVideoProvider):
             metadata["finalFrameProvided"] = True
 
         if media_url:
+            logger.info(f"[GEMINIGEN] Скачивание видео: {str(media_url)[:100]}...")
             video_bytes, mime_type = self._download_media(str(media_url))
+            logger.info(f"[GEMINIGEN] Видео скачано: {len(video_bytes)} bytes, mime={mime_type}")
             return VideoGenerationResult(
                 content=video_bytes,
                 mime_type=mime_type or "video/mp4",
