@@ -8,8 +8,6 @@ from typing import Any, Dict, Iterable, Optional, Tuple
 import httpx
 from django.conf import settings
 
-from botapp.services import supabase_upload_png
-
 from . import register_video_provider
 from .base import BaseVideoProvider, VideoGenerationError, VideoGenerationResult
 
@@ -566,23 +564,33 @@ class KlingVideoProvider(BaseVideoProvider):
         input_media: Optional[bytes],
         input_mime_type: Optional[str],
     ) -> str:
+        # Если передан URL изображения - проверяем его
         raw_url = params.get("image_url") or params.get("imageUrl") or params.get("reference_image")
         if raw_url:
-            return str(raw_url)
+            url_str = str(raw_url)
+            # Если URL уже с домена Kling - используем как есть
+            if self._is_useapi_asset(url_str):
+                return url_str
+            # Иначе скачиваем и загружаем через Kling assets API
+            try:
+                image_bytes, mime = self._download_raw(url_str)
+                return self._upload_image_asset(
+                    image_bytes,
+                    mime_type=mime or input_mime_type,
+                    file_name="reference_image.png",
+                )
+            except Exception as exc:
+                logger.warning("Не удалось перезагрузить изображение через Kling assets: %s", exc)
+                # Пробуем использовать оригинальный URL как fallback
+                return url_str
 
+        # Если передан бинарный контент - загружаем через Kling assets API
         if input_media:
-            png_bytes = self._convert_to_png(input_media, input_mime_type)
-            upload_obj = supabase_upload_png(png_bytes)
-            image_url = (
-                upload_obj.get("public_url")
-                or upload_obj.get("publicUrl")
-                or upload_obj.get("publicURL")
-                if isinstance(upload_obj, dict)
-                else upload_obj
+            return self._upload_image_asset(
+                input_media,
+                mime_type=input_mime_type,
+                file_name="input_image.png",
             )
-            if image_url:
-                return str(image_url)
-            raise VideoGenerationError("Не удалось загрузить изображение для Kling.")
 
         raise VideoGenerationError("Для режима image2video необходимо загрузить изображение.")
 
