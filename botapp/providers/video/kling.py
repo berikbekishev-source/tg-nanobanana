@@ -299,11 +299,18 @@ class KlingVideoProvider(BaseVideoProvider):
         last_payload: Dict[str, Any] = {}
 
         while time.time() < deadline:
-            last_payload = self._request(
-                "GET",
-                self._TASK_ENDPOINT.format(task_id=task_id),
-                params=self._task_params(),
-            )
+            try:
+                last_payload = self._request(
+                    "GET",
+                    self._TASK_ENDPOINT.format(task_id=task_id),
+                    params=self._task_params(),
+                )
+            except VideoGenerationError as exc:
+                message = str(exc)
+                if "404" in message or "ResourceNotFound" in message:
+                    time.sleep(self._poll_interval)
+                    continue
+                raise
             status, is_final = self._extract_status(last_payload)
             if status in self._SUCCESS_STATUSES or (is_final and status not in self._FAIL_STATUSES):
                 return last_payload
