@@ -270,10 +270,6 @@ class KlingVideoProvider(BaseVideoProvider):
             if normalized_mode in {"std", "pro"}:
                 payload["mode"] = normalized_mode
 
-        kling_version = params.get("kling_version")
-        if kling_version:
-            payload["kling_version"] = kling_version
-
         return payload
 
     def _ensure_account_ready(self) -> None:

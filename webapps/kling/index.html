@@ -322,16 +322,6 @@
             </p>
         </div>
 
-        <div class="section" id="requirementsSection">
-            <p class="section-title">Требования</p>
-            <p class="muted">
-                Требования для изображения:<br>
-                — формат JPG/PNG/WebP<br>
-                — размер до 10 МБ<br>
-                — разрешение не менее 300 px по стороне
-            </p>
-        </div>
-
         <div class="section">
             <p class="section-title">Промт</p>
             <p class="label">Текстовый запрос</p>
@@ -343,6 +333,12 @@
                 <p class="label" style="margin:0 0 6px;">Загрузите изображение (JPG/PNG/WebP, до 10 МБ)</p>
                 <input type="file" id="imgInput" accept="image/*">
                 <div class="preview" id="imgPreview">Файл не выбран</div>
+                <p class="muted" style="margin-top: 8px;">
+                    Требования для изображения:<br>
+                    — формат JPG/PNG/WebP<br>
+                    — размер до 10 МБ<br>
+                    — разрешение не менее 300 px по стороне
+                </p>
             </div>
         </div>
 
@@ -481,10 +477,6 @@
             state.mode = mode;
             els.uploadBlock.style.display = mode === "image2video" ? "block" : "none";
             els.formatSection.style.display = mode === "text2video" ? "block" : "none";
-            const req = document.getElementById("requirementsSection");
-            if (req) {
-                req.style.display = mode === "image2video" ? "block" : "none";
-            }
         }
 
         function sanitizeDuration(value) {
