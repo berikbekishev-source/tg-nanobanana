@@ -171,6 +171,15 @@ def vertex_edit_images(
             results.append(base64.b64decode(b64_data))
     return results
 
+class GeminiBlockedError(Exception):
+    """Исключение когда Gemini заблокировал генерацию."""
+    def __init__(self, message: str, finish_reason: str = None, block_reason: str = None, safety_ratings: list = None):
+        super().__init__(message)
+        self.finish_reason = finish_reason
+        self.block_reason = block_reason
+        self.safety_ratings = safety_ratings or []
+
+
 def gemini_generate_images(
     prompt: str,
     quantity: int,
@@ -182,6 +191,9 @@ def gemini_generate_images(
     image_mode: Optional[str] = None,
 ) -> List[bytes]:
     """Возвращает список байтов изображений через публичный Gemini API."""
+    import logging
+    logger = logging.getLogger(__name__)
+
     if not model_name:
         raise ValueError("model_name обязателен для Gemini image генерации и должен приходить из AIModel.api_model_name")
 
@@ -234,11 +246,20 @@ def gemini_generate_images(
 
     imgs: List[bytes] = []
     with httpx.Client(timeout=120) as client:
-        for _ in range(quantity):
+        for i in range(quantity):
             r = client.post(url, headers=headers, json=payload)
             r.raise_for_status()
             data = r.json()
-            parts_resp = (data.get("candidates") or [{}])[0].get("content", {}).get("parts", [])
+
+            # Извлекаем информацию о блокировке из ответа
+            candidates = data.get("candidates") or []
+            candidate = candidates[0] if candidates else {}
+            finish_reason = candidate.get("finishReason")
+            safety_ratings = candidate.get("safetyRatings") or []
+            prompt_feedback = data.get("promptFeedback") or {}
+            block_reason = prompt_feedback.get("blockReason")
+
+            parts_resp = candidate.get("content", {}).get("parts", [])
             inline = next((p.get("inlineData", {}).get("data") for p in parts_resp if p.get("inlineData")), None)
             if inline:
                 imgs.append(base64.b64decode(inline))
@@ -249,6 +270,39 @@ def gemini_generate_images(
                 fr.raise_for_status()
                 imgs.append(fr.content)
                 continue
+
+            # Если изображение не получено - логируем и выбрасываем информативную ошибку
+            logger.error(
+                f"[GEMINI_IMAGE] Изображение не получено (итерация {i+1}/{quantity}). "
+                f"finishReason={finish_reason}, blockReason={block_reason}, "
+                f"safetyRatings={safety_ratings}, promptFeedback={prompt_feedback}"
+            )
+            logger.debug(f"[GEMINI_IMAGE] Полный ответ API: {json.dumps(data, ensure_ascii=False)[:2000]}")
+
+            # Формируем понятное сообщение об ошибке
+            error_parts = []
+            if finish_reason and finish_reason != "STOP":
+                error_parts.append(f"finishReason: {finish_reason}")
+            if block_reason:
+                error_parts.append(f"blockReason: {block_reason}")
+            if safety_ratings:
+                high_risk = [r for r in safety_ratings if r.get("probability") in ("HIGH", "MEDIUM")]
+                if high_risk:
+                    categories = [r.get("category", "UNKNOWN") for r in high_risk]
+                    error_parts.append(f"safetyCategories: {', '.join(categories)}")
+
+            if error_parts:
+                error_msg = f"Gemini отклонил запрос: {'; '.join(error_parts)}"
+            else:
+                error_msg = "Gemini не вернул изображение без указания причины"
+
+            raise GeminiBlockedError(
+                error_msg,
+                finish_reason=finish_reason,
+                block_reason=block_reason,
+                safety_ratings=safety_ratings
+            )
+
     return imgs
 
 def openai_generate_images(
