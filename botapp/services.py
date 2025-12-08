@@ -316,7 +316,9 @@ def openai_generate_images(
     image_mode: Optional[str] = None,
 ) -> List[bytes]:
     """Генерация изображений через OpenAI GPT-Image API."""
+    logger.info(f"[OPENAI_IMAGE] Начало генерации: type={generation_type}, quantity={quantity}, prompt={prompt[:100]}...")
     if not settings.OPENAI_API_KEY:
+        logger.error("[OPENAI_IMAGE] OPENAI_API_KEY не задан")
         raise ValueError("OPENAI_API_KEY is not configured for OpenAI image generation")
 
     effective_params = dict(params or {})
@@ -439,6 +441,7 @@ def openai_generate_images(
             if key in payload:
                 data_fields[key] = str(payload[key])
 
+        logger.debug(f"[OPENAI_IMAGE] Edit payload: {json.dumps(data_fields, ensure_ascii=False)[:500]}")
         response = client.post(
             OPENAI_IMAGE_EDIT_URL,
             headers=headers,
@@ -449,14 +452,17 @@ def openai_generate_images(
             response.raise_for_status()
         except httpx.HTTPStatusError as exc:
             detail = _format_openai_error(exc.response)
+            logger.error(f"[OPENAI_IMAGE] HTTP ошибка при edit: status={exc.response.status_code}, detail={detail[:500]}")
             raise ValueError(f"OpenAI image generation failed: {detail}") from exc
 
         data = response.json()
+        logger.info(f"[OPENAI_IMAGE] Edit response: {json.dumps(data, ensure_ascii=False)[:500]}")
         entries = data.get("data") or []
         results: List[bytes] = []
         for entry in entries:
             if entry.get("b64_json"):
                 results.append(base64.b64decode(entry["b64_json"]))
+        logger.info(f"[OPENAI_IMAGE] Edit завершен: получено {len(results)} изображений")
         return results
 
     imgs: List[bytes] = []
@@ -472,26 +478,33 @@ def openai_generate_images(
                 input_images=input_images or [],
             )
 
-        for _ in range(quantity):
+        logger.debug(f"[OPENAI_IMAGE] Generate payload: {json.dumps(payload_base, ensure_ascii=False)[:500]}")
+        for idx in range(quantity):
+            logger.debug(f"[OPENAI_IMAGE] Генерация изображения {idx + 1}/{quantity}")
             response = client.post(OPENAI_IMAGE_URL, headers=json_headers, json=payload_base)
             try:
                 response.raise_for_status()
             except httpx.HTTPStatusError as exc:
                 detail = _format_openai_error(exc.response)
+                logger.error(f"[OPENAI_IMAGE] HTTP ошибка: status={exc.response.status_code}, detail={detail[:500]}")
                 raise ValueError(f"OpenAI image generation failed: {detail}") from exc
             data = response.json()
+            logger.debug(f"[OPENAI_IMAGE] Response {idx + 1}: {json.dumps(data, ensure_ascii=False)[:300]}")
             entries = data.get("data") or []
             if not entries:
+                logger.warning(f"[OPENAI_IMAGE] Пустой ответ для изображения {idx + 1}")
                 continue
             entry = entries[0]
             if entry.get("b64_json"):
                 imgs.append(base64.b64decode(entry["b64_json"]))
                 continue
             if entry.get("url"):
+                logger.debug(f"[OPENAI_IMAGE] Скачивание по URL: {entry['url'][:100]}...")
                 file_resp = client.get(entry["url"])
                 file_resp.raise_for_status()
                 imgs.append(file_resp.content)
                 continue
+    logger.info(f"[OPENAI_IMAGE] Генерация завершена: получено {len(imgs)} изображений")
     return imgs
 
 

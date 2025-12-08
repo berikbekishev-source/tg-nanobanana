@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+import json
+import logging
 import time
 from typing import Any, Dict, Optional
 
 import httpx
 from django.conf import settings
+
+logger = logging.getLogger(__name__)
 
 from botapp.services import _download_binary_file
 
@@ -98,11 +102,13 @@ class UseApiRunwayVideoProvider(BaseVideoProvider):
         input_media: Optional[bytes],
         input_mime_type: Optional[str],
     ) -> VideoGenerationResult:
+        logger.info(f"[USEAPI] Начало image2video: prompt={prompt[:100]}...")
         image_bytes = input_media
         if not image_bytes and params.get("image_url"):
             try:
                 image_bytes = _download_binary_file(str(params["image_url"]))
             except Exception as exc:
+                logger.error(f"[USEAPI] Не удалось скачать изображение: {exc}")
                 raise VideoGenerationError("Не удалось скачать исходное изображение.") from exc
 
         if not image_bytes:
@@ -123,9 +129,12 @@ class UseApiRunwayVideoProvider(BaseVideoProvider):
 
         self._ensure_account_ready()
 
+        logger.info(f"[USEAPI] Загрузка ассета: mime={mime_type}, name={file_name}")
         asset_id = self._upload_asset(image_bytes, mime_type, file_name)
         if not asset_id:
+            logger.error("[USEAPI] Не получен assetId для изображения")
             raise VideoGenerationError("useapi не вернул assetId для исходного изображения.")
+        logger.info(f"[USEAPI] Ассет загружен: asset_id={asset_id}")
 
         create_payload: Dict[str, Any] = {
             "firstImage_assetId": asset_id,
@@ -134,29 +143,39 @@ class UseApiRunwayVideoProvider(BaseVideoProvider):
             "seconds": seconds,
             "maxJobs": self._max_jobs,
         }
+        logger.debug(f"[USEAPI] Create payload: {json.dumps(create_payload, ensure_ascii=False)[:500]}")
 
         create_response = self._request(
             "POST",
             self._CREATE_ENDPOINT,
             json_payload=create_payload,
         )
+        logger.info(f"[USEAPI] Create response: {json.dumps(create_response, ensure_ascii=False)[:500]}")
+
         task_id = self._extract_task_id(create_response)
         if not task_id:
+            logger.error(f"[USEAPI] Не получен taskId: {create_response}")
             raise VideoGenerationError(f"useapi не вернул taskId: {create_response}")
+        logger.info(f"[USEAPI] Задача создана: task_id={task_id}")
 
         task_payload = self._poll_task(task_id)
 
         status = self._extract_status(task_payload)
         if status and status in self._FAIL_STATUSES:
+            logger.error(f"[USEAPI] Задача провалилась: status={status}, payload={json.dumps(task_payload, ensure_ascii=False)[:1000]}")
             raise VideoGenerationError(f"Runway завершилась с ошибкой: {task_payload}")
 
         video_url = self._extract_video_url(task_payload)
         if not video_url:
+            logger.error(f"[USEAPI] Нет URL видео в ответе: {json.dumps(task_payload, ensure_ascii=False)[:1000]}")
             raise VideoGenerationError("Не удалось получить ссылку на видео в ответе Runway.")
 
+        logger.info(f"[USEAPI] Скачивание видео: {video_url[:100]}...")
         try:
             video_bytes = _download_binary_file(video_url)
+            logger.info(f"[USEAPI] Видео скачано: {len(video_bytes)} bytes")
         except Exception as exc:
+            logger.error(f"[USEAPI] Ошибка скачивания видео: {exc}")
             raise VideoGenerationError("Не удалось скачать видео из Runway.") from exc
 
         duration_value = self._extract_number(task_payload, ["seconds", "duration"])
@@ -185,11 +204,13 @@ class UseApiRunwayVideoProvider(BaseVideoProvider):
         input_media: Optional[bytes],
         input_mime_type: Optional[str],
     ) -> VideoGenerationResult:
+        logger.info(f"[USEAPI] Начало video2video: prompt={prompt[:100]}...")
         video_bytes = input_media
         if not video_bytes and params.get("video_url"):
             try:
                 video_bytes = _download_binary_file(str(params["video_url"]))
             except Exception as exc:
+                logger.error(f"[USEAPI] Не удалось скачать исходное видео: {exc}")
                 raise VideoGenerationError("Не удалось скачать исходное видео.") from exc
 
         if not video_bytes:
@@ -211,9 +232,12 @@ class UseApiRunwayVideoProvider(BaseVideoProvider):
 
         self._ensure_account_ready()
 
+        logger.info(f"[USEAPI] Загрузка видео-ассета: mime={mime_type}, name={file_name}")
         video_asset_id = self._upload_asset(video_bytes, mime_type, file_name)
         if not video_asset_id:
+            logger.error("[USEAPI] Не получен assetId для видео")
             raise VideoGenerationError("useapi не вернул assetId для исходного видео.")
+        logger.info(f"[USEAPI] Видео-ассет загружен: asset_id={video_asset_id}")
 
         create_payload: Dict[str, Any] = {
             "video_assetId": video_asset_id,
@@ -229,28 +253,38 @@ class UseApiRunwayVideoProvider(BaseVideoProvider):
         if reply_ref:
             create_payload["replyRef"] = str(reply_ref)
 
+        logger.debug(f"[USEAPI] Video create payload: {json.dumps(create_payload, ensure_ascii=False)[:500]}")
         create_response = self._request(
             "POST",
             self._VIDEO_ENDPOINT,
             json_payload=create_payload,
         )
+        logger.info(f"[USEAPI] Video create response: {json.dumps(create_response, ensure_ascii=False)[:500]}")
+
         task_id = self._extract_task_id(create_response)
         if not task_id:
+            logger.error(f"[USEAPI] Не получен taskId: {create_response}")
             raise VideoGenerationError(f"useapi не вернул taskId: {create_response}")
+        logger.info(f"[USEAPI] Задача создана: task_id={task_id}")
 
         task_payload = self._poll_task(task_id)
 
         status = self._extract_status(task_payload)
         if status and status in self._FAIL_STATUSES:
+            logger.error(f"[USEAPI] Задача провалилась: status={status}, payload={json.dumps(task_payload, ensure_ascii=False)[:1000]}")
             raise VideoGenerationError(f"Runway завершилась с ошибкой: {task_payload}")
 
         video_url = self._extract_video_url(task_payload)
         if not video_url:
+            logger.error(f"[USEAPI] Нет URL видео в ответе: {json.dumps(task_payload, ensure_ascii=False)[:1000]}")
             raise VideoGenerationError("Не удалось получить ссылку на видео в ответе Runway.")
 
+        logger.info(f"[USEAPI] Скачивание результата: {video_url[:100]}...")
         try:
             final_video_bytes = _download_binary_file(video_url)
+            logger.info(f"[USEAPI] Результат скачан: {len(final_video_bytes)} bytes")
         except Exception as exc:
+            logger.error(f"[USEAPI] Ошибка скачивания результата: {exc}")
             raise VideoGenerationError("Не удалось скачать видео из Runway.") from exc
 
         duration_value = self._extract_number(task_payload, ["seconds", "duration"])
@@ -385,16 +419,24 @@ class UseApiRunwayVideoProvider(BaseVideoProvider):
         endpoint = self._TASK_ENDPOINT.format(task_id=task_id)
         deadline = time.time() + self._poll_timeout
         last_payload: Dict[str, Any] = {}
+        poll_count = 0
 
+        logger.info(f"[USEAPI] Начало polling задачи {task_id}, timeout={self._poll_timeout}s")
         while time.time() < deadline:
             last_payload = self._request("GET", endpoint)
             status = self._extract_status(last_payload)
+            poll_count += 1
+            if poll_count % 10 == 1:
+                logger.debug(f"[USEAPI] Poll #{poll_count} task={task_id}, status={status}")
             if status and status in self._SUCCESS_STATUSES:
+                logger.info(f"[USEAPI] Задача {task_id} завершена успешно: status={status}")
                 return last_payload
             if status and status in self._FAIL_STATUSES:
+                logger.warning(f"[USEAPI] Задача {task_id} провалилась: status={status}, payload={json.dumps(last_payload, ensure_ascii=False)[:500]}")
                 return last_payload
             time.sleep(self._poll_interval)
 
+        logger.error(f"[USEAPI] Timeout задачи {task_id} после {poll_count} попыток")
         raise VideoGenerationError(f"useapi: превышено время ожидания задачи {task_id}")
 
     @staticmethod

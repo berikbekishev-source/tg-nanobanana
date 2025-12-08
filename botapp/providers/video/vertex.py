@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import json
+import logging
 import time
 from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import quote
@@ -12,6 +13,8 @@ import httpx
 from django.conf import settings
 from google.auth.transport.requests import Request
 from google.oauth2 import service_account
+
+logger = logging.getLogger(__name__)
 
 from . import register_video_provider
 from .base import BaseVideoProvider, VideoGenerationError, VideoGenerationResult
@@ -283,15 +286,24 @@ class VertexVeoProvider(BaseVideoProvider):
         )
         payload = {"operationName": operation_name}
         deadline = time.time() + timeout_seconds
+        poll_count = 0
 
+        logger.info(f"[VEO] Начало polling операции {operation_name}, timeout={timeout_seconds}s")
         while time.time() < deadline:
             data = self._request("POST", fetch_url, token, json_payload=payload).json()
+            poll_count += 1
+            if poll_count % 10 == 1:
+                logger.debug(f"[VEO] Poll #{poll_count}, done={data.get('done')}")
             if data.get("done"):
                 if "error" in data:
-                    raise VideoGenerationError(json.dumps(data["error"], ensure_ascii=False))
+                    error_msg = json.dumps(data["error"], ensure_ascii=False)
+                    logger.error(f"[VEO] Операция {operation_name} завершилась с ошибкой: {error_msg}")
+                    raise VideoGenerationError(error_msg)
+                logger.info(f"[VEO] Операция {operation_name} завершена успешно после {poll_count} попыток")
                 return data
             time.sleep(self._DEFAULT_POLL_INTERVAL)
 
+        logger.error(f"[VEO] Timeout операции {operation_name} после {poll_count} попыток")
         raise VideoGenerationError("Превышено время ожидания завершения генерации видео.")
 
     def _download_file_uri(self, token: str, file_uri: str) -> bytes:
@@ -353,6 +365,7 @@ class VertexVeoProvider(BaseVideoProvider):
         input_media: Optional[bytes] = None,
         input_mime_type: Optional[str] = None,
     ) -> VideoGenerationResult:
+        logger.info(f"[VEO] Начало генерации: model={model_name}, type={generation_type}, prompt={prompt[:100]}...")
         token, _ = self._fetch_access_token()
 
         instance = self._build_instance(
@@ -362,6 +375,7 @@ class VertexVeoProvider(BaseVideoProvider):
             input_mime_type=input_mime_type,
         )
         parameters = self._build_parameters(params)
+        logger.debug(f"[VEO] Parameters: {json.dumps(parameters, ensure_ascii=False)[:500]}")
 
         last_error: Optional[Exception] = None
         predict_response: Dict[str, Any] = {}
@@ -369,6 +383,7 @@ class VertexVeoProvider(BaseVideoProvider):
 
         for candidate_name in self._candidate_model_names(model_name):
             try:
+                logger.debug(f"[VEO] Пробуем модель: {candidate_name}")
                 predict_response = self._invoke_predict_long_running(
                     token=token,
                     model_name=candidate_name,
@@ -376,30 +391,38 @@ class VertexVeoProvider(BaseVideoProvider):
                     parameters=parameters,
                 )
                 resolved_model_name = candidate_name
+                logger.info(f"[VEO] Модель найдена: {resolved_model_name}")
                 break
             except VideoGenerationError as exc:
                 last_error = exc
                 detail = str(exc).lower()
                 if "not found" in detail or "404" in detail:
+                    logger.debug(f"[VEO] Модель {candidate_name} не найдена, пробуем следующую")
                     continue
+                logger.error(f"[VEO] Ошибка при вызове модели {candidate_name}: {exc}")
                 raise
 
         if not resolved_model_name:
+            logger.error(f"[VEO] Не удалось найти подходящую модель. Последняя ошибка: {last_error}")
             if last_error:
                 raise last_error
             raise VideoGenerationError("Не удалось определить корректное имя модели Veo.")
 
         operation_name = predict_response.get("name")
         if not operation_name:
+            logger.error(f"[VEO] Нет operation_name в ответе: {json.dumps(predict_response, ensure_ascii=False)[:500]}")
             raise VideoGenerationError("Veo не вернул идентификатор операции для дальнейшего ожидания.")
 
+        logger.info(f"[VEO] Операция создана: {operation_name}, начинаем polling")
         operation_result = self._poll_predict_operation(
             token=token,
             model_name=resolved_model_name,
             operation_name=operation_name,
         )
 
+        logger.info(f"[VEO] Операция завершена, извлекаем видео")
         video_bytes, mime_type, metadata = self._extract_video_from_operation(token, operation_result)
+        logger.info(f"[VEO] Видео получено: {len(video_bytes)} bytes, mime={mime_type}")
 
         metadata.update(
             {
