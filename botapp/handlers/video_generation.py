@@ -1281,8 +1281,7 @@ async def _handle_kling_webapp_data_impl(message: Message, state: FSMContext, pa
             "file_name": file_name,
         }
 
-    # Сразу отправляем сообщение и закрываем state - webapp закроется мгновенно
-    await message.answer("⏳ Подготовка генерации...")
+    # Закрываем state - webapp закроется мгновенно
     await state.clear()
 
     # Запускаем фоновую задачу для тяжёлой работы
