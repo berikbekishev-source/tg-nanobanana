@@ -186,6 +186,7 @@ class KlingVideoProvider(BaseVideoProvider):
 
     def _build_text_payload(self, *, prompt: str, model_name: str, params: Dict[str, Any]) -> Dict[str, Any]:
         payload = self._build_base_payload(prompt=prompt, model_name=model_name, params=params)
+        model = payload.get("model_name") or self._normalize_model_name(model_name)
 
         aspect_ratio = (
             params.get("aspect_ratio")
@@ -195,12 +196,13 @@ class KlingVideoProvider(BaseVideoProvider):
         if aspect_ratio:
             payload["aspect_ratio"] = str(aspect_ratio)
 
-        cfg_scale = self._sanitize_cfg(params.get("cfg_scale") or params.get("cfg") or params.get("cfgScale"))
-        if cfg_scale is not None:
-            payload["cfg_scale"] = cfg_scale
+        if not (model and model.startswith("kling-v2-")):
+            cfg_scale = self._sanitize_cfg(params.get("cfg_scale") or params.get("cfg") or params.get("cfgScale"))
+            if cfg_scale is not None:
+                payload["cfg_scale"] = cfg_scale
 
         negative_prompt = params.get("negative_prompt") or params.get("negativePrompt")
-        if negative_prompt:
+        if negative_prompt and not (model and "v2-5" in model):
             payload["negative_prompt"] = negative_prompt
 
         return payload
@@ -214,15 +216,18 @@ class KlingVideoProvider(BaseVideoProvider):
         image_url: str,
     ) -> Dict[str, Any]:
         payload = self._build_base_payload(prompt=prompt, model_name=model_name, params=params)
+        model = payload.get("model_name") or self._normalize_model_name(model_name)
         payload["image"] = image_url
 
         tail_image = params.get("image_tail") or params.get("tail_image") or params.get("imageTail")
         if tail_image:
             payload["image_tail"] = tail_image
+            payload["mode"] = "pro"
 
-        cfg_scale = self._sanitize_cfg(params.get("cfg_scale") or params.get("cfg") or params.get("cfgScale"))
-        if cfg_scale is not None:
-            payload["cfg_scale"] = cfg_scale
+        if not (model and model.startswith("kling-v2-")):
+            cfg_scale = self._sanitize_cfg(params.get("cfg_scale") or params.get("cfg") or params.get("cfgScale"))
+            if cfg_scale is not None:
+                payload["cfg_scale"] = cfg_scale
 
         enable_audio = params.get("enable_audio")
         if isinstance(enable_audio, bool):
