@@ -725,6 +725,14 @@ def generate_image_task(self, request_id: int):
 
         logger.info(f"[TASK] Успешно сгенерировано {len(imgs)} изображений для запроса {req.id}")
 
+        # Проверка что генерация вернула результаты
+        if not imgs:
+            error_msg = f"Генерация не вернула изображений. Model: {model.display_name}, Type: {generation_type}, Mode: {image_mode}"
+            logger.error(f"[TASK] {error_msg}")
+            raise ValueError(error_msg)
+
+        logger.info(f"[TASK] Успешно сгенерировано {len(imgs)} изображений для запроса {req.id}")
+
         urls = []
         inline_markup = get_inline_menu_markup()
         charged_amount, balance_after = _extract_charge_details(req)
