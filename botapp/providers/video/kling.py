@@ -8,6 +8,8 @@ from typing import Any, Dict, Iterable, Optional, Tuple
 import httpx
 from django.conf import settings
 
+from botapp.services import supabase_upload_png
+
 from . import register_video_provider
 from .base import BaseVideoProvider, VideoGenerationError, VideoGenerationResult
 

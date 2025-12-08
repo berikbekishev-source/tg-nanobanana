@@ -2,15 +2,16 @@
 
 **Агент:** Codex  
 **Ветка:** worktree/agent-codex-staging-railway-check-03  
-**PR:** #504 (MERGED)
+**PR:** #506 (MERGED)
 
 ### Выполненные действия:
 1. В провайдере Kling через useapi перестал отправлять `maxJobs` и `kling_version` в запросы создания, чтобы API не отвечал 400 `Parameter name not supported`.
 2. Настройка аккаунта `/v1/kling/accounts` теперь передает `maxJobs` только при явной конфигурации.
 3. Перебазировал ветку на свежий `staging`, пуш с обновлением (`--force-with-lease`), дождался CI и авто-merge в `staging`.
+4. Убрал загрузку ассетов через `/v1/kling/assets`, теперь используем прямые URL/Supabase, чтобы не слать неподдерживаемые параметры в query.
 
 ### Результат:
-- Payload text2video/image2video соответствует документации useapi; вероятность 400 из-за неподдерживаемых параметров снижена. Staging задеплоен (PR #504 merged).
+- Payload text2video/image2video соответствует документации useapi; вероятность 400 из-за неподдерживаемых параметров снижена. Staging задеплоен (PR #506 merged).
 
 ## [2025-12-05] Обновление себестоимости видео моделей
 
