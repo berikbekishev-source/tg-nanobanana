@@ -477,6 +477,10 @@
             state.mode = mode;
             els.uploadBlock.style.display = mode === "image2video" ? "block" : "none";
             els.formatSection.style.display = mode === "text2video" ? "block" : "none";
+            const req = document.getElementById("requirementsSection");
+            if (req) {
+                req.style.display = mode === "image2video" ? "block" : "none";
+            }
         }
 
         function sanitizeDuration(value) {
