@@ -59,14 +59,8 @@ class KlingVideoProvider(BaseVideoProvider):
         )
         self._max_jobs: int = self._sanitize_max_jobs(max_jobs_raw)
 
-        self._account_email: Optional[str] = (
-            getattr(settings, "USEAPI_KLING_ACCOUNT_EMAIL", None)
-            or getattr(settings, "USEAPI_ACCOUNT_EMAIL", None)
-        )
-        self._account_password: Optional[str] = (
-            getattr(settings, "USEAPI_KLING_ACCOUNT_PASSWORD", None)
-            or getattr(settings, "USEAPI_ACCOUNT_PASSWORD", None)
-        )
+        self._account_email: Optional[str] = getattr(settings, "USEAPI_KLING_ACCOUNT_EMAIL", None)
+        self._account_password: Optional[str] = getattr(settings, "USEAPI_KLING_ACCOUNT_PASSWORD", None)
         self._account_ready: bool = False
 
     def generate(
