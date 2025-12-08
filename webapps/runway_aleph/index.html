@@ -326,7 +326,8 @@
         function updateMainButton() {
             if (tg?.MainButton) {
                 if (state.prompt.length > 0 && state.videoData) {
-                    tg.MainButton.setText("Сгенерировать");
+                    const btnText = state.priceLabel === "—" ? "Сгенерировать" : `Сгенерировать · ${state.priceLabel}`;
+                    tg.MainButton.setText(btnText);
                     tg.MainButton.show();
                 } else {
                     tg.MainButton.hide();
