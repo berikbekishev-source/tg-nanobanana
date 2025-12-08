@@ -322,12 +322,13 @@
             </p>
         </div>
 
-        <div class="section">
-            <p class="section-title">Требования useapi</p>
+        <div class="section" id="requirementsSection">
+            <p class="section-title">Требования</p>
             <p class="muted">
-                • Image → Video: JPG/PNG/WebP до 10 МБ, минимум 300 px по стороне (лучше 720p/1080p).<br>
-                • Длительность 5–10 секунд, negative prompt не поддерживается для v2.5.<br>
-                • Соотношение сторон задаём только в Text → Video, для картинок берём исходные пропорции.
+                Требования для изображения:<br>
+                — формат JPG/PNG/WebP<br>
+                — размер до 10 МБ<br>
+                — разрешение не менее 300 px по стороне
             </p>
         </div>
 
@@ -362,17 +363,6 @@
                 <div class="chip" data-duration="10">10 секунд</div>
             </div>
 
-            <div class="slider-block">
-                <div class="slider-header">
-                    <span>Следование промту (CFG Scale)</span>
-                    <span id="cfgValue">0.5</span>
-                </div>
-                <input type="range" id="cfgScale" min="0" max="1" step="0.1" value="0.5">
-                <div class="slider-header">
-                    <span></span>
-                    <span class="label">0 — свободнее, 1 — ближе к промту</span>
-                </div>
-            </div>
         </div>
 
         <div class="section">
@@ -404,7 +394,6 @@
             prompt: "",
             aspectRatio: "16:9",
             duration: Number(params.get("duration")) || 5,
-            cfgScale: 0.5,
             imageData: null,
             imageMime: null,
             imageName: null,
@@ -423,8 +412,6 @@
             imgInput: document.getElementById("imgInput"),
             imgPreview: document.getElementById("imgPreview"),
             durationToggle: document.getElementById("durationToggle"),
-            cfgScale: document.getElementById("cfgScale"),
-            cfgValue: document.getElementById("cfgValue"),
             formatSection: document.getElementById("formatSection"),
             error: document.getElementById("error"),
         };
@@ -494,6 +481,10 @@
             state.mode = mode;
             els.uploadBlock.style.display = mode === "image2video" ? "block" : "none";
             els.formatSection.style.display = mode === "text2video" ? "block" : "none";
+            const req = document.getElementById("requirementsSection");
+            if (req) {
+                req.style.display = mode === "image2video" ? "block" : "none";
+            }
         }
 
         function sanitizeDuration(value) {
@@ -505,13 +496,6 @@
         function sanitizeRatio(value) {
             const allowed = ["16:9", "9:16", "1:1"];
             return allowed.includes(value) ? value : "16:9";
-        }
-
-        function sanitizeCfg(value) {
-            let num = Number(value);
-            if (Number.isNaN(num)) num = 0.5;
-            num = Math.max(0, Math.min(1, num));
-            return Math.round(num * 10) / 10;
         }
 
         function sendData() {
@@ -536,7 +520,6 @@
                     generationType: state.mode,
                     prompt: state.prompt,
                     duration: state.duration,
-                    cfgScale: state.cfgScale,
                 };
                 if (state.mode === "text2video") {
                     payload.aspectRatio = state.aspectRatio;
@@ -620,11 +603,6 @@
             setActive(els.durationToggle, btn);
             state.duration = sanitizeDuration(btn.dataset.duration);
             updatePriceForDuration();
-        });
-
-        els.cfgScale.addEventListener("input", () => {
-            state.cfgScale = sanitizeCfg(els.cfgScale.value);
-            els.cfgValue.textContent = state.cfgScale.toFixed(1);
         });
 
         function resetImage() {

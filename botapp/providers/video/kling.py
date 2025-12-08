@@ -8,8 +8,6 @@ from typing import Any, Dict, Iterable, Optional, Tuple
 import httpx
 from django.conf import settings
 
-from botapp.services import supabase_upload_png
-
 from . import register_video_provider
 from .base import BaseVideoProvider, VideoGenerationError, VideoGenerationResult
 
@@ -25,6 +23,7 @@ class KlingVideoProvider(BaseVideoProvider):
     _TEXT2VIDEO_ENDPOINT = "/v1/kling/videos/text2video"
     _IMAGE2VIDEO_ENDPOINT = "/v1/kling/videos/image2video-frames"
     _TASK_ENDPOINT = "/v1/kling/tasks/{task_id}"
+    _TASK_ENDPOINT_FALLBACK = "/v1/tasks/{task_id}"
     _ASSETS_DOWNLOAD_ENDPOINT = "/v1/kling/assets/download"
 
     _SUCCESS_STATUSES = {"SUCCEED", "SUCCEEDED", "SUCCESS", "DONE", "99"}
@@ -145,11 +144,13 @@ class KlingVideoProvider(BaseVideoProvider):
         self._ensure_account_ready()
 
         image_url = self._resolve_image_url(params=params, input_media=input_media, input_mime_type=input_mime_type)
+        tail_image_url = self._resolve_tail_image(params=params)
         payload = self._build_image_payload(
             prompt=prompt,
             model_name=model_name,
             params=params,
             image_url=image_url,
+            tail_image_url=tail_image_url,
         )
 
         create_response = self._request("POST", self._IMAGE2VIDEO_ENDPOINT, json_payload=payload)
@@ -214,14 +215,14 @@ class KlingVideoProvider(BaseVideoProvider):
         model_name: str,
         params: Dict[str, Any],
         image_url: str,
+        tail_image_url: Optional[str],
     ) -> Dict[str, Any]:
         payload = self._build_base_payload(prompt=prompt, model_name=model_name, params=params)
         model = payload.get("model_name") or self._normalize_model_name(model_name)
         payload["image"] = image_url
 
-        tail_image = params.get("image_tail") or params.get("tail_image") or params.get("imageTail")
-        if tail_image:
-            payload["image_tail"] = tail_image
+        if tail_image_url:
+            payload["image_tail"] = tail_image_url
             payload["mode"] = "pro"
 
         if not (model and model.startswith("kling-v2-")):
@@ -300,11 +301,7 @@ class KlingVideoProvider(BaseVideoProvider):
 
         while time.time() < deadline:
             try:
-                last_payload = self._request(
-                    "GET",
-                    self._TASK_ENDPOINT.format(task_id=task_id),
-                    params=self._task_params(),
-                )
+                last_payload = self._fetch_task_payload(task_id)
             except VideoGenerationError as exc:
                 message = str(exc)
                 if "404" in message or "ResourceNotFound" in message:
@@ -319,6 +316,33 @@ class KlingVideoProvider(BaseVideoProvider):
             time.sleep(self._poll_interval)
 
         raise VideoGenerationError(f"useapi: ожидание результата Kling превысило {self._poll_timeout} секунд.")
+
+    def _fetch_task_payload(self, task_id: str) -> Dict[str, Any]:
+        """
+        В новых доках useapi статус задач Kling доступен по /v1/tasks/{task_id},
+        но для обратной совместимости пробуем и старый путь /v1/kling/tasks/{task_id}.
+        """
+        endpoints = (
+            self._TASK_ENDPOINT.format(task_id=task_id),
+            self._TASK_ENDPOINT_FALLBACK.format(task_id=task_id),
+        )
+        last_error: Optional[VideoGenerationError] = None
+        for endpoint in endpoints:
+            try:
+                return self._request(
+                    "GET",
+                    endpoint,
+                    params=self._task_params(),
+                )
+            except VideoGenerationError as exc:
+                last_error = exc
+                message = str(exc)
+                if "404" in message or "ResourceNotFound" in message:
+                    continue
+                raise
+        if last_error:
+            raise last_error
+        raise VideoGenerationError("useapi Kling: не удалось получить статус задачи.")
 
     def _raise_if_failed(self, payload: Dict[str, Any], task_id: str) -> None:
         status, status_final = self._extract_status(payload)
@@ -541,21 +565,35 @@ class KlingVideoProvider(BaseVideoProvider):
         input_media: Optional[bytes],
         input_mime_type: Optional[str],
     ) -> str:
-        image_url = params.get("image_url") or params.get("imageUrl") or params.get("reference_image")
-        if image_url:
-            return str(image_url)
-        if not input_media:
-            raise VideoGenerationError("Для режима image2video необходимо загрузить изображение.")
+        """
+        По новой доке Kling требует загрузки ассетов через POST /v1/kling/assets.
+        Всегда грузим исходное изображение в Kling и используем его URL.
+        """
+        raw_url = params.get("image_url") or params.get("imageUrl") or params.get("reference_image")
+        # Если есть байты (WebApp/Telegram) — сразу грузим их в Kling.
+        if input_media:
+            png_bytes = self._convert_to_png(input_media, input_mime_type)
+            return self._upload_image_asset(png_bytes, mime_type="image/png", file_name="image.png")
 
-        png_bytes = self._convert_to_png(input_media, input_mime_type)
-        upload_obj = supabase_upload_png(png_bytes)
-        if isinstance(upload_obj, dict):
-            image_url = upload_obj.get("public_url") or upload_obj.get("publicUrl") or upload_obj.get("publicURL")
-        else:
-            image_url = upload_obj
-        if not image_url:
-            raise VideoGenerationError("Не удалось загрузить изображение в хранилище для Kling.")
-        return str(image_url)
+        # Если пришёл внешний URL — скачиваем и перезаливаем в Kling.
+        if raw_url:
+            if self._is_useapi_asset(str(raw_url)):
+                return str(raw_url)
+            content, mime = self._download_raw(str(raw_url))
+            png_bytes = self._convert_to_png(content, mime)
+            return self._upload_image_asset(png_bytes, mime_type="image/png", file_name="image.png")
+
+        raise VideoGenerationError("Для режима image2video необходимо загрузить изображение.")
+
+    def _resolve_tail_image(self, *, params: Dict[str, Any]) -> Optional[str]:
+        tail_image = params.get("image_tail") or params.get("tail_image") or params.get("imageTail")
+        if not tail_image:
+            return None
+        if self._is_useapi_asset(str(tail_image)):
+            return str(tail_image)
+        content, mime = self._download_raw(str(tail_image))
+        png_bytes = self._convert_to_png(content, mime)
+        return self._upload_image_asset(png_bytes, mime_type="image/png", file_name="tail.png")
 
     def _download_file(self, url: str) -> Tuple[bytes, Optional[str]]:
         try:
@@ -566,6 +604,15 @@ class KlingVideoProvider(BaseVideoProvider):
             raise VideoGenerationError(f"Не удалось скачать видео Kling: {exc}") from exc
         mime_type = response.headers.get("Content-Type", "video/mp4")
         return response.content, mime_type
+
+    def _download_raw(self, url: str) -> Tuple[bytes, Optional[str]]:
+        try:
+            with httpx.Client(timeout=self._request_timeout, follow_redirects=True) as client:
+                response = client.get(url)
+                response.raise_for_status()
+        except httpx.HTTPError as exc:  # type: ignore[attr-defined]
+            raise VideoGenerationError(f"Не удалось скачать изображение Kling: {exc}") from exc
+        return response.content, response.headers.get("Content-Type")
 
     def _request(
         self,
@@ -599,7 +646,51 @@ class KlingVideoProvider(BaseVideoProvider):
     def _resolve_url(self, endpoint: str) -> str:
         if endpoint.startswith("http"):
             return endpoint
-        return f"{self._base_url}{endpoint}"
+        base_url = self._base_url
+        if base_url.endswith("/v1") and endpoint.startswith("/v1/"):
+            base_url = base_url[:-3]
+        return f"{base_url}{endpoint}"
+
+    def _upload_image_asset(self, content: bytes, *, mime_type: Optional[str], file_name: str) -> str:
+        mime = (mime_type or "image/png").split(";")[0].strip() or "image/png"
+        if not mime.startswith("image/"):
+            mime = "image/png"
+
+        url = self._resolve_url("/v1/kling/assets/")
+        params: Dict[str, Any] = {}
+        if self._account_email:
+            params["email"] = self._account_email
+        params["name"] = file_name
+
+        headers = {
+            "Authorization": f"Bearer {self._api_key}",
+            "Content-Type": mime,
+        }
+
+        try:
+            with httpx.Client(timeout=self._request_timeout, follow_redirects=True) as client:
+                response = client.post(url, headers=headers, params=params, content=content)
+                response.raise_for_status()
+                data = response.json()
+        except httpx.HTTPStatusError as exc:  # type: ignore[attr-defined]
+            detail = self._safe_extract_error(exc.response)
+            raise VideoGenerationError(f"useapi Kling HTTP {exc.response.status_code if exc.response else ''}: {detail}") from exc
+        except httpx.HTTPError as exc:  # type: ignore[attr-defined]
+            raise VideoGenerationError(f"Ошибка запроса к useapi Kling: {exc}") from exc
+        except Exception as exc:
+            raise VideoGenerationError(f"Не удалось загрузить ассет в Kling: {exc}") from exc
+
+        asset_url = None
+        if isinstance(data, dict):
+            asset_url = data.get("url") or data.get("resourceUrl") or data.get("resource_url")
+        if not (isinstance(asset_url, str) and asset_url.startswith("http")):
+            raise VideoGenerationError(f"useapi не вернул ссылку на ассет Kling: {data}")
+        return asset_url
+
+    @staticmethod
+    def _is_useapi_asset(url: str) -> bool:
+        lower = url.lower()
+        return "useapi.net" in lower or "klingai.com" in lower
 
     def _build_headers(self) -> Dict[str, str]:
         return {
