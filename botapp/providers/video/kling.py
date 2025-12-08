@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 from io import BytesIO
 import json
+import logging
 import threading
 import time
 from typing import Any, Dict, Iterable, Optional
@@ -10,6 +11,8 @@ from typing import Any, Dict, Iterable, Optional
 import httpx
 import jwt
 from django.conf import settings
+
+logger = logging.getLogger(__name__)
 
 from botapp.services import supabase_upload_png
 
@@ -173,6 +176,7 @@ class KlingVideoProvider(BaseVideoProvider):
         input_media: Optional[bytes],
         input_mime_type: Optional[str],
     ) -> VideoGenerationResult:
+        logger.info(f"[KLING] Начало генерации: type={generation_type}, model={model_name}, prompt={prompt[:100]}...")
         endpoints = self._resolve_endpoints(generation_type)
 
         payload = self._build_payload(
@@ -183,13 +187,19 @@ class KlingVideoProvider(BaseVideoProvider):
             input_media=input_media,
             input_mime_type=input_mime_type,
         )
+        logger.debug(f"[KLING] Payload: {json.dumps({k: v for k, v in payload.items() if k != 'image'}, ensure_ascii=False)[:500]}")
 
         initial_response = self._request("POST", endpoints["create"], json_payload=payload)
+        logger.info(f"[KLING] Ответ API: {json.dumps(initial_response, ensure_ascii=False)[:500]}")
+
         job_id = self._extract_job_id(initial_response)
         if not job_id:
+            logger.error(f"[KLING] API не вернул job_id. Ответ: {initial_response}")
             raise VideoGenerationError("Kling API не вернул идентификатор задания.")
 
         job_status = self._extract_status(initial_response)
+        logger.info(f"[KLING] job_id={job_id}, initial_status={job_status}")
+
         job_payload = (
             initial_response
             if job_status in self._SUCCESS_STATUSES
@@ -198,6 +208,7 @@ class KlingVideoProvider(BaseVideoProvider):
 
         video_bytes, mime_type = self._extract_video_content(job_payload)
         if not video_bytes:
+            logger.error(f"[KLING] Видео не получено. job_id={job_id}, payload={json.dumps(job_payload, ensure_ascii=False)[:1000]}")
             raise VideoGenerationError("Kling API не вернул ссылку или данные видео.")
 
         duration = self._extract_first_number(job_payload, ("duration", "video_duration", "seconds"))
@@ -231,6 +242,7 @@ class KlingVideoProvider(BaseVideoProvider):
         input_media: Optional[bytes],
         input_mime_type: Optional[str],
     ) -> VideoGenerationResult:
+        logger.info(f"[KLING_KIE] Начало генерации через KIE.AI: type={generation_type}, model={model_name}")
         model_override = (
             self._kie_text2video_model if generation_type == "text2video" else self._kie_image2video_model
         )
@@ -250,18 +262,25 @@ class KlingVideoProvider(BaseVideoProvider):
             "model": target_model,
             "input": input_payload,
         }
+        logger.debug(f"[KLING_KIE] Request payload: model={target_model}, input_keys={list(input_payload.keys())}")
 
         create_resp = self._kie_request("POST", "/api/v1/jobs/createTask", json_payload=request_payload)
+        logger.info(f"[KLING_KIE] createTask response: code={create_resp.get('code')}, msg={create_resp.get('msg')}")
+
         if create_resp.get("code") != 200:
+            logger.error(f"[KLING_KIE] Ошибка createTask: {json.dumps(create_resp, ensure_ascii=False)}")
             raise VideoGenerationError(f"KIE.AI createTask error: {create_resp}")
         data = create_resp.get("data") or {}
         task_id = data.get("taskId")
         if not task_id:
+            logger.error(f"[KLING_KIE] Нет taskId в ответе: {create_resp}")
             raise VideoGenerationError("KIE.AI не вернул идентификатор задания.")
 
+        logger.info(f"[KLING_KIE] Задача создана: task_id={task_id}")
         job_payload = self._kie_poll_task(task_id)
         result_url = self._extract_kie_result_url(job_payload)
         if not result_url:
+            logger.error(f"[KLING_KIE] Нет URL результата. task_id={task_id}, payload={json.dumps(job_payload, ensure_ascii=False)[:1000]}")
             raise VideoGenerationError("KIE.AI не вернул ссылку на результат.")
 
         video_bytes, mime_type = self._download_file(result_url)
@@ -402,22 +421,30 @@ class KlingVideoProvider(BaseVideoProvider):
 
     def _kie_poll_task(self, task_id: str) -> Dict[str, Any]:
         started = time.monotonic()
+        poll_count = 0
         while True:
+            poll_count += 1
             response = self._kie_request(
                 "GET",
                 "/api/v1/jobs/recordInfo",
                 params={"taskId": task_id},
             )
             if response.get("code") != 200:
+                logger.error(f"[KLING_KIE] recordInfo error: {response}")
                 raise VideoGenerationError(f"KIE.AI recordInfo error: {response}")
             data = response.get("data") or {}
             state = (data.get("state") or "").lower()
+            logger.debug(f"[KLING_KIE] Poll #{poll_count}: task_id={task_id}, state={state}")
+
             if state == "success":
+                logger.info(f"[KLING_KIE] Задача завершена успешно: task_id={task_id}")
                 return data
             if state == "fail":
                 fail_msg = data.get("failMsg") or data.get("msg") or "KIE.AI task failed."
+                logger.error(f"[KLING_KIE] Задача провалилась: task_id={task_id}, failMsg={fail_msg}, data={data}")
                 raise VideoGenerationError(f"Задача KIE.AI завершилась с ошибкой: {fail_msg}")
             if time.monotonic() - started > self._kie_poll_timeout:
+                logger.error(f"[KLING_KIE] Таймаут: task_id={task_id}, elapsed={time.monotonic() - started:.1f}s")
                 raise VideoGenerationError("Ожидание результата KIE.AI превысило установленный таймаут.")
             time.sleep(self._kie_poll_interval)
 
@@ -533,18 +560,26 @@ class KlingVideoProvider(BaseVideoProvider):
 
     def _poll_job(self, job_id: str, status_endpoint: str) -> Dict[str, Any]:
         started = time.monotonic()
+        poll_count = 0
         while True:
+            poll_count += 1
             job_response = self._request(
                 "GET",
                 status_endpoint,
                 path_params={"job_id": job_id, "task_id": job_id},
             )
             status = self._extract_status(job_response)
+            logger.debug(f"[KLING] Poll #{poll_count}: job_id={job_id}, status={status}")
+
             if status in self._SUCCESS_STATUSES:
+                logger.info(f"[KLING] Задача завершена успешно: job_id={job_id}")
                 return job_response
             if status in self._FAIL_STATUSES:
-                raise VideoGenerationError(self._extract_error_message(job_response, job_id))
+                error_msg = self._extract_error_message(job_response, job_id)
+                logger.error(f"[KLING] Задача провалилась: job_id={job_id}, response={json.dumps(job_response, ensure_ascii=False)[:1000]}")
+                raise VideoGenerationError(error_msg)
             if time.monotonic() - started > self._poll_timeout:
+                logger.error(f"[KLING] Таймаут: job_id={job_id}, elapsed={time.monotonic() - started:.1f}s")
                 raise VideoGenerationError(f"Ожидание результата Kling превысило {self._poll_timeout} секунд.")
             time.sleep(self._poll_interval)
 

@@ -25,7 +25,7 @@ from .keyboards import get_generation_complete_message
 from .media_utils import detect_reference_mime, ensure_png_format
 from .models import BotErrorEvent, GenRequest, TgUser
 from .providers import VideoGenerationError, get_video_provider
-from .services import generate_images_for_model, supabase_upload_png, supabase_upload_video
+from .services import generate_images_for_model, supabase_upload_png, supabase_upload_video, GeminiBlockedError
 
 logger = logging.getLogger(__name__)
 
@@ -692,15 +692,30 @@ def generate_image_task(self, request_id: int):
             input_images_payload = []
 
         # Вызываем сервис генерации изображений
-        imgs = generate_images_for_model(
-            model,
-            prompt,
-            quantity,
-            params,
-            generation_type=generation_type,
-            input_images=input_images_payload,
-            image_mode=image_mode,
-        )
+        try:
+            imgs = generate_images_for_model(
+                model,
+                prompt,
+                quantity,
+                params,
+                generation_type=generation_type,
+                input_images=input_images_payload,
+                image_mode=image_mode,
+            )
+        except GeminiBlockedError as blocked_err:
+            # Gemini заблокировал запрос - retry бесполезен, сразу сообщаем пользователю
+            logger.error(f"[TASK] Gemini заблокировал запрос {req.id}: {blocked_err}")
+            req.status = "error"
+            req.error_message = str(blocked_err)
+            req.save(update_fields=["status", "error_message"])
+
+            send_telegram_message(
+                req.chat_id,
+                f"❌ {blocked_err}",
+                reply_markup=get_inline_menu_markup(),
+                parse_mode=None,
+            )
+            return  # Выходим без retry
 
         # Проверка что генерация вернула результаты
         if not imgs:
