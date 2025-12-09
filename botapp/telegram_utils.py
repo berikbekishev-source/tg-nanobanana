@@ -16,7 +16,7 @@ TELEGRAM_API_TIMEOUT = 30.0
 
 def _get_bot_token() -> str:
     """Получить токен бота из настроек."""
-    return settings.TG_BOT_TOKEN
+    return settings.TELEGRAM_BOT_TOKEN
 
 
 def _build_api_url(method: str) -> str:
