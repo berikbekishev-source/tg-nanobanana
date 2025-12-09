@@ -1269,6 +1269,138 @@ def process_nano_banana_webapp(user_id: int, payload: Dict[str, Any]) -> Optiona
     return gen_request.id
 
 
+
+def process_runway_aleph_webapp(user_id: int, payload: Dict[str, Any]) -> Optional[int]:
+    """
+    Обработать данные Runway Aleph WebApp и запустить генерацию video2video.
+
+    Args:
+        user_id: ID пользователя Telegram
+        payload: Данные из WebApp
+
+    Returns:
+        ID созданного GenRequest или None при ошибке
+    """
+    from botapp.tasks import generate_video_task
+
+    try:
+        user = TgUser.objects.get(chat_id=user_id)
+    except TgUser.DoesNotExist:
+        _send_error_message(user_id, "❌ Не удалось найти пользователя. Начните заново.")
+        return None
+
+    model_slug = payload.get("modelSlug") or "runway_aleph"
+    try:
+        model = AIModel.objects.get(slug=model_slug, is_active=True)
+    except AIModel.DoesNotExist:
+        _send_error_message(user_id, "❌ Модель Runway Aleph недоступна. Выберите её заново из списка моделей.")
+        return None
+
+    if model.provider not in {"runway", "useapi"}:
+        _send_error_message(user_id, "❌ Эта WebApp работает только с моделью Runway Aleph.")
+        return None
+
+    prompt = (payload.get("prompt") or "").strip()
+    if not prompt:
+        _send_error_message(user_id, "❌ Введите промт в окне Runway Aleph и отправьте ещё раз.")
+        return None
+
+    if len(prompt) > model.max_prompt_length:
+        _send_error_message(user_id, f"❌ Промт слишком длинный! Максимум {model.max_prompt_length} символов.")
+        return None
+
+    # Runway Aleph работает только в режиме video2video
+    generation_type = "video2video"
+
+    defaults = model.default_params or {}
+    aspect_ratio = payload.get("aspectRatio") or payload.get("aspect_ratio") or defaults.get("aspect_ratio") or "16:9"
+
+    params = {
+        "aspect_ratio": aspect_ratio,
+    }
+
+    source_media = None
+
+    # Обработка видео для video2video (обязательно)
+    video_b64 = payload.get("videoData")
+    if not video_b64:
+        _send_error_message(user_id, "❌ Загрузите видео для режима Video → Video.")
+        return None
+
+    try:
+        raw = base64.b64decode(video_b64)
+    except Exception:
+        _send_error_message(user_id, "❌ Не удалось прочитать видео. Загрузите файл ещё раз.")
+        return None
+
+    max_video_bytes = 10 * 1024 * 1024  # 10 МБ
+    if len(raw) > max_video_bytes:
+        _send_error_message(user_id, "❌ Видео слишком большое. Максимум 10 МБ.")
+        return None
+
+    mime = payload.get("videoMime") or "video/mp4"
+    file_name = payload.get("videoName") or "video.mp4"
+
+    # Загружаем видео в Supabase
+    try:
+        from botapp.services import supabase_upload_video
+        upload_obj = supabase_upload_video(raw, mime)
+    except Exception as exc:
+        logger.error("Ошибка загрузки видео в Supabase: %s", exc)
+        _send_error_message(user_id, "❌ Не удалось загрузить видео. Попробуйте ещё раз.")
+        return None
+
+    video_url = _extract_public_url(upload_obj)
+    if not video_url:
+        _send_error_message(user_id, "❌ Не удалось получить ссылку на видео. Попробуйте снова.")
+        return None
+
+    params["video_url"] = video_url
+    source_media = {
+        "file_name": file_name,
+        "mime_type": mime,
+        "storage_url": video_url,
+        "size_bytes": len(raw),
+        "source": "runway_aleph_webapp",
+    }
+
+    try:
+        gen_request = GenerationService.create_generation_request(
+            user=user,
+            ai_model=model,
+            prompt=prompt,
+            quantity=1,
+            generation_type=generation_type,
+            generation_params=params,
+            aspect_ratio=aspect_ratio,
+            source_media=source_media,
+        )
+    except InsufficientBalanceError as exc:
+        _send_error_message(user_id, str(exc))
+        return None
+    except ValueError as exc:
+        _send_error_message(user_id, str(exc))
+        return None
+    except Exception as exc:
+        logger.error("Ошибка создания GenRequest для Runway Aleph: %s", exc)
+        _send_error_message(user_id, "❌ Произошла ошибка при подготовке генерации. Попробуйте ещё раз.")
+        return None
+
+    start_message = get_generation_start_message(
+        model=model.display_name,
+        mode=generation_type,
+        aspect_ratio=aspect_ratio,
+        resolution=None,
+        duration=None,
+        prompt=prompt,
+    )
+    _send_start_message(user_id, start_message)
+
+    generate_video_task.delay(gen_request.id)
+
+    return gen_request.id
+
+
 # Маппинг kind → функция обработки
 WEBAPP_PROCESSORS = {
     # Video processors
@@ -1276,6 +1408,7 @@ WEBAPP_PROCESSORS = {
     "veo_video_settings": process_veo_webapp,
     "sora2_settings": process_sora_webapp,
     "runway_settings": process_runway_webapp,
+    "runway_aleph_settings": process_runway_aleph_webapp,
     "midjourney_video_settings": process_midjourney_video_webapp,
     # Image processors
     "midjourney_settings": process_midjourney_image_webapp,
