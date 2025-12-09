@@ -794,13 +794,6 @@ def generate_image_task(self, request_id: int):
                     chat_id=req.chat_id,
                     images=prepared_images,
                 )
-                # Отдельно отправляем меню, так как sendMediaGroup не поддерживает inline клавиатуру
-                send_telegram_message(
-                    req.chat_id,
-                    "Готово! Выберите действие:",
-                    reply_markup=inline_markup,
-                    parse_mode=None,
-                )
             logger.info(f"[TASK] Запрос {req.id} завершен успешно. Загружено и отправлено {len(prepared_images)}/{quantity} изображений")
         except Exception as send_error:
             logger.exception(f"[TASK] Ошибка при отправке результатов запроса {req.id}: {send_error}")

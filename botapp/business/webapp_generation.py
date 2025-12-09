@@ -81,9 +81,9 @@ def _send_error_message(chat_id: int, text: str) -> None:
 
 
 def _send_start_message(chat_id: int, text: str) -> None:
-    """Отправляет сообщение о начале генерации."""
+    """Отправляет сообщение о начале генерации (без клавиатуры)."""
     try:
-        send_message(chat_id, text, reply_markup=get_main_menu_keyboard_dict())
+        send_message(chat_id, text, reply_markup=None)
     except Exception as exc:
         logger.error("Не удалось отправить стартовое сообщение: %s", exc)
 
