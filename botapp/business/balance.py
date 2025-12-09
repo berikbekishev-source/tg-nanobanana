@@ -333,7 +333,7 @@ class BalanceService:
 
         return BalanceService.add_bonus(
             user,
-            amount=Decimal("5.00"),
+            amount=Decimal("50.00"),
             description="Приветственный бонус",
             description_en="Welcome bonus",
         )
