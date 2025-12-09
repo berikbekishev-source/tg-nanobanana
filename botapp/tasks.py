@@ -1451,3 +1451,44 @@ def process_payment_webhook(self, payment_data: Dict):
     except Exception:
         # Логируем ошибку
         raise
+
+
+@shared_task(
+    bind=True,
+    max_retries=1,
+    default_retry_delay=5,
+    soft_time_limit=120,
+    time_limit=180,
+)
+def process_webapp_submission_task(self, user_id: int, data: Dict[str, Any]) -> Optional[int]:
+    """
+    Celery задача для обработки WebApp данных.
+    Выполняет всю тяжёлую работу: загрузку изображений, создание GenRequest, отправку сообщений.
+
+    Args:
+        user_id: ID пользователя Telegram
+        data: Данные из WebApp
+
+    Returns:
+        ID созданного GenRequest или None при ошибке
+    """
+    from botapp.business.webapp_generation import process_webapp_submission
+
+    try:
+        close_old_connections()
+        return process_webapp_submission(user_id, data)
+    except Exception as exc:
+        logger.exception(
+            "Ошибка обработки WebApp submission: user_id=%s, kind=%s",
+            user_id,
+            data.get("kind"),
+        )
+        ErrorTracker.log(
+            origin=BotErrorEvent.Origin.CELERY,
+            severity=BotErrorEvent.Severity.ERROR,
+            handler="tasks.process_webapp_submission_task",
+            chat_id=user_id,
+            payload={"kind": data.get("kind")},
+            exc=exc,
+        )
+        return None

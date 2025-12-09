@@ -68,6 +68,22 @@ def health(request):
     return {"ok": True}
 
 
+def _submit_webapp_to_celery(user_id: int, data: Dict[str, Any], endpoint_name: str) -> JsonResponse:
+    """
+    Универсальная функция для отправки WebApp данных в Celery.
+    Возвращает мгновенный ответ клиенту.
+    """
+    from botapp.tasks import process_webapp_submission_task
+
+    try:
+        process_webapp_submission_task.delay(user_id, data)
+        logger.info(f"[WEBAPP_REST][{endpoint_name}] Task queued for user {user_id}")
+        return JsonResponse({"ok": True})
+    except Exception as exc:
+        logger.error(f"[WEBAPP_REST][{endpoint_name}] Failed to queue task: {exc}", exc_info=True)
+        return JsonResponse({"ok": False, "error": "Failed to queue task"}, status=500)
+
+
 try:
     from aiogram.types import Update
     from botapp.telegram import bot, dp
@@ -212,9 +228,10 @@ try:
             return JsonResponse({"ok": False, "error": str(e)}, status=500)
 
     @api.post("/midjourney_video/webapp/submit")
-    async def midjourney_video_webapp_submit(request):
+    def midjourney_video_webapp_submit(request):
         """
-        Endpoint для Midjourney Video WebApp: прокидывает payload в aiogram как web_app_data.
+        Endpoint для Midjourney Video WebApp.
+        Мгновенно возвращает ответ, обработка идёт в Celery.
         """
         try:
             payload = json.loads(request.body.decode("utf-8"))
@@ -226,18 +243,16 @@ try:
             if not user_id or not data:
                 return JsonResponse({"ok": False, "error": "Missing user_id or data"}, status=400)
 
-            await _feed_webapp_update(int(user_id), data)
-            logger.info(f"[WEBAPP_REST][MIDJOURNEY_VIDEO] Update fed to dispatcher for user {user_id}")
-
-            return JsonResponse({"ok": True})
+            return _submit_webapp_to_celery(int(user_id), data, "MIDJOURNEY_VIDEO")
         except Exception as exc:
             logger.error(f"[WEBAPP_REST][MIDJOURNEY_VIDEO] Error: {exc}", exc_info=True)
             return JsonResponse({"ok": False, "error": str(exc)}, status=500)
 
     @api.post("/runway/webapp/submit")
-    async def runway_webapp_submit(request):
+    def runway_webapp_submit(request):
         """
-        Endpoint для Runway WebApp: прокидывает payload в aiogram как web_app_data.
+        Endpoint для Runway WebApp.
+        Мгновенно возвращает ответ, обработка идёт в Celery.
         """
         try:
             payload = json.loads(request.body.decode("utf-8"))
@@ -249,18 +264,16 @@ try:
             if not user_id or not data:
                 return JsonResponse({"ok": False, "error": "Missing user_id or data"}, status=400)
 
-            await _feed_webapp_update(int(user_id), data)
-            logger.info(f"[WEBAPP_REST][RUNWAY] Update fed to dispatcher for user {user_id}")
-
-            return JsonResponse({"ok": True})
+            return _submit_webapp_to_celery(int(user_id), data, "RUNWAY")
         except Exception as exc:
             logger.error(f"[WEBAPP_REST][RUNWAY] Error: {exc}", exc_info=True)
             return JsonResponse({"ok": False, "error": str(exc)}, status=500)
 
     @api.post("/runway-aleph/webapp/submit")
-    async def runway_aleph_webapp_submit(request):
+    def runway_aleph_webapp_submit(request):
         """
-        Endpoint для Runway Aleph WebApp: прокидывает payload в aiogram как web_app_data.
+        Endpoint для Runway Aleph WebApp.
+        Мгновенно возвращает ответ, обработка идёт в Celery.
         """
         try:
             payload = json.loads(request.body.decode("utf-8"))
@@ -272,36 +285,31 @@ try:
             if not user_id or not data:
                 return JsonResponse({"ok": False, "error": "Missing user_id or data"}, status=400)
 
-            await _feed_webapp_update(int(user_id), data)
-            logger.info(f"[WEBAPP_REST][RUNWAY_ALEPH] Update fed to dispatcher for user {user_id}")
-
-            return JsonResponse({"ok": True})
+            return _submit_webapp_to_celery(int(user_id), data, "RUNWAY_ALEPH")
         except Exception as exc:
             logger.error(f"[WEBAPP_REST][RUNWAY_ALEPH] Error: {exc}", exc_info=True)
             return JsonResponse({"ok": False, "error": str(exc)}, status=500)
 
     @api.post("/veo/webapp/submit")
-    async def veo_webapp_submit(request):
+    def veo_webapp_submit(request):
         """
-        Fallback endpoint for Veo WebApp data submission via HTTP if tg.sendData fails.
+        Endpoint для Veo WebApp.
+        Мгновенно возвращает ответ, обработка идёт в Celery.
         """
         try:
             payload = json.loads(request.body.decode("utf-8"))
             user_id = payload.get("user_id")
             data = payload.get("data")
 
-            logger.info(f"[WEBAPP_REST] Received Veo submission for user {user_id}")
+            logger.info(f"[WEBAPP_REST][VEO] Received submission for user {user_id}")
 
             if not user_id or not data:
                 return JsonResponse({"ok": False, "error": "Missing user_id or data"}, status=400)
 
-            await _feed_webapp_update(int(user_id), data)
-            logger.info(f"[WEBAPP_REST] Update fed to dispatcher for user {user_id} (veo)")
-
-            return JsonResponse({"ok": True})
-        except Exception as e:
-            logger.error(f"[WEBAPP_REST] Veo submit error: {e}", exc_info=True)
-            return JsonResponse({"ok": False, "error": str(e)}, status=500)
+            return _submit_webapp_to_celery(int(user_id), data, "VEO")
+        except Exception as exc:
+            logger.error(f"[WEBAPP_REST][VEO] Error: {exc}", exc_info=True)
+            return JsonResponse({"ok": False, "error": str(exc)}, status=500)
 
 
 
@@ -356,9 +364,10 @@ try:
 
 
     @api.post("/sora2/webapp/submit")
-    async def sora2_webapp_submit(request):
+    def sora2_webapp_submit(request):
         """
-        Endpoint для Sora 2 WebApp: прокидывает payload в aiogram как web_app_data.
+        Endpoint для Sora 2 WebApp.
+        Мгновенно возвращает ответ, обработка идёт в Celery.
         """
         try:
             payload = json.loads(request.body.decode("utf-8"))
@@ -370,18 +379,16 @@ try:
             if not user_id or not data:
                 return JsonResponse({"ok": False, "error": "Missing user_id or data"}, status=400)
 
-            await _feed_webapp_update(int(user_id), data)
-            logger.info(f"[WEBAPP_REST][SORA2] Update fed to dispatcher for user {user_id}")
-
-            return JsonResponse({"ok": True})
+            return _submit_webapp_to_celery(int(user_id), data, "SORA2")
         except Exception as exc:
             logger.error(f"[WEBAPP_REST][SORA2] Error: {exc}", exc_info=True)
             return JsonResponse({"ok": False, "error": str(exc)}, status=500)
 
     @api.post("/kling/webapp/submit")
-    async def kling_webapp_submit(request):
+    def kling_webapp_submit(request):
         """
-        Fallback endpoint для Kling WebApp: шлёт mock Update с web_app_data.
+        Endpoint для Kling WebApp.
+        Мгновенно возвращает ответ, обработка идёт в Celery.
         """
         try:
             payload = json.loads(request.body.decode("utf-8"))
@@ -393,10 +400,7 @@ try:
             if not user_id or not data:
                 return JsonResponse({"ok": False, "error": "Missing user_id or data"}, status=400)
 
-            await _feed_webapp_update(int(user_id), data)
-            logger.info(f"[WEBAPP_REST][KLING] Update fed to dispatcher for user {user_id}")
-
-            return JsonResponse({"ok": True})
+            return _submit_webapp_to_celery(int(user_id), data, "KLING")
         except Exception as exc:
             logger.error(f"[WEBAPP_REST][KLING] Error: {exc}", exc_info=True)
             return JsonResponse({"ok": False, "error": str(exc)}, status=500)
