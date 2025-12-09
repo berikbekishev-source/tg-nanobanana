@@ -1,4 +1,3 @@
-import asyncio
 import json
 import logging
 import hashlib
@@ -94,17 +93,6 @@ try:
         )
         update = Update(update_id=0, message=message)
         await dp.feed_update(bot, update)
-
-    async def _feed_webapp_update_safe(user_id: int, data: Dict[str, Any], endpoint_name: str) -> None:
-        """
-        Обёртка над _feed_webapp_update с логированием ошибок.
-        Используется для фонового выполнения через asyncio.create_task.
-        """
-        try:
-            await _feed_webapp_update(user_id, data)
-            logger.info(f"[WEBAPP_REST][{endpoint_name}] Update fed to dispatcher for user {user_id}")
-        except Exception as exc:
-            logger.error(f"[WEBAPP_REST][{endpoint_name}] Background processing error for user {user_id}: {exc}", exc_info=True)
 
     def _extract_chat_id(update: Optional[Update]) -> Optional[int]:
         if not update:
@@ -202,31 +190,31 @@ try:
     async def midjourney_webapp_submit(request):
         """
         Fallback endpoint for WebApp data submission via HTTP if tg.sendData fails.
-        Обработка выполняется в фоне, WebApp закрывается мгновенно.
         """
         try:
             payload = json.loads(request.body.decode("utf-8"))
             user_id = payload.get("user_id")
             data = payload.get("data")
 
-            logger.info(f"[WEBAPP_REST][MIDJOURNEY] Received submission for user {user_id}")
+            logger.info(f"[WEBAPP_REST] Received submission for user {user_id}")
+            # Debug prints removed for production
+            # print(f"[WEBAPP_REST] Submission: user={user_id}, data={json.dumps(data)[:100]}", flush=True)
 
             if not user_id or not data:
                 return JsonResponse({"ok": False, "error": "Missing user_id or data"}, status=400)
 
-            # Запускаем обработку в фоне — WebApp закроется сразу
-            asyncio.create_task(_feed_webapp_update_safe(int(user_id), data, "MIDJOURNEY"))
+            await _feed_webapp_update(int(user_id), data)
+            logger.info(f"[WEBAPP_REST] Update fed to dispatcher for user {user_id}")
 
             return JsonResponse({"ok": True})
         except Exception as e:
-            logger.error(f"[WEBAPP_REST][MIDJOURNEY] Error: {e}", exc_info=True)
+            logger.error(f"[WEBAPP_REST] Error: {e}", exc_info=True)
             return JsonResponse({"ok": False, "error": str(e)}, status=500)
 
     @api.post("/midjourney_video/webapp/submit")
     async def midjourney_video_webapp_submit(request):
         """
         Endpoint для Midjourney Video WebApp: прокидывает payload в aiogram как web_app_data.
-        Обработка выполняется в фоне, WebApp закрывается мгновенно.
         """
         try:
             payload = json.loads(request.body.decode("utf-8"))
@@ -238,8 +226,8 @@ try:
             if not user_id or not data:
                 return JsonResponse({"ok": False, "error": "Missing user_id or data"}, status=400)
 
-            # Запускаем обработку в фоне — WebApp закроется сразу
-            asyncio.create_task(_feed_webapp_update_safe(int(user_id), data, "MIDJOURNEY_VIDEO"))
+            await _feed_webapp_update(int(user_id), data)
+            logger.info(f"[WEBAPP_REST][MIDJOURNEY_VIDEO] Update fed to dispatcher for user {user_id}")
 
             return JsonResponse({"ok": True})
         except Exception as exc:
@@ -250,7 +238,6 @@ try:
     async def runway_webapp_submit(request):
         """
         Endpoint для Runway WebApp: прокидывает payload в aiogram как web_app_data.
-        Обработка выполняется в фоне, WebApp закрывается мгновенно.
         """
         try:
             payload = json.loads(request.body.decode("utf-8"))
@@ -262,8 +249,8 @@ try:
             if not user_id or not data:
                 return JsonResponse({"ok": False, "error": "Missing user_id or data"}, status=400)
 
-            # Запускаем обработку в фоне — WebApp закроется сразу
-            asyncio.create_task(_feed_webapp_update_safe(int(user_id), data, "RUNWAY"))
+            await _feed_webapp_update(int(user_id), data)
+            logger.info(f"[WEBAPP_REST][RUNWAY] Update fed to dispatcher for user {user_id}")
 
             return JsonResponse({"ok": True})
         except Exception as exc:
@@ -274,7 +261,6 @@ try:
     async def runway_aleph_webapp_submit(request):
         """
         Endpoint для Runway Aleph WebApp: прокидывает payload в aiogram как web_app_data.
-        Обработка выполняется в фоне, WebApp закрывается мгновенно.
         """
         try:
             payload = json.loads(request.body.decode("utf-8"))
@@ -286,8 +272,8 @@ try:
             if not user_id or not data:
                 return JsonResponse({"ok": False, "error": "Missing user_id or data"}, status=400)
 
-            # Запускаем обработку в фоне — WebApp закроется сразу
-            asyncio.create_task(_feed_webapp_update_safe(int(user_id), data, "RUNWAY_ALEPH"))
+            await _feed_webapp_update(int(user_id), data)
+            logger.info(f"[WEBAPP_REST][RUNWAY_ALEPH] Update fed to dispatcher for user {user_id}")
 
             return JsonResponse({"ok": True})
         except Exception as exc:
@@ -298,24 +284,23 @@ try:
     async def veo_webapp_submit(request):
         """
         Fallback endpoint for Veo WebApp data submission via HTTP if tg.sendData fails.
-        Обработка выполняется в фоне, WebApp закрывается мгновенно.
         """
         try:
             payload = json.loads(request.body.decode("utf-8"))
             user_id = payload.get("user_id")
             data = payload.get("data")
 
-            logger.info(f"[WEBAPP_REST][VEO] Received submission for user {user_id}")
+            logger.info(f"[WEBAPP_REST] Received Veo submission for user {user_id}")
 
             if not user_id or not data:
                 return JsonResponse({"ok": False, "error": "Missing user_id or data"}, status=400)
 
-            # Запускаем обработку в фоне — WebApp закроется сразу
-            asyncio.create_task(_feed_webapp_update_safe(int(user_id), data, "VEO"))
+            await _feed_webapp_update(int(user_id), data)
+            logger.info(f"[WEBAPP_REST] Update fed to dispatcher for user {user_id} (veo)")
 
             return JsonResponse({"ok": True})
         except Exception as e:
-            logger.error(f"[WEBAPP_REST][VEO] Error: {e}", exc_info=True)
+            logger.error(f"[WEBAPP_REST] Veo submit error: {e}", exc_info=True)
             return JsonResponse({"ok": False, "error": str(e)}, status=500)
 
 
@@ -350,7 +335,6 @@ try:
     async def gpt_image_webapp_submit(request):
         """
         Fallback endpoint для GPT Image WebApp: шлёт mock Update с web_app_data.
-        Обработка выполняется в фоне, WebApp закрывается мгновенно.
         """
         try:
             payload = json.loads(request.body.decode("utf-8"))
@@ -362,8 +346,8 @@ try:
             if not user_id or not data:
                 return JsonResponse({"ok": False, "error": "Missing user_id or data"}, status=400)
 
-            # Запускаем обработку в фоне — WebApp закроется сразу
-            asyncio.create_task(_feed_webapp_update_safe(int(user_id), data, "GPT_IMAGE"))
+            await _feed_webapp_update(int(user_id), data)
+            logger.info(f"[WEBAPP_REST][GPT_IMAGE] Update fed to dispatcher for user {user_id}")
 
             return JsonResponse({"ok": True})
         except Exception as exc:
@@ -375,7 +359,6 @@ try:
     async def sora2_webapp_submit(request):
         """
         Endpoint для Sora 2 WebApp: прокидывает payload в aiogram как web_app_data.
-        Обработка выполняется в фоне, WebApp закрывается мгновенно.
         """
         try:
             payload = json.loads(request.body.decode("utf-8"))
@@ -387,8 +370,8 @@ try:
             if not user_id or not data:
                 return JsonResponse({"ok": False, "error": "Missing user_id or data"}, status=400)
 
-            # Запускаем обработку в фоне — WebApp закроется сразу
-            asyncio.create_task(_feed_webapp_update_safe(int(user_id), data, "SORA2"))
+            await _feed_webapp_update(int(user_id), data)
+            logger.info(f"[WEBAPP_REST][SORA2] Update fed to dispatcher for user {user_id}")
 
             return JsonResponse({"ok": True})
         except Exception as exc:
@@ -399,7 +382,6 @@ try:
     async def kling_webapp_submit(request):
         """
         Fallback endpoint для Kling WebApp: шлёт mock Update с web_app_data.
-        Обработка выполняется в фоне, WebApp закрывается мгновенно.
         """
         try:
             payload = json.loads(request.body.decode("utf-8"))
@@ -411,8 +393,8 @@ try:
             if not user_id or not data:
                 return JsonResponse({"ok": False, "error": "Missing user_id or data"}, status=400)
 
-            # Запускаем обработку в фоне — WebApp закроется сразу
-            asyncio.create_task(_feed_webapp_update_safe(int(user_id), data, "KLING"))
+            await _feed_webapp_update(int(user_id), data)
+            logger.info(f"[WEBAPP_REST][KLING] Update fed to dispatcher for user {user_id}")
 
             return JsonResponse({"ok": True})
         except Exception as exc:
@@ -423,7 +405,6 @@ try:
     async def nano_banana_webapp_submit(request):
         """
         Endpoint для Nano Banana WebApp: прокидывает payload в aiogram как web_app_data.
-        Обработка выполняется в фоне, WebApp закрывается мгновенно.
         """
         try:
             payload = json.loads(request.body.decode("utf-8"))
@@ -435,8 +416,8 @@ try:
             if not user_id or not data:
                 return JsonResponse({"ok": False, "error": "Missing user_id or data"}, status=400)
 
-            # Запускаем обработку в фоне — WebApp закроется сразу
-            asyncio.create_task(_feed_webapp_update_safe(int(user_id), data, "NANO"))
+            await _feed_webapp_update(int(user_id), data)
+            logger.info(f"[WEBAPP_REST][NANO] Update fed to dispatcher for user {user_id}")
 
             return JsonResponse({"ok": True})
         except Exception as exc:
