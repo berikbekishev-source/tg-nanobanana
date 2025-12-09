@@ -1,4 +1,5 @@
 import json
+import httpx
 import logging
 import hashlib
 from pathlib import Path
@@ -66,6 +67,22 @@ def _verify_geminigen_signature(raw_body: bytes, signature_hex: str) -> bool:
 def health(request):
     # Возвращаем минимальный ответ, чтобы health-check Railway проходил быстро.
     return {"ok": True}
+
+
+def _submit_webapp_to_celery(user_id: int, data: Dict[str, Any], endpoint_name: str) -> JsonResponse:
+    """
+    Универсальная функция для отправки WebApp данных в Celery.
+    Возвращает мгновенный ответ клиенту.
+    """
+    from botapp.tasks import process_webapp_submission_task
+
+    try:
+        process_webapp_submission_task.delay(user_id, data)
+        logger.info(f"[WEBAPP_REST][{endpoint_name}] Task queued for user {user_id}")
+        return JsonResponse({"ok": True})
+    except Exception as exc:
+        logger.error(f"[WEBAPP_REST][{endpoint_name}] Failed to queue task: {exc}", exc_info=True)
+        return JsonResponse({"ok": False, "error": "Failed to queue task"}, status=500)
 
 
 try:
@@ -187,34 +204,31 @@ try:
             return JsonResponse({"ok": False, "error": str(exc)}, status=200)
 
     @api.post("/midjourney/webapp/submit")
-    async def midjourney_webapp_submit(request):
+    def midjourney_webapp_submit(request):
         """
-        Fallback endpoint for WebApp data submission via HTTP if tg.sendData fails.
+        Endpoint для Midjourney Image WebApp.
+        Мгновенно возвращает ответ, обработка идёт в Celery.
         """
         try:
             payload = json.loads(request.body.decode("utf-8"))
             user_id = payload.get("user_id")
             data = payload.get("data")
 
-            logger.info(f"[WEBAPP_REST] Received submission for user {user_id}")
-            # Debug prints removed for production
-            # print(f"[WEBAPP_REST] Submission: user={user_id}, data={json.dumps(data)[:100]}", flush=True)
+            logger.info(f"[WEBAPP_REST][MIDJOURNEY] Received submission for user {user_id}")
 
             if not user_id or not data:
                 return JsonResponse({"ok": False, "error": "Missing user_id or data"}, status=400)
 
-            await _feed_webapp_update(int(user_id), data)
-            logger.info(f"[WEBAPP_REST] Update fed to dispatcher for user {user_id}")
-
-            return JsonResponse({"ok": True})
-        except Exception as e:
-            logger.error(f"[WEBAPP_REST] Error: {e}", exc_info=True)
-            return JsonResponse({"ok": False, "error": str(e)}, status=500)
+            return _submit_webapp_to_celery(int(user_id), data, "MIDJOURNEY")
+        except Exception as exc:
+            logger.error(f"[WEBAPP_REST][MIDJOURNEY] Error: {exc}", exc_info=True)
+            return JsonResponse({"ok": False, "error": str(exc)}, status=500)
 
     @api.post("/midjourney_video/webapp/submit")
-    async def midjourney_video_webapp_submit(request):
+    def midjourney_video_webapp_submit(request):
         """
-        Endpoint для Midjourney Video WebApp: прокидывает payload в aiogram как web_app_data.
+        Endpoint для Midjourney Video WebApp.
+        Мгновенно возвращает ответ, обработка идёт в Celery.
         """
         try:
             payload = json.loads(request.body.decode("utf-8"))
@@ -226,18 +240,16 @@ try:
             if not user_id or not data:
                 return JsonResponse({"ok": False, "error": "Missing user_id or data"}, status=400)
 
-            await _feed_webapp_update(int(user_id), data)
-            logger.info(f"[WEBAPP_REST][MIDJOURNEY_VIDEO] Update fed to dispatcher for user {user_id}")
-
-            return JsonResponse({"ok": True})
+            return _submit_webapp_to_celery(int(user_id), data, "MIDJOURNEY_VIDEO")
         except Exception as exc:
             logger.error(f"[WEBAPP_REST][MIDJOURNEY_VIDEO] Error: {exc}", exc_info=True)
             return JsonResponse({"ok": False, "error": str(exc)}, status=500)
 
     @api.post("/runway/webapp/submit")
-    async def runway_webapp_submit(request):
+    def runway_webapp_submit(request):
         """
-        Endpoint для Runway WebApp: прокидывает payload в aiogram как web_app_data.
+        Endpoint для Runway WebApp.
+        Мгновенно возвращает ответ, обработка идёт в Celery.
         """
         try:
             payload = json.loads(request.body.decode("utf-8"))
@@ -249,18 +261,16 @@ try:
             if not user_id or not data:
                 return JsonResponse({"ok": False, "error": "Missing user_id or data"}, status=400)
 
-            await _feed_webapp_update(int(user_id), data)
-            logger.info(f"[WEBAPP_REST][RUNWAY] Update fed to dispatcher for user {user_id}")
-
-            return JsonResponse({"ok": True})
+            return _submit_webapp_to_celery(int(user_id), data, "RUNWAY")
         except Exception as exc:
             logger.error(f"[WEBAPP_REST][RUNWAY] Error: {exc}", exc_info=True)
             return JsonResponse({"ok": False, "error": str(exc)}, status=500)
 
     @api.post("/runway-aleph/webapp/submit")
-    async def runway_aleph_webapp_submit(request):
+    def runway_aleph_webapp_submit(request):
         """
-        Endpoint для Runway Aleph WebApp: прокидывает payload в aiogram как web_app_data.
+        Endpoint для Runway Aleph WebApp.
+        Мгновенно возвращает ответ, обработка идёт в Celery.
         """
         try:
             payload = json.loads(request.body.decode("utf-8"))
@@ -272,36 +282,31 @@ try:
             if not user_id or not data:
                 return JsonResponse({"ok": False, "error": "Missing user_id or data"}, status=400)
 
-            await _feed_webapp_update(int(user_id), data)
-            logger.info(f"[WEBAPP_REST][RUNWAY_ALEPH] Update fed to dispatcher for user {user_id}")
-
-            return JsonResponse({"ok": True})
+            return _submit_webapp_to_celery(int(user_id), data, "RUNWAY_ALEPH")
         except Exception as exc:
             logger.error(f"[WEBAPP_REST][RUNWAY_ALEPH] Error: {exc}", exc_info=True)
             return JsonResponse({"ok": False, "error": str(exc)}, status=500)
 
     @api.post("/veo/webapp/submit")
-    async def veo_webapp_submit(request):
+    def veo_webapp_submit(request):
         """
-        Fallback endpoint for Veo WebApp data submission via HTTP if tg.sendData fails.
+        Endpoint для Veo WebApp.
+        Мгновенно возвращает ответ, обработка идёт в Celery.
         """
         try:
             payload = json.loads(request.body.decode("utf-8"))
             user_id = payload.get("user_id")
             data = payload.get("data")
 
-            logger.info(f"[WEBAPP_REST] Received Veo submission for user {user_id}")
+            logger.info(f"[WEBAPP_REST][VEO] Received submission for user {user_id}")
 
             if not user_id or not data:
                 return JsonResponse({"ok": False, "error": "Missing user_id or data"}, status=400)
 
-            await _feed_webapp_update(int(user_id), data)
-            logger.info(f"[WEBAPP_REST] Update fed to dispatcher for user {user_id} (veo)")
-
-            return JsonResponse({"ok": True})
-        except Exception as e:
-            logger.error(f"[WEBAPP_REST] Veo submit error: {e}", exc_info=True)
-            return JsonResponse({"ok": False, "error": str(e)}, status=500)
+            return _submit_webapp_to_celery(int(user_id), data, "VEO")
+        except Exception as exc:
+            logger.error(f"[WEBAPP_REST][VEO] Error: {exc}", exc_info=True)
+            return JsonResponse({"ok": False, "error": str(exc)}, status=500)
 
 
 
@@ -309,6 +314,9 @@ try:
     async def geminigen_webhook(request):
         """
         Webhook для уведомлений Geminigen (video generation completed/failed).
+
+        Если uuid задачи не найден в локальной БД и настроен GEMINIGEN_WEBHOOK_PROXY_URL,
+        запрос проксируется на другое окружение (например, staging).
         """
         raw_body: bytes = request.body or b""
         signature = request.headers.get("x-signature") or request.headers.get("X-Signature") or ""
@@ -321,6 +329,42 @@ try:
         except Exception:
             return JsonResponse({"ok": False, "error": "invalid json"}, status=400)
 
+        # Извлекаем uuid для проверки принадлежности запроса
+        data = payload.get("data") if isinstance(payload.get("data"), dict) else {}
+        job_uuid = data.get("uuid") or payload.get("uuid") or payload.get("job_id")
+
+        # Проверяем существует ли GenRequest с этим uuid в локальной БД
+        if job_uuid:
+            from botapp.models import GenRequest
+            exists = GenRequest.objects.filter(provider_job_id=str(job_uuid)).exists()
+
+            if not exists:
+                # Проксируем на другое окружение если настроен proxy URL
+                proxy_url = getattr(settings, "GEMINIGEN_WEBHOOK_PROXY_URL", None)
+                if proxy_url:
+                    try:
+                        headers = {"Content-Type": "application/json"}
+                        if signature:
+                            headers["X-Signature"] = signature
+
+                        async with httpx.AsyncClient(timeout=15.0) as client:
+                            resp = await client.post(proxy_url, content=raw_body, headers=headers)
+                            logger.info(
+                                "[GEMINIGEN_WEBHOOK] Проксировано на %s, uuid=%s, status=%s",
+                                proxy_url, job_uuid, resp.status_code
+                            )
+                    except Exception as exc:
+                        logger.warning(
+                            "[GEMINIGEN_WEBHOOK] Не удалось проксировать на %s: %s",
+                            proxy_url, exc
+                        )
+                    return JsonResponse({"ok": True, "proxied": True})
+                else:
+                    logger.warning(
+                        "[GEMINIGEN_WEBHOOK] uuid=%s не найден локально, proxy не настроен",
+                        job_uuid
+                    )
+
         try:
             from botapp.tasks import process_geminigen_webhook
 
@@ -332,9 +376,10 @@ try:
         return JsonResponse({"ok": True})
 
     @api.post("/gpt-image/webapp/submit")
-    async def gpt_image_webapp_submit(request):
+    def gpt_image_webapp_submit(request):
         """
-        Fallback endpoint для GPT Image WebApp: шлёт mock Update с web_app_data.
+        Endpoint для GPT Image WebApp.
+        Мгновенно возвращает ответ, обработка идёт в Celery.
         """
         try:
             payload = json.loads(request.body.decode("utf-8"))
@@ -346,19 +391,17 @@ try:
             if not user_id or not data:
                 return JsonResponse({"ok": False, "error": "Missing user_id or data"}, status=400)
 
-            await _feed_webapp_update(int(user_id), data)
-            logger.info(f"[WEBAPP_REST][GPT_IMAGE] Update fed to dispatcher for user {user_id}")
-
-            return JsonResponse({"ok": True})
+            return _submit_webapp_to_celery(int(user_id), data, "GPT_IMAGE")
         except Exception as exc:
             logger.error(f"[WEBAPP_REST][GPT_IMAGE] Error: {exc}", exc_info=True)
             return JsonResponse({"ok": False, "error": str(exc)}, status=500)
 
 
     @api.post("/sora2/webapp/submit")
-    async def sora2_webapp_submit(request):
+    def sora2_webapp_submit(request):
         """
-        Endpoint для Sora 2 WebApp: прокидывает payload в aiogram как web_app_data.
+        Endpoint для Sora 2 WebApp.
+        Мгновенно возвращает ответ, обработка идёт в Celery.
         """
         try:
             payload = json.loads(request.body.decode("utf-8"))
@@ -370,18 +413,16 @@ try:
             if not user_id or not data:
                 return JsonResponse({"ok": False, "error": "Missing user_id or data"}, status=400)
 
-            await _feed_webapp_update(int(user_id), data)
-            logger.info(f"[WEBAPP_REST][SORA2] Update fed to dispatcher for user {user_id}")
-
-            return JsonResponse({"ok": True})
+            return _submit_webapp_to_celery(int(user_id), data, "SORA2")
         except Exception as exc:
             logger.error(f"[WEBAPP_REST][SORA2] Error: {exc}", exc_info=True)
             return JsonResponse({"ok": False, "error": str(exc)}, status=500)
 
     @api.post("/kling/webapp/submit")
-    async def kling_webapp_submit(request):
+    def kling_webapp_submit(request):
         """
-        Fallback endpoint для Kling WebApp: шлёт mock Update с web_app_data.
+        Endpoint для Kling WebApp.
+        Мгновенно возвращает ответ, обработка идёт в Celery.
         """
         try:
             payload = json.loads(request.body.decode("utf-8"))
@@ -393,18 +434,16 @@ try:
             if not user_id or not data:
                 return JsonResponse({"ok": False, "error": "Missing user_id or data"}, status=400)
 
-            await _feed_webapp_update(int(user_id), data)
-            logger.info(f"[WEBAPP_REST][KLING] Update fed to dispatcher for user {user_id}")
-
-            return JsonResponse({"ok": True})
+            return _submit_webapp_to_celery(int(user_id), data, "KLING")
         except Exception as exc:
             logger.error(f"[WEBAPP_REST][KLING] Error: {exc}", exc_info=True)
             return JsonResponse({"ok": False, "error": str(exc)}, status=500)
 
     @api.post("/nano-banana/webapp/submit")
-    async def nano_banana_webapp_submit(request):
+    def nano_banana_webapp_submit(request):
         """
-        Endpoint для Nano Banana WebApp: прокидывает payload в aiogram как web_app_data.
+        Endpoint для Nano Banana WebApp.
+        Мгновенно возвращает ответ, обработка идёт в Celery.
         """
         try:
             payload = json.loads(request.body.decode("utf-8"))
@@ -416,10 +455,7 @@ try:
             if not user_id or not data:
                 return JsonResponse({"ok": False, "error": "Missing user_id or data"}, status=400)
 
-            await _feed_webapp_update(int(user_id), data)
-            logger.info(f"[WEBAPP_REST][NANO] Update fed to dispatcher for user {user_id}")
-
-            return JsonResponse({"ok": True})
+            return _submit_webapp_to_celery(int(user_id), data, "NANO")
         except Exception as exc:
             logger.error(f"[WEBAPP_REST][NANO] Error: {exc}", exc_info=True)
             return JsonResponse({"ok": False, "error": str(exc)}, status=500)
