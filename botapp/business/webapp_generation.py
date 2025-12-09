@@ -17,7 +17,7 @@ from botapp.business.pricing import get_base_price_tokens
 from botapp.services import supabase_upload_png
 from botapp.error_tracker import ErrorTracker
 from botapp.telegram_utils import send_message, get_main_menu_keyboard_dict
-from botapp.generation_text import get_generation_start_message
+from botapp.keyboards import get_generation_start_message
 
 logger = logging.getLogger(__name__)
 
