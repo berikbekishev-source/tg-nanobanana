@@ -1399,45 +1399,6 @@ def process_geminigen_webhook(self, payload: Dict[str, Any]):
 
     logger.info("[GEMINIGEN_WEBHOOK] Событие проигнорировано: event=%s status=%s uuid=%s", event, status, job_uuid)
 
-@shared_task(bind=True, max_retries=0)
-def process_webapp_submission(self, user_id: int, data: Dict[str, Any]):
-    """
-    Обрабатывает данные из WebApp в фоне.
-    Создаёт mock Update и передаёт в aiogram dispatcher.
-    Это позволяет WebApp закрыться мгновенно.
-    """
-    import asyncio
-    from aiogram.types import Update, Message, WebAppData, User, Chat
-    from datetime import datetime
-    from botapp.telegram import bot, dp
-
-    async def _process():
-        user_obj = User(id=int(user_id), is_bot=False, first_name="User")
-        chat_obj = Chat(id=int(user_id), type="private")
-        web_app_data_obj = WebAppData(
-            data=json.dumps(data, ensure_ascii=False, default=str),
-            button_text="Generate"
-        )
-        message = Message(
-            message_id=0,
-            date=datetime.now(),
-            chat=chat_obj,
-            from_user=user_obj,
-            web_app_data=web_app_data_obj,
-            text=None
-        )
-        update = Update(update_id=0, message=message)
-        await dp.feed_update(bot, update)
-
-    # Запускаем в новом event loop
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    try:
-        loop.run_until_complete(_process())
-    finally:
-        loop.close()
-
-
 @shared_task(bind=True, max_retries=1)
 def process_payment_webhook(self, payment_data: Dict):
     """
