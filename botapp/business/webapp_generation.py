@@ -581,7 +581,8 @@ def process_runway_webapp(user_id: int, payload: Dict[str, Any]) -> Optional[int
         _send_error_message(user_id, "❌ Модель Runway недоступна. Выберите её заново из списка моделей.")
         return None
 
-    if model.provider != "runway":
+    # Runway использует провайдер "useapi"
+    if model.provider not in {"runway", "useapi"}:
         _send_error_message(user_id, "❌ Эта WebApp работает только с моделью Runway.")
         return None
 
