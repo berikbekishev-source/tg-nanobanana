@@ -242,6 +242,8 @@ GEMINIGEN_API_BASE_URL = os.getenv("GEMINIGEN_API_BASE_URL", "https://api.gemini
 GEMINIGEN_REQUEST_TIMEOUT = os.getenv("GEMINIGEN_REQUEST_TIMEOUT")
 GEMINIGEN_WEBHOOK_PUBLIC_KEY_PATH = os.getenv("GEMINIGEN_WEBHOOK_PUBLIC_KEY_PATH")
 GEMINIGEN_WEBHOOK_PUBLIC_KEY = os.getenv("GEMINIGEN_WEBHOOK_PUBLIC_KEY")
+# URL для проксирования webhook на другое окружение (staging), если uuid не найден локально
+GEMINIGEN_WEBHOOK_PROXY_URL = os.getenv("GEMINIGEN_WEBHOOK_PROXY_URL")
 
 # --- OpenAI Sora ---
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")

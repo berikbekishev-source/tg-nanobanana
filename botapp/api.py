@@ -1,4 +1,5 @@
 import json
+import httpx
 import logging
 import hashlib
 from pathlib import Path
@@ -313,6 +314,9 @@ try:
     async def geminigen_webhook(request):
         """
         Webhook для уведомлений Geminigen (video generation completed/failed).
+
+        Если uuid задачи не найден в локальной БД и настроен GEMINIGEN_WEBHOOK_PROXY_URL,
+        запрос проксируется на другое окружение (например, staging).
         """
         raw_body: bytes = request.body or b""
         signature = request.headers.get("x-signature") or request.headers.get("X-Signature") or ""
@@ -324,6 +328,42 @@ try:
             payload = json.loads(raw_body.decode("utf-8", errors="ignore") or "{}")
         except Exception:
             return JsonResponse({"ok": False, "error": "invalid json"}, status=400)
+
+        # Извлекаем uuid для проверки принадлежности запроса
+        data = payload.get("data") if isinstance(payload.get("data"), dict) else {}
+        job_uuid = data.get("uuid") or payload.get("uuid") or payload.get("job_id")
+
+        # Проверяем существует ли GenRequest с этим uuid в локальной БД
+        if job_uuid:
+            from botapp.models import GenRequest
+            exists = GenRequest.objects.filter(provider_job_id=str(job_uuid)).exists()
+
+            if not exists:
+                # Проксируем на другое окружение если настроен proxy URL
+                proxy_url = getattr(settings, "GEMINIGEN_WEBHOOK_PROXY_URL", None)
+                if proxy_url:
+                    try:
+                        headers = {"Content-Type": "application/json"}
+                        if signature:
+                            headers["X-Signature"] = signature
+
+                        async with httpx.AsyncClient(timeout=15.0) as client:
+                            resp = await client.post(proxy_url, content=raw_body, headers=headers)
+                            logger.info(
+                                "[GEMINIGEN_WEBHOOK] Проксировано на %s, uuid=%s, status=%s",
+                                proxy_url, job_uuid, resp.status_code
+                            )
+                    except Exception as exc:
+                        logger.warning(
+                            "[GEMINIGEN_WEBHOOK] Не удалось проксировать на %s: %s",
+                            proxy_url, exc
+                        )
+                    return JsonResponse({"ok": True, "proxied": True})
+                else:
+                    logger.warning(
+                        "[GEMINIGEN_WEBHOOK] uuid=%s не найден локально, proxy не настроен",
+                        job_uuid
+                    )
 
         try:
             from botapp.tasks import process_geminigen_webhook
