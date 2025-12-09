@@ -203,29 +203,25 @@ try:
             return JsonResponse({"ok": False, "error": str(exc)}, status=200)
 
     @api.post("/midjourney/webapp/submit")
-    async def midjourney_webapp_submit(request):
+    def midjourney_webapp_submit(request):
         """
-        Fallback endpoint for WebApp data submission via HTTP if tg.sendData fails.
+        Endpoint для Midjourney Image WebApp.
+        Мгновенно возвращает ответ, обработка идёт в Celery.
         """
         try:
             payload = json.loads(request.body.decode("utf-8"))
             user_id = payload.get("user_id")
             data = payload.get("data")
 
-            logger.info(f"[WEBAPP_REST] Received submission for user {user_id}")
-            # Debug prints removed for production
-            # print(f"[WEBAPP_REST] Submission: user={user_id}, data={json.dumps(data)[:100]}", flush=True)
+            logger.info(f"[WEBAPP_REST][MIDJOURNEY] Received submission for user {user_id}")
 
             if not user_id or not data:
                 return JsonResponse({"ok": False, "error": "Missing user_id or data"}, status=400)
 
-            await _feed_webapp_update(int(user_id), data)
-            logger.info(f"[WEBAPP_REST] Update fed to dispatcher for user {user_id}")
-
-            return JsonResponse({"ok": True})
-        except Exception as e:
-            logger.error(f"[WEBAPP_REST] Error: {e}", exc_info=True)
-            return JsonResponse({"ok": False, "error": str(e)}, status=500)
+            return _submit_webapp_to_celery(int(user_id), data, "MIDJOURNEY")
+        except Exception as exc:
+            logger.error(f"[WEBAPP_REST][MIDJOURNEY] Error: {exc}", exc_info=True)
+            return JsonResponse({"ok": False, "error": str(exc)}, status=500)
 
     @api.post("/midjourney_video/webapp/submit")
     def midjourney_video_webapp_submit(request):
@@ -340,9 +336,10 @@ try:
         return JsonResponse({"ok": True})
 
     @api.post("/gpt-image/webapp/submit")
-    async def gpt_image_webapp_submit(request):
+    def gpt_image_webapp_submit(request):
         """
-        Fallback endpoint для GPT Image WebApp: шлёт mock Update с web_app_data.
+        Endpoint для GPT Image WebApp.
+        Мгновенно возвращает ответ, обработка идёт в Celery.
         """
         try:
             payload = json.loads(request.body.decode("utf-8"))
@@ -354,10 +351,7 @@ try:
             if not user_id or not data:
                 return JsonResponse({"ok": False, "error": "Missing user_id or data"}, status=400)
 
-            await _feed_webapp_update(int(user_id), data)
-            logger.info(f"[WEBAPP_REST][GPT_IMAGE] Update fed to dispatcher for user {user_id}")
-
-            return JsonResponse({"ok": True})
+            return _submit_webapp_to_celery(int(user_id), data, "GPT_IMAGE")
         except Exception as exc:
             logger.error(f"[WEBAPP_REST][GPT_IMAGE] Error: {exc}", exc_info=True)
             return JsonResponse({"ok": False, "error": str(exc)}, status=500)
@@ -406,9 +400,10 @@ try:
             return JsonResponse({"ok": False, "error": str(exc)}, status=500)
 
     @api.post("/nano-banana/webapp/submit")
-    async def nano_banana_webapp_submit(request):
+    def nano_banana_webapp_submit(request):
         """
-        Endpoint для Nano Banana WebApp: прокидывает payload в aiogram как web_app_data.
+        Endpoint для Nano Banana WebApp.
+        Мгновенно возвращает ответ, обработка идёт в Celery.
         """
         try:
             payload = json.loads(request.body.decode("utf-8"))
@@ -420,10 +415,7 @@ try:
             if not user_id or not data:
                 return JsonResponse({"ok": False, "error": "Missing user_id or data"}, status=400)
 
-            await _feed_webapp_update(int(user_id), data)
-            logger.info(f"[WEBAPP_REST][NANO] Update fed to dispatcher for user {user_id}")
-
-            return JsonResponse({"ok": True})
+            return _submit_webapp_to_celery(int(user_id), data, "NANO")
         except Exception as exc:
             logger.error(f"[WEBAPP_REST][NANO] Error: {exc}", exc_info=True)
             return JsonResponse({"ok": False, "error": str(exc)}, status=500)
