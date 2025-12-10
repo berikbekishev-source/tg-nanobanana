@@ -18,6 +18,7 @@ from botapp.services import supabase_upload_png
 from botapp.error_tracker import ErrorTracker
 from botapp.telegram_utils import send_message, get_main_menu_keyboard_dict
 from botapp.keyboards import get_generation_start_message
+from botapp.chat_logger import ChatLogger
 from botapp.generation_text import (
     format_image_start_message,
     resolve_format_and_quality,
@@ -73,17 +74,21 @@ def _extract_allowed_aspect_ratios(model: AIModel) -> List[str]:
 
 
 def _send_error_message(chat_id: int, text: str) -> None:
-    """Отправляет сообщение об ошибке пользователю."""
+    """Отправляет сообщение об ошибке пользователю и логирует его."""
     try:
         send_message(chat_id, text, reply_markup=get_main_menu_keyboard_dict())
+        # Логируем исходящее сообщение об ошибке
+        ChatLogger.log_outgoing_text(chat_id, text)
     except Exception as exc:
         logger.error("Не удалось отправить сообщение об ошибке: %s", exc)
 
 
 def _send_start_message(chat_id: int, text: str) -> None:
-    """Отправляет сообщение о начале генерации (без клавиатуры)."""
+    """Отправляет сообщение о начале генерации (без клавиатуры) и логирует его."""
     try:
         send_message(chat_id, text, reply_markup=None)
+        # Логируем исходящее сообщение о старте генерации
+        ChatLogger.log_outgoing_text(chat_id, text)
     except Exception as exc:
         logger.error("Не удалось отправить стартовое сообщение: %s", exc)
 
@@ -139,6 +144,9 @@ def process_kling_webapp(user_id: int, payload: Dict[str, Any]) -> Optional[int]
     if len(prompt) > model.max_prompt_length:
         _send_error_message(user_id, f"❌ Промт слишком длинный! Максимум {model.max_prompt_length} символов.")
         return None
+
+    # Логируем входящий webapp-запрос
+    ChatLogger.log_webapp_request(user_id, "kling_settings", model_slug, prompt)
 
     # Тип генерации
     generation_type = (payload.get("generationType") or "text2video").lower()
@@ -315,6 +323,9 @@ def process_veo_webapp(user_id: int, payload: Dict[str, Any]) -> Optional[int]:
         _send_error_message(user_id, f"❌ Промт слишком длинный! Максимум {model.max_prompt_length} символов.")
         return None
 
+    # Логируем входящий webapp-запрос
+    ChatLogger.log_webapp_request(user_id, "veo_video_settings", model_slug, prompt)
+
     # Тип генерации
     generation_type = (payload.get("generationType") or "text2video").lower()
     if generation_type not in {"text2video", "image2video"}:
@@ -457,6 +468,9 @@ def process_sora_webapp(user_id: int, payload: Dict[str, Any]) -> Optional[int]:
         _send_error_message(user_id, f"❌ Промт слишком длинный! Максимум {model.max_prompt_length} символов.")
         return None
 
+    # Логируем входящий webapp-запрос
+    ChatLogger.log_webapp_request(user_id, "sora2_settings", model_slug, prompt)
+
     generation_type = (payload.get("generationType") or "text2video").lower()
     if generation_type not in {"text2video", "image2video"}:
         generation_type = "text2video"
@@ -595,6 +609,9 @@ def process_runway_webapp(user_id: int, payload: Dict[str, Any]) -> Optional[int
         _send_error_message(user_id, f"❌ Промт слишком длинный! Максимум {model.max_prompt_length} символов.")
         return None
 
+    # Логируем входящий webapp-запрос
+    ChatLogger.log_webapp_request(user_id, "runway_settings", model_slug, prompt)
+
     generation_type = (payload.get("generationType") or "text2video").lower()
     if generation_type not in {"text2video", "image2video"}:
         generation_type = "text2video"
@@ -723,6 +740,9 @@ def process_midjourney_video_webapp(user_id: int, payload: Dict[str, Any]) -> Op
         _send_error_message(user_id, f"❌ Промт слишком длинный! Максимум {model.max_prompt_length} символов.")
         return None
 
+    # Логируем входящий webapp-запрос
+    ChatLogger.log_webapp_request(user_id, "midjourney_video_settings", model_slug, prompt)
+
     generation_type = "text2video"
 
     defaults = model.default_params or {}
@@ -808,6 +828,9 @@ def process_midjourney_image_webapp(user_id: int, payload: Dict[str, Any]) -> Op
     if len(prompt) > model.max_prompt_length:
         _send_error_message(user_id, f"❌ Промт слишком длинный! Максимум {model.max_prompt_length} символов.")
         return None
+
+    # Логируем входящий webapp-запрос
+    ChatLogger.log_webapp_request(user_id, "midjourney_settings", model_slug, prompt)
 
     # Проверка баланса
     cost = get_base_price_tokens(model)
@@ -976,6 +999,9 @@ def process_gpt_image_webapp(user_id: int, payload: Dict[str, Any]) -> Optional[
         _send_error_message(user_id, f"❌ Промт слишком длинный! Максимум {model.max_prompt_length} символов.")
         return None
 
+    # Логируем входящий webapp-запрос
+    ChatLogger.log_webapp_request(user_id, "gpt_image_settings", model_slug, prompt)
+
     # Проверка баланса
     cost = get_base_price_tokens(model)
     balance_service = BalanceService()
@@ -1141,6 +1167,9 @@ def process_nano_banana_webapp(user_id: int, payload: Dict[str, Any]) -> Optiona
     if len(prompt) > model.max_prompt_length:
         _send_error_message(user_id, f"❌ Промт слишком длинный! Максимум {model.max_prompt_length} символов.")
         return None
+
+    # Логируем входящий webapp-запрос
+    ChatLogger.log_webapp_request(user_id, "nano_banana_settings", model_slug, prompt)
 
     # Проверка баланса
     cost = get_base_price_tokens(model)
@@ -1308,6 +1337,9 @@ def process_runway_aleph_webapp(user_id: int, payload: Dict[str, Any]) -> Option
     if len(prompt) > model.max_prompt_length:
         _send_error_message(user_id, f"❌ Промт слишком длинный! Максимум {model.max_prompt_length} символов.")
         return None
+
+    # Логируем входящий webapp-запрос
+    ChatLogger.log_webapp_request(user_id, "runway_aleph_settings", model_slug, prompt)
 
     # Runway Aleph работает только в режиме video2video
     generation_type = "video2video"
