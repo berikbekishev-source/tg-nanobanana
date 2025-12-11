@@ -6,19 +6,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Veo 3.1 Fast · INTEGER</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
-    <script>
-        // Global error handler for client-side debugging
-        window.onerror = function (msg, url, line, col, error) {
-            const tg = window.Telegram?.WebApp;
-            if (tg) {
-                tg.showAlert(`JS Error: ${msg}\nLine: ${line}`);
-            }
-            return false;
-        };
-    </script>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@500;600;700;800&display=swap" rel="stylesheet">
     <style>
         :root {
             --bg: #0f1c2d;
@@ -31,7 +18,7 @@
             --danger: #ff6b6b;
             --border: #223956;
             --radius: 18px;
-            --shadow: 0 12px 35px rgba(0, 0, 0, 0.35);
+            --shadow: 0 14px 40px rgba(0, 0, 0, 0.4);
             --dot: radial-gradient(circle, rgba(255, 255, 255, 0.06) 1px, transparent 0);
             --font: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
         }
@@ -73,20 +60,20 @@
             display: flex;
             align-items: center;
             gap: 12px;
-            margin-bottom: 10px;
+            margin-bottom: 8px;
         }
 
         .badge {
-            width: 42px;
-            height: 42px;
-            border-radius: 50%;
+            width: 44px;
+            height: 44px;
+            border-radius: 14px;
             background: linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 100%);
             color: #0f1c2d;
             font-weight: 800;
-            font-size: 16px;
+            font-size: 17px;
             display: grid;
             place-items: center;
-            box-shadow: 0 10px 24px rgba(241, 155, 40, 0.35);
+            box-shadow: 0 10px 28px rgba(241, 155, 40, 0.35);
         }
 
         h1 {
@@ -99,7 +86,7 @@
         .sub {
             font-size: 13px;
             color: var(--muted);
-            margin: 0;
+            margin: 2px 0 0;
         }
 
         .section {
@@ -129,7 +116,7 @@
             border-radius: 14px;
             padding: 12px;
             font-size: 14px;
-            font-weight: 600;
+            font-weight: 700;
             text-align: center;
             cursor: pointer;
             transition: all 0.15s ease;
@@ -137,8 +124,14 @@
 
         .chip.active {
             background: linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 100%);
-            color: #0f1c2d;
+            color: #04101f;
             box-shadow: 0 10px 24px rgba(241, 155, 40, 0.35);
+        }
+
+        .chip.disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            pointer-events: none;
         }
 
         .label {
@@ -151,7 +144,7 @@
             width: 100%;
             min-height: 120px;
             padding: 12px;
-            background: #0d1a2b;
+            background: #0a1222;
             border: 1px solid var(--border);
             border-radius: 12px;
             color: var(--text);
@@ -184,7 +177,7 @@
             border-radius: 12px;
             padding: 10px;
             text-align: center;
-            font-weight: 600;
+            font-weight: 700;
             font-size: 14px;
             color: var(--text);
             cursor: pointer;
@@ -194,68 +187,124 @@
         .pill.active {
             background: linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 100%);
             color: #0f1c2d;
-            box-shadow: 0 8px 18px rgba(241, 155, 40, 0.28);
+            box-shadow: 0 8px 20px rgba(241, 155, 40, 0.28);
         }
 
-        .uploads {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-            gap: 10px;
+        /* Стили для блоков загрузки изображений */
+        .upload-section {
+            margin-top: 12px;
         }
 
-        .upload-card {
-            position: relative;
-            border: 1px dashed var(--border);
-            border-radius: 14px;
-            padding: 12px;
-            background: rgba(15, 28, 45, 0.7);
+        .upload-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 8px;
         }
 
-        .upload-card strong {
-            display: block;
-            margin-bottom: 6px;
-            font-size: 14px;
+        .upload-title {
+            font-size: 13px;
+            font-weight: 700;
+            text-transform: uppercase;
+            color: var(--text);
+            line-height: 1.3;
         }
 
-        .upload-card small {
-            color: var(--muted);
+        .upload-hint {
             font-size: 12px;
+            color: var(--muted);
+            text-align: right;
+            white-space: nowrap;
         }
 
-        .upload-card input[type="file"] {
-            margin-top: 10px;
-            width: 100%;
+        .upload-box {
+            border: 2px dashed var(--border);
+            border-radius: 16px;
+            background: rgba(15, 28, 45, 0.5);
+            min-height: 180px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.15s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .upload-box:hover {
+            border-color: var(--accent);
+            background: rgba(241, 155, 40, 0.05);
+        }
+
+        .upload-box.has-file {
+            border-style: solid;
+            border-color: var(--accent);
+        }
+
+        .upload-box input[type="file"] {
+            position: absolute;
+            inset: 0;
+            opacity: 0;
+            cursor: pointer;
+        }
+
+        .upload-icon {
+            font-size: 32px;
+            color: var(--muted);
+            margin-bottom: 8px;
+        }
+
+        .upload-text {
+            font-size: 14px;
             color: var(--muted);
         }
 
-        .preview {
-            margin-top: 10px;
-            display: grid;
-            grid-template-columns: 70px 1fr;
-            gap: 10px;
+        .upload-preview {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            max-height: 180px;
+        }
+
+        .upload-file-info {
+            position: absolute;
+            bottom: 8px;
+            left: 8px;
+            right: 8px;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 6px 10px;
+            border-radius: 8px;
+            font-size: 12px;
+            color: var(--text);
+            display: flex;
+            justify-content: space-between;
             align-items: center;
         }
 
-        .preview-thumb {
-            width: 70px;
-            height: 70px;
-            border-radius: 10px;
-            background: #0f1c2d;
-            border: 1px solid var(--border);
-            background-size: cover;
-            background-position: center;
+        .upload-remove {
+            color: var(--danger);
+            cursor: pointer;
+            font-weight: 700;
         }
 
-        .preview-info {
-            font-size: 13px;
-            color: var(--muted);
-            line-height: 1.35;
+        .upload-error {
+            color: var(--danger);
+            font-size: 12px;
+            margin-top: 6px;
         }
 
         .error {
             color: var(--danger);
             font-size: 13px;
-            margin-top: 8px;
+            margin-top: 6px;
+        }
+
+        .muted {
+            color: var(--muted);
+            font-size: 13px;
+            line-height: 1.5;
+            margin: 8px 0 0;
         }
 
         @media (min-width: 640px) {
@@ -264,7 +313,7 @@
             }
 
             .card {
-                max-width: 720px;
+                max-width: 640px;
                 margin: 0 auto;
             }
         }
@@ -277,7 +326,7 @@
             <div class="badge">VEO</div>
             <div>
                 <h1>Veo 3.1 Fast</h1>
-                <p class="sub">WebApp · Генерация видео</p>
+                <p class="sub">Видео из текста или изображения</p>
             </div>
         </div>
 
@@ -287,74 +336,134 @@
                 <div class="chip active" data-mode="text2video">Текст → Видео</div>
                 <div class="chip" data-mode="image2video">Изображение → Видео</div>
             </div>
+            <p class="muted">
+                Длительность ролика 8 секунд. Формат кадра задаётся только для текста — в Image → Video
+                берём соотношение сторон исходного изображения.
+            </p>
+        </div>
 
-            <p class="label" style="margin-top: 12px;">Текстовый промт</p>
-            <textarea id="prompt" placeholder="Опишите, что нужно сгенерировать..." maxlength="4000" enterkeyhint="done"
+        <div class="section">
+            <p class="section-title">Промт</p>
+            <p class="label">Текстовый запрос</p>
+            <textarea id="prompt" placeholder="Опишите сюжет или сцену..." maxlength="4000" enterkeyhint="done"
                 inputmode="text"></textarea>
             <div class="count" id="promptCount">0/4000</div>
         </div>
 
-        <div class="section" id="uploadsSection" style="display:none;">
-            <p class="section-title">Кадры для Image → Video</p>
-            <div class="uploads">
-                <div class="upload-card" id="startCard">
-                    <strong>Начальный кадр (обязательно, ≤ 5 МБ)</strong>
-                    <small>Загрузите изображение, с которого начнётся ролик.</small>
-                    <input type="file" id="startInput" accept="image/*">
-                    <div class="preview" id="startPreview" style="display:none;">
-                        <div class="preview-thumb" id="startThumb"></div>
-                        <div class="preview-info" id="startInfo"></div>
-                    </div>
+        <!-- Блок загрузки для image2video -->
+        <div class="section" id="imageUploadSection" style="display:none;">
+            <p class="section-title">Изображения</p>
+
+            <!-- Начальное изображение -->
+            <div class="upload-section">
+                <div class="upload-header">
+                    <span class="upload-title">Начальный кадр<br>(обязательно)</span>
+                    <span class="upload-hint">JPG/PNG • ≤ 5 МБ</span>
                 </div>
-                <div class="upload-card" id="endCard">
-                    <strong>Конечный кадр (необязательно, ≤ 5 МБ)</strong>
-                    <small>Добавьте, если хотите приблизить финальный кадр.</small>
-                    <input type="file" id="endInput" accept="image/*">
-                    <div class="preview" id="endPreview" style="display:none;">
-                        <div class="preview-thumb" id="endThumb"></div>
-                        <div class="preview-info" id="endInfo"></div>
-                    </div>
+                <div class="upload-box" id="startImageBox">
+                    <input type="file" id="startImageInput" accept="image/jpeg,image/png,image/webp">
+                    <div class="upload-icon">+</div>
+                    <div class="upload-text">Загрузить</div>
                 </div>
+                <div class="upload-error" id="startImageError"></div>
+            </div>
+
+            <!-- Конечное изображение -->
+            <div class="upload-section" style="margin-top: 16px;">
+                <div class="upload-header">
+                    <span class="upload-title">Конечный кадр<br>(необязательно)</span>
+                    <span class="upload-hint">JPG/PNG • ≤ 5 МБ</span>
+                </div>
+                <div class="upload-box" id="endImageBox">
+                    <input type="file" id="endImageInput" accept="image/jpeg,image/png,image/webp">
+                    <div class="upload-icon">+</div>
+                    <div class="upload-text">Загрузить</div>
+                </div>
+                <div class="upload-error" id="endImageError"></div>
+            </div>
+        </div>
+
+        <div class="section" id="formatSection">
+            <p class="section-title">Формат кадра</p>
+            <div class="grid" id="ratioGrid">
+                <div class="pill" data-ratio="16:9">16:9</div>
+                <div class="pill active" data-ratio="9:16">9:16</div>
+                <div class="pill" data-ratio="1:1">1:1</div>
             </div>
         </div>
 
         <div class="section">
             <p class="section-title">Разрешение</p>
-            <div class="grid" id="resolutionGrid">
-                <div class="pill active" data-resolution="720p">720p</div>
+            <div class="chip-toggle" id="resolutionToggle">
+                <div class="chip active" data-resolution="720p">720p</div>
             </div>
         </div>
 
         <div class="section">
-            <p class="section-title">Соотношение сторон</p>
-            <div class="grid" id="ratioGrid">
-                <div class="pill active" data-ratio="9:16">9:16</div>
-                <div class="pill" data-ratio="16:9">16:9</div>
-            </div>
-            <p class="label" style="margin-top: 12px;">Длительность видео по умолчанию 8 секунд.</p>
+            <p class="section-title">Подсказка</p>
+            <p class="muted">
+                Text → Video: укажите формат кадра и краткий сюжет. <br>
+                Image → Video: загрузите референс и добавьте контекст движения. <br>
+                Примеры: «дрон летит над ночным городом» или «акварельный кит плывёт сквозь облака».
+            </p>
         </div>
 
         <div id="error" class="error" style="display:none;"></div>
+
     </div>
 
     <script>
         const tg = window.Telegram?.WebApp;
+
+        // Global error handler for debugging
+        window.onerror = function (msg, url, line, col, error) {
+            if (tg) tg.showAlert(`Error: ${msg}\nLine: ${line}`);
+            return false;
+        };
+
         const params = new URLSearchParams(window.location.search);
+        const MAX_IMAGE_SIZE = 5 * 1024 * 1024; // 5 MB
         const MAX_PROMPT = Number(params.get("max_prompt") || params.get("maxPrompt")) || 4000;
-        const MAX_BYTES = 5 * 1024 * 1024;
 
         const state = {
             modelSlug: params.get("model") || "veo3-fast",
-            mode: "text2video",
+            generationType: "text2video",
             prompt: "",
             aspectRatio: "9:16",
             resolution: "720p",
-            // Изображения хранят URL после presigned upload
-            start: { url: null, size: 0, mime: null, name: null, uploading: false },
-            end: { url: null, size: 0, mime: null, name: null, uploading: false },
+            // Начальное изображение (presigned URL)
+            imageUrl: null,
+            imageSize: 0,
+            imageMime: null,
+            imageName: null,
+            imageUploading: false,
+            // Конечное изображение (tail)
+            imageTailUrl: null,
+            imageTailSize: 0,
+            imageTailMime: null,
+            imageTailName: null,
+            imageTailUploading: false,
+            // Pricing
             priceLabel: "—",
             tokensPerSecond: null,
             priceBaseDuration: 8,
+        };
+
+        const els = {
+            modeToggle: document.getElementById("modeToggle"),
+            ratioGrid: document.getElementById("ratioGrid"),
+            resolutionToggle: document.getElementById("resolutionToggle"),
+            prompt: document.getElementById("prompt"),
+            promptCount: document.getElementById("promptCount"),
+            imageUploadSection: document.getElementById("imageUploadSection"),
+            startImageBox: document.getElementById("startImageBox"),
+            startImageInput: document.getElementById("startImageInput"),
+            startImageError: document.getElementById("startImageError"),
+            endImageBox: document.getElementById("endImageBox"),
+            endImageInput: document.getElementById("endImageInput"),
+            endImageError: document.getElementById("endImageError"),
+            formatSection: document.getElementById("formatSection"),
+            error: document.getElementById("error"),
         };
 
         // Загрузка изображения через presigned URL в Supabase
@@ -375,49 +484,29 @@
             return public_url;
         }
 
-        const els = {
-            modeToggle: document.getElementById("modeToggle"),
-            ratioGrid: document.getElementById("ratioGrid"),
-            resolutionGrid: document.getElementById("resolutionGrid"),
-            prompt: document.getElementById("prompt"),
-            promptCount: document.getElementById("promptCount"),
-            uploadsSection: document.getElementById("uploadsSection"),
-            startInput: document.getElementById("startInput"),
-            startPreview: document.getElementById("startPreview"),
-            startThumb: document.getElementById("startThumb"),
-            startInfo: document.getElementById("startInfo"),
-            endInput: document.getElementById("endInput"),
-            endPreview: document.getElementById("endPreview"),
-            endThumb: document.getElementById("endThumb"),
-            endInfo: document.getElementById("endInfo"),
-            error: document.getElementById("error"),
-        };
-
         function setActive(container, target) {
             container.querySelectorAll(".chip, .pill").forEach(btn => btn.classList.remove("active"));
             target.classList.add("active");
         }
 
-        function applyResolutionRules() {
-            // В текущей версии доступно только 720p
-            state.resolution = "720p";
-            const active = els.resolutionGrid?.querySelector('.pill[data-resolution=\"720p\"]');
-            if (active) setActive(els.resolutionGrid, active);
+        function updateCounts() {
+            state.prompt = els.prompt.value.trim();
+            els.promptCount.textContent = `${state.prompt.length}/${MAX_PROMPT}`;
+            if (tg?.MainButton) {
+                if (state.prompt.length > 0) {
+                    tg.MainButton.show();
+                } else {
+                    tg.MainButton.hide();
+                }
+            }
         }
 
-        // Применяем динамический лимит промта из параметров, если указан
-        const effectiveMaxPrompt = Number.isFinite(MAX_PROMPT) ? MAX_PROMPT : 4000;
-        if (els.prompt) {
-            els.prompt.setAttribute("maxlength", effectiveMaxPrompt);
-            els.promptCount.textContent = `0/${Number.isFinite(MAX_PROMPT) ? MAX_PROMPT : "∞"}`;
-        }
-
-        function showAlert(text) {
-            if (!text) return;
-            if (tg?.showAlert) {
-                tg.showAlert(text);
+        function setError(text) {
+            if (tg) {
+                if (text) tg.showAlert(text);
             } else {
-                alert(text);
+                els.error.textContent = text;
+                els.error.style.display = text ? "block" : "none";
             }
         }
 
@@ -442,162 +531,234 @@
             }
         }
 
-        function updateCounts() {
-            state.prompt = els.prompt.value.trim();
-            els.promptCount.textContent = `${state.prompt.length}/${Number.isFinite(MAX_PROMPT) ? MAX_PROMPT : "∞"}`;
-            if (tg?.MainButton) {
-                if (state.prompt.length > 0) {
-                    setPriceLabel(state.priceLabel || "—");
-                    tg.MainButton.show();
-                } else {
-                    tg.MainButton.hide();
-                }
-            }
+        function switchMode(mode) {
+            state.generationType = mode;
+            els.imageUploadSection.style.display = mode === "image2video" ? "block" : "none";
+            els.formatSection.style.display = mode === "text2video" ? "block" : "none";
         }
 
-        function toggleUploads(show) {
-            els.uploadsSection.style.display = show ? "block" : "none";
-            if (!show) {
-                state.start = { url: null, size: 0, mime: null, name: null, uploading: false };
-                state.end = { url: null, size: 0, mime: null, name: null, uploading: false };
-                els.startInput.value = "";
-                els.endInput.value = "";
-                els.startPreview.style.display = "none";
-                els.endPreview.style.display = "none";
-            }
+        function sanitizeRatio(value) {
+            const allowed = ["16:9", "9:16", "1:1"];
+            return allowed.includes(value) ? value : "9:16";
         }
 
-        function formatSize(bytes) {
-            if (!bytes && bytes !== 0) return "";
-            if (bytes > 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(2)} МБ`;
-            return `${(bytes / 1024).toFixed(1)} КБ`;
-        }
+        // Обработка загрузки изображения
+        async function handleImageUpload(file, type) {
+            const errorEl = type === "start" ? els.startImageError : els.endImageError;
+            const boxEl = type === "start" ? els.startImageBox : els.endImageBox;
 
-        async function handleFile(inputEl, target, previewEl, thumbEl, infoEl) {
-            const file = inputEl.files?.[0];
+            errorEl.textContent = "";
+
             if (!file) {
-                state[target] = { url: null, size: 0, mime: null, name: null, uploading: false };
-                previewEl.style.display = "none";
-                return;
-            }
-            if (!file.type.startsWith("image/")) {
-                showAlert("Нужен файл изображения.");
-                inputEl.value = "";
-                previewEl.style.display = "none";
-                state[target] = { url: null, size: 0, mime: null, name: null, uploading: false };
-                return;
-            }
-            if (file.size > MAX_BYTES) {
-                showAlert("Изображение слишком большое (макс 5 МБ).");
-                inputEl.value = "";
-                previewEl.style.display = "none";
-                state[target] = { url: null, size: 0, mime: null, name: null, uploading: false };
+                resetImage(type);
                 return;
             }
 
-            // Показываем превью сразу
+            if (!file.type.startsWith("image/")) {
+                errorEl.textContent = "Нужен JPG/PNG ≤ 5 МБ.";
+                resetImage(type);
+                return;
+            }
+
+            if (file.size > MAX_IMAGE_SIZE) {
+                errorEl.textContent = "Изображение слишком большое (макс 5 МБ).";
+                resetImage(type);
+                return;
+            }
+
+            // Показываем превью сразу (для UX)
             const reader = new FileReader();
             reader.onload = () => {
-                thumbEl.style.backgroundImage = `url(${reader.result})`;
-                infoEl.textContent = "Загрузка...";
-                previewEl.style.display = "grid";
+                const dataUrl = reader.result;
+                updateImageBoxUI(boxEl, file, dataUrl, true); // true = uploading
             };
             reader.readAsDataURL(file);
 
-            state[target] = { url: null, size: file.size, mime: file.type, name: file.name, uploading: true };
+            // Устанавливаем флаг загрузки
+            if (type === "start") {
+                state.imageUploading = true;
+            } else {
+                state.imageTailUploading = true;
+            }
 
             try {
-                console.log(`[Veo WebApp] Uploading ${target} image...`);
+                console.log(`[Veo WebApp] Uploading ${type} image to Supabase...`);
                 const publicUrl = await uploadToSupabase(file);
                 console.log(`[Veo WebApp] Upload complete: ${publicUrl}`);
-                state[target] = { url: publicUrl, size: file.size, mime: file.type, name: file.name, uploading: false };
-                infoEl.textContent = `${file.name} · ${formatSize(file.size)}`;
+
+                if (type === "start") {
+                    state.imageUrl = publicUrl;
+                    state.imageSize = file.size;
+                    state.imageMime = file.type;
+                    state.imageName = file.name;
+                    state.imageUploading = false;
+                } else {
+                    state.imageTailUrl = publicUrl;
+                    state.imageTailSize = file.size;
+                    state.imageTailMime = file.type;
+                    state.imageTailName = file.name;
+                    state.imageTailUploading = false;
+                }
+
+                // Обновляем UI - убираем индикатор загрузки
+                updateImageBoxUI(boxEl, file, reader.result, false);
+
             } catch (error) {
                 console.error(`[Veo WebApp] Upload error:`, error);
-                showAlert("Ошибка загрузки. Попробуйте ещё раз.");
-                inputEl.value = "";
-                previewEl.style.display = "none";
-                state[target] = { url: null, size: 0, mime: null, name: null, uploading: false };
+                errorEl.textContent = "Ошибка загрузки. Попробуйте ещё раз.";
+                resetImage(type);
             }
         }
 
-        function buildPayload(prompt) {
-            const payload = {
-                kind: "veo_video_settings",
-                modelSlug: state.modelSlug,
-                generationType: state.mode, // backend ожидает generationType
-                prompt,
-                aspectRatio: state.aspectRatio,
-                resolution: state.resolution,
-            };
+        function resetImage(type) {
+            const boxEl = type === "start" ? els.startImageBox : els.endImageBox;
+            const inputEl = type === "start" ? els.startImageInput : els.endImageInput;
 
-            if (state.mode === "image2video") {
-                // Отправляем URL вместо base64
-                payload.imageUrl = state.start.url;
-                payload.imageSize = state.start.size;
-                payload.imageMime = state.start.mime;
-                payload.imageName = state.start.name;
-
-                if (state.end.url) {
-                    payload.imageTailUrl = state.end.url;
-                    payload.imageTailSize = state.end.size;
-                    payload.imageTailMime = state.end.mime;
-                    payload.imageTailName = state.end.name;
-                }
+            if (type === "start") {
+                state.imageUrl = null;
+                state.imageSize = 0;
+                state.imageMime = null;
+                state.imageName = null;
+                state.imageUploading = false;
+            } else {
+                state.imageTailUrl = null;
+                state.imageTailSize = 0;
+                state.imageTailMime = null;
+                state.imageTailName = null;
+                state.imageTailUploading = false;
             }
 
-            return payload;
+            inputEl.value = "";
+            resetImageBoxUI(boxEl);
+        }
+
+        function updateImageBoxUI(boxEl, file, dataUrl, isUploading = false) {
+            boxEl.classList.add("has-file");
+            const sizeKb = (file.size / 1024).toFixed(1);
+            const statusText = isUploading ? "Загрузка..." : `${file.name} · ${sizeKb} КБ`;
+            const removeBtn = isUploading ? "" : '<span class="upload-remove">✕</span>';
+
+            boxEl.innerHTML = `
+                <input type="file" accept="image/jpeg,image/png,image/webp" ${isUploading ? 'disabled' : ''}>
+                <img class="upload-preview" src="${dataUrl}" alt="preview" style="${isUploading ? 'opacity: 0.5;' : ''}">
+                <div class="upload-file-info">
+                    <span>${statusText}</span>
+                    ${removeBtn}
+                </div>
+            `;
+
+            // Добавляем обработчики для нового input и кнопки удаления
+            const newInput = boxEl.querySelector('input[type="file"]');
+            const removeBtnEl = boxEl.querySelector('.upload-remove');
+            const type = boxEl.id === "startImageBox" ? "start" : "end";
+
+            newInput.addEventListener("change", (e) => {
+                handleImageUpload(e.target.files?.[0], type);
+            });
+
+            if (removeBtnEl) {
+                removeBtnEl.addEventListener("click", (e) => {
+                    e.stopPropagation();
+                    resetImage(type);
+                });
+            }
+        }
+
+        function resetImageBoxUI(boxEl) {
+            boxEl.classList.remove("has-file");
+            const type = boxEl.id === "startImageBox" ? "start" : "end";
+            const inputId = type === "start" ? "startImageInput" : "endImageInput";
+
+            boxEl.innerHTML = `
+                <input type="file" id="${inputId}" accept="image/jpeg,image/png,image/webp">
+                <div class="upload-icon">+</div>
+                <div class="upload-text">Загрузить</div>
+            `;
+
+            // Восстанавливаем ссылку на input
+            if (type === "start") {
+                els.startImageInput = document.getElementById("startImageInput");
+                els.startImageInput.addEventListener("change", (e) => {
+                    handleImageUpload(e.target.files?.[0], "start");
+                });
+            } else {
+                els.endImageInput = document.getElementById("endImageInput");
+                els.endImageInput.addEventListener("change", (e) => {
+                    handleImageUpload(e.target.files?.[0], "end");
+                });
+            }
         }
 
         function sendData() {
             try {
                 els.prompt.blur();
-                const prompt = (state.prompt || "").trim();
-                if (!prompt) {
-                    showAlert("Введите промт, чтобы продолжить.");
-                    return;
-                }
-                if (prompt.length > MAX_PROMPT) {
-                    showAlert(`Промт слишком длинный (> ${MAX_PROMPT} символов).`);
-                    return;
-                }
-
-                // Проверка изображения для image2video
-                if (state.mode === "image2video") {
-                    if (!state.start.url) {
-                        showAlert("Загрузите начальный кадр (до 5 МБ).");
-                        return;
-                    }
-                    if (state.start.uploading || state.end.uploading) {
-                        showAlert("Дождитесь окончания загрузки изображения.");
-                        return;
-                    }
-                }
-
-                const payload = buildPayload(prompt);
-                const userId = tg?.initDataUnsafe?.user?.id;
-
-                if (!userId) {
-                    showAlert("Ошибка: не удалось определить пользователя Telegram.");
-                    return;
-                }
-
                 if (!tg) {
-                    showAlert("Откройте страницу через Telegram, чтобы отправить настройки.");
+                    setError("Откройте страницу через Telegram, чтобы отправить настройки.");
+                    return;
+                }
+                if (!state.prompt) {
+                    tg.showAlert("Введите промт");
+                    return;
+                }
+                if (state.prompt.length > MAX_PROMPT) {
+                    tg.showAlert(`Промт слишком длинный (> ${MAX_PROMPT} символов).`);
                     return;
                 }
 
-                console.log("[Veo WebApp] Sending payload:", JSON.stringify(payload));
-                tg.MainButton?.showProgress();
+                // Проверяем наличие изображения для image2video
+                if (state.generationType === "image2video") {
+                    if (!state.imageUrl) {
+                        tg.showAlert("Загрузите начальный кадр для режима Image → Video.");
+                        return;
+                    }
+                    if (state.imageUploading || state.imageTailUploading) {
+                        tg.showAlert("Дождитесь окончания загрузки изображения.");
+                        return;
+                    }
+                }
+
+                const payload = {
+                    kind: "veo_video_settings",
+                    modelSlug: state.modelSlug,
+                    generationType: state.generationType,
+                    prompt: state.prompt,
+                    aspectRatio: state.aspectRatio,
+                    resolution: state.resolution,
+                };
+
+                if (state.generationType === "image2video") {
+                    payload.imageUrl = state.imageUrl;
+                    payload.imageSize = state.imageSize;
+                    payload.imageMime = state.imageMime;
+                    payload.imageName = state.imageName;
+
+                    if (state.imageTailUrl) {
+                        payload.imageTailUrl = state.imageTailUrl;
+                        payload.imageTailSize = state.imageTailSize;
+                        payload.imageTailMime = state.imageTailMime;
+                        payload.imageTailName = state.imageTailName;
+                    }
+                }
+
+                const userId = tg.initDataUnsafe?.user?.id;
+                if (!userId) {
+                    tg.showAlert("Ошибка: Не удалось определить пользователя Telegram.");
+                    return;
+                }
+
+                try {
+                    tg.MainButton.showProgress();
+                } catch (_) { }
+
+                console.log("[Veo WebApp] Sending payload:", payload);
 
                 // Теперь payload маленький - всегда используем keepalive
-                fetch("/api/veo/webapp/submit", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
+                fetch('/api/veo/webapp/submit', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         user_id: userId,
                         data: payload,
-                        initData: tg.initData || "",
                     }),
                     keepalive: true
                 });
@@ -607,48 +768,43 @@
                 tg.close();
 
             } catch (e) {
-                console.error("[Veo WebApp] Exception:", e);
-                if (tg) {
-                    tg.MainButton?.hideProgress();
-                    showAlert("Критическая ошибка: " + e.message);
-                } else {
-                    showAlert("Не удалось отправить данные. Попробуйте ещё раз.");
-                }
+                if (tg) tg.showAlert("Critical Error: " + e.message);
             }
         }
 
+        // Event listeners
         els.prompt.addEventListener("input", updateCounts);
 
         els.modeToggle.addEventListener("click", (e) => {
             const btn = e.target.closest(".chip");
             if (!btn) return;
             setActive(els.modeToggle, btn);
-            state.mode = btn.dataset.mode;
-            toggleUploads(state.mode === "image2video");
+            switchMode(btn.dataset.mode);
         });
 
         els.ratioGrid.addEventListener("click", (e) => {
             const btn = e.target.closest(".pill");
             if (!btn) return;
             setActive(els.ratioGrid, btn);
-            state.aspectRatio = btn.dataset.ratio;
-            applyResolutionRules();
+            state.aspectRatio = sanitizeRatio(btn.dataset.ratio);
         });
 
-        els.resolutionGrid.addEventListener("click", (e) => {
-            const btn = e.target.closest(".pill");
+        els.resolutionToggle.addEventListener("click", (e) => {
+            const btn = e.target.closest(".chip");
             if (!btn) return;
-            setActive(els.resolutionGrid, btn);
+            setActive(els.resolutionToggle, btn);
             state.resolution = btn.dataset.resolution;
         });
 
-        els.startInput.addEventListener("change", () =>
-            handleFile(els.startInput, "start", els.startPreview, els.startThumb, els.startInfo)
-        );
-        els.endInput.addEventListener("change", () =>
-            handleFile(els.endInput, "end", els.endPreview, els.endThumb, els.endInfo)
-        );
+        els.startImageInput.addEventListener("change", (e) => {
+            handleImageUpload(e.target.files?.[0], "start");
+        });
 
+        els.endImageInput.addEventListener("change", (e) => {
+            handleImageUpload(e.target.files?.[0], "end");
+        });
+
+        // Инициализация цен
         const priceFromQuery = params.get("price");
         const startParamRaw = tg?.initDataUnsafe?.start_param;
         let rawPrice = priceFromQuery;
@@ -657,16 +813,14 @@
         }
         const baseTokens = parseTokens(rawPrice);
         if (baseTokens !== null) {
-            state.priceBaseDuration = state.priceBaseDuration || 8;
             state.tokensPerSecond = baseTokens / state.priceBaseDuration;
             setPriceLabel(formatPrice(baseTokens));
         } else {
             setPriceLabel("—");
         }
 
-        applyResolutionRules();
         updateCounts();
-        toggleUploads(false);
+        switchMode("text2video");
 
         if (tg) {
             try {
@@ -677,7 +831,7 @@
                 /* ignore */
             }
         } else {
-            showAlert("Откройте страницу через Telegram, чтобы отправить настройки.");
+            setError("Откройте страницу через Telegram, чтобы отправить настройки.");
         }
     </script>
 </body>
