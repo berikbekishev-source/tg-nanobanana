@@ -106,16 +106,8 @@ async def global_create_image_start(message: Message, state: FSMContext):
     # Получаем активные модели для изображений
     models = await sync_to_async(list)(
         AIModel.objects.filter(type='image', is_active=True)
-        .exclude(slug="nano-banana")
         .order_by('order')
     )
-    # Гарантируем наличие Nano Banana Pro, если она активна (иногда убирается из списка по порядку)
-    nano_banana_pro = await sync_to_async(
-        lambda: AIModel.objects.filter(slug="nano-banana-pro", is_active=True).first()
-    )()
-    if nano_banana_pro and not any(m.slug == nano_banana_pro.slug for m in models):
-        models.append(nano_banana_pro)
-        models.sort(key=lambda m: m.order if m.order is not None else 0)
 
     if not models:
         await message.answer(
