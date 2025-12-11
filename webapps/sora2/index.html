@@ -6,16 +6,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Sora 2 · INTEGER</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
-    <script>
-        // Global error handler for client-side debugging
-        window.onerror = function (msg, url, line, col, error) {
-            const tg = window.Telegram?.WebApp;
-            if (tg) {
-                tg.showAlert(`JS Error: ${msg}\nLine: ${line}`);
-            }
-            return false;
-        };
-    </script>
     <style>
         :root {
             --bg: #0f1c2d;
@@ -28,7 +18,7 @@
             --danger: #ff6b6b;
             --border: #223956;
             --radius: 18px;
-            --shadow: 0 12px 35px rgba(0, 0, 0, 0.35);
+            --shadow: 0 14px 40px rgba(0, 0, 0, 0.4);
             --dot: radial-gradient(circle, rgba(255, 255, 255, 0.06) 1px, transparent 0);
             --font: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
         }
@@ -39,7 +29,7 @@
 
         body {
             margin: 0;
-            padding: 18px 16px 26px;
+            padding: 18px 16px 24px;
             font-family: var(--font);
             color: var(--text);
             background: var(--bg);
@@ -52,7 +42,7 @@
             border: 1px solid var(--border);
             border-radius: var(--radius);
             box-shadow: var(--shadow);
-            padding: 16px;
+            padding: 16px 16px 10px;
             position: relative;
             overflow: hidden;
         }
@@ -70,47 +60,47 @@
             display: flex;
             align-items: center;
             gap: 12px;
-            margin-bottom: 10px;
+            margin-bottom: 8px;
         }
 
         .badge {
-            width: 48px;
-            height: 48px;
-            border-radius: 15px;
+            width: 44px;
+            height: 44px;
+            border-radius: 14px;
             background: linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 100%);
             color: #0f1c2d;
-            font-weight: 900;
-            font-size: 18px;
+            font-weight: 800;
+            font-size: 17px;
             display: grid;
             place-items: center;
-            box-shadow: 0 12px 30px rgba(241, 155, 40, 0.35);
+            box-shadow: 0 10px 28px rgba(241, 155, 40, 0.35);
         }
 
         h1 {
-            margin: 0;
-            font-size: 19px;
+            font-size: 18px;
             font-weight: 800;
+            margin: 0;
             letter-spacing: 0.1px;
         }
 
         .sub {
-            margin: 3px 0 0;
-            color: var(--muted);
             font-size: 13px;
+            color: var(--muted);
+            margin: 2px 0 0;
         }
 
         .section {
-            background: rgba(15, 28, 45, 0.7);
+            background: rgba(20, 38, 60, 0.7);
             border: 1px solid var(--border);
             border-radius: 16px;
-            padding: 12px;
+            padding: 14px;
             margin: 12px 0;
         }
 
         .section-title {
-            margin: 0 0 10px;
             font-size: 14px;
             font-weight: 700;
+            margin: 0 0 10px;
         }
 
         .chip-toggle {
@@ -122,20 +112,26 @@
         .chip {
             background: #0f1c2d;
             border: 1px solid var(--border);
+            color: var(--text);
             border-radius: 14px;
             padding: 12px;
-            text-align: center;
-            font-weight: 700;
             font-size: 14px;
-            color: var(--text);
+            font-weight: 700;
+            text-align: center;
             cursor: pointer;
-            transition: all 0.14s ease;
+            transition: all 0.15s ease;
         }
 
         .chip.active {
             background: linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 100%);
             color: #04101f;
-            box-shadow: 0 10px 26px rgba(241, 155, 40, 0.35);
+            box-shadow: 0 10px 24px rgba(241, 155, 40, 0.35);
+        }
+
+        .chip.disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            pointer-events: none;
         }
 
         .label {
@@ -155,7 +151,7 @@
             font-size: 14px;
             resize: vertical;
             outline: none;
-            transition: border-color 0.14s ease;
+            transition: border-color 0.15s ease;
         }
 
         textarea:focus {
@@ -185,51 +181,141 @@
             font-size: 14px;
             color: var(--text);
             cursor: pointer;
-            transition: all 0.14s ease;
+            transition: all 0.12s ease;
         }
 
         .pill.active {
             background: linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 100%);
-            color: #04101f;
+            color: #0f1c2d;
             box-shadow: 0 8px 20px rgba(241, 155, 40, 0.28);
         }
 
-        .upload {
-            border: 1px dashed var(--border);
-            border-radius: 12px;
-            padding: 12px;
-            background: rgba(20, 38, 60, 0.7);
+        /* Стили для блоков загрузки изображений */
+        .upload-section {
+            margin-top: 12px;
         }
 
-        .upload input {
-            width: 100%;
-            margin-top: 8px;
+        .upload-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 8px;
         }
 
-        .hint {
+        .upload-title {
+            font-size: 13px;
+            font-weight: 700;
+            text-transform: uppercase;
+            color: var(--text);
+            line-height: 1.3;
+        }
+
+        .upload-hint {
             font-size: 12px;
             color: var(--muted);
-            margin-top: 4px;
+            text-align: right;
+            white-space: nowrap;
+        }
+
+        .upload-box {
+            border: 2px dashed var(--border);
+            border-radius: 16px;
+            background: rgba(15, 28, 45, 0.5);
+            min-height: 180px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.15s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .upload-box:hover {
+            border-color: var(--accent);
+            background: rgba(241, 155, 40, 0.05);
+        }
+
+        .upload-box.has-file {
+            border-style: solid;
+            border-color: var(--accent);
+        }
+
+        .upload-box input[type="file"] {
+            position: absolute;
+            inset: 0;
+            opacity: 0;
+            cursor: pointer;
+        }
+
+        .upload-icon {
+            font-size: 32px;
+            color: var(--muted);
+            margin-bottom: 8px;
+        }
+
+        .upload-text {
+            font-size: 14px;
+            color: var(--muted);
+        }
+
+        .upload-preview {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            max-height: 180px;
+        }
+
+        .upload-file-info {
+            position: absolute;
+            bottom: 8px;
+            left: 8px;
+            right: 8px;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 6px 10px;
+            border-radius: 8px;
+            font-size: 12px;
+            color: var(--text);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .upload-remove {
+            color: var(--danger);
+            cursor: pointer;
+            font-weight: 700;
+        }
+
+        .upload-error {
+            color: var(--danger);
+            font-size: 12px;
+            margin-top: 6px;
         }
 
         .error {
-            display: none;
             color: var(--danger);
             font-size: 13px;
             margin-top: 6px;
         }
 
-        .row {
-            display: grid;
-            grid-template-columns: repeat(2, 1fr);
-            gap: 8px;
+        .muted {
+            color: var(--muted);
+            font-size: 13px;
+            line-height: 1.5;
+            margin: 8px 0 0;
         }
 
-        .footer {
-            margin-top: 12px;
-            font-size: 12px;
-            color: var(--muted);
-            line-height: 1.4;
+        @media (min-width: 640px) {
+            body {
+                padding: 28px;
+            }
+
+            .card {
+                max-width: 640px;
+                margin: 0 auto;
+            }
         }
     </style>
 </head>
@@ -239,66 +325,94 @@
         <div class="header">
             <div class="badge">S2</div>
             <div>
-                <h1>Sora 2 · Видео</h1>
-                <p class="sub">Text→Video и Image→Video · 10 или 15 c · 16:9 или 9:16</p>
+                <h1>Sora 2</h1>
+                <p class="sub">Видео из текста или изображения</p>
             </div>
         </div>
 
         <div class="section">
-            <div class="section-title">Режим генерации</div>
-            <div id="modeToggle" class="chip-toggle">
+            <p class="section-title">Режим</p>
+            <div class="chip-toggle" id="modeToggle">
                 <div class="chip active" data-mode="text2video">Текст → Видео</div>
                 <div class="chip" data-mode="image2video">Изображение → Видео</div>
             </div>
+            <p class="muted">
+                Длительность ролика 10–15 секунд. Формат кадра задаётся только для текста — в Image → Video
+                берём соотношение сторон исходного изображения.
+            </p>
         </div>
 
         <div class="section">
-            <div class="section-title">Промт</div>
-            <textarea id="prompt" maxlength="4000"
-                placeholder="Опишите сюжет, движение камеры, свет и звук..."></textarea>
+            <p class="section-title">Промт</p>
+            <p class="label">Текстовый запрос</p>
+            <textarea id="prompt" placeholder="Опишите сюжет или сцену..." maxlength="4000" enterkeyhint="done"
+                inputmode="text"></textarea>
             <div class="count" id="promptCount">0/4000</div>
         </div>
 
-        <div id="imgBlock" class="section" style="display:none;">
-            <div class="section-title">Изображение-референс</div>
-            <div class="upload">
-                <div class="label" style="margin:0 0 6px;">PNG/JPG/WebP до 10 МБ. Подготовим к нужному размеру
-                    автоматически.</div>
-                <input type="file" id="imgInput" accept="image/png,image/jpeg,image/webp">
-                <div class="hint" id="imgPreview">Файл не выбран</div>
+        <!-- Блок загрузки для image2video -->
+        <div class="section" id="imageUploadSection" style="display:none;">
+            <p class="section-title">Изображение</p>
+
+            <div class="upload-section">
+                <div class="upload-header">
+                    <span class="upload-title">Изображение-референс<br>(обязательно)</span>
+                    <span class="upload-hint">JPG/PNG • ≤ 10 МБ</span>
+                </div>
+                <div class="upload-box" id="startImageBox">
+                    <input type="file" id="startImageInput" accept="image/jpeg,image/png,image/webp">
+                    <div class="upload-icon">+</div>
+                    <div class="upload-text">Загрузить</div>
+                </div>
+                <div class="upload-error" id="startImageError"></div>
+            </div>
+        </div>
+
+        <div class="section" id="formatSection">
+            <p class="section-title">Формат кадра</p>
+            <div class="grid" id="ratioGrid">
+                <div class="pill active" data-ratio="16:9">16:9</div>
+                <div class="pill" data-ratio="9:16">9:16</div>
             </div>
         </div>
 
         <div class="section">
-            <div class="section-title">Настройки</div>
-
-            <div class="label">Разрешение</div>
-            <div id="resolutionGrid" class="grid">
-                <div class="pill active" data-resolution="720p">720p</div>
-            </div>
-
-            <div class="label" style="margin-top:12px;">Соотношение сторон</div>
-            <div id="ratioGrid" class="grid">
-                <div class="pill active" data-ratio="16:9">16:9</div>
-                <div class="pill" data-ratio="9:16">9:16</div>
-            </div>
-
-            <div class="label">Длительность (сек.)</div>
-            <div id="durationGrid" class="grid">
-                <div class="pill active" data-duration="10">10</div>
-                <div class="pill" data-duration="15">15</div>
+            <p class="section-title">Длительность</p>
+            <div class="chip-toggle" id="durationToggle">
+                <div class="chip active" data-duration="10">10 секунд</div>
+                <div class="chip" data-duration="15">15 секунд</div>
             </div>
         </div>
 
-        <div class="error" id="error"></div>
-        <div class="footer">
-            • Формат подстраивается под выбранное соотношение сторон.<br>
-            • Sora 2 поддерживает 10 или 15 секунд. Критичные сцены описывайте в промте.
+        <div class="section">
+            <p class="section-title">Разрешение</p>
+            <div class="chip-toggle" id="resolutionToggle">
+                <div class="chip active" data-resolution="720p">720p</div>
+            </div>
         </div>
+
+        <div class="section">
+            <p class="section-title">Подсказка</p>
+            <p class="muted">
+                Text → Video: укажите формат кадра и краткий сюжет. <br>
+                Image → Video: загрузите референс и добавьте контекст движения. <br>
+                Примеры: «дрон летит над ночным городом» или «акварельный кит плывёт сквозь облака».
+            </p>
+        </div>
+
+        <div id="error" class="error" style="display:none;"></div>
+
     </div>
 
     <script>
-        const tg = window.Telegram?.WebApp || null;
+        const tg = window.Telegram?.WebApp;
+
+        // Global error handler for debugging
+        window.onerror = function (msg, url, line, col, error) {
+            if (tg) tg.showAlert(`Error: ${msg}\nLine: ${line}`);
+            return false;
+        };
+
         const params = new URLSearchParams(window.location.search);
         const startParamRaw = tg?.initDataUnsafe?.start_param || "";
         let startParams = null;
@@ -308,6 +422,8 @@
             startParams = null;
         }
 
+        const MAX_IMAGE_SIZE = 10 * 1024 * 1024; // 10 MB
+
         const priceBaseDurationRaw = params.get("price_base_duration") || startParams?.get("price_base_duration");
         const initialPriceBaseDuration = (() => {
             const parsed = priceBaseDurationRaw ? Number(priceBaseDurationRaw) : NaN;
@@ -315,8 +431,6 @@
         })();
         const priceFromParams = params.get("price") || startParams?.get("price");
 
-        const durations = [10, 15];
-        const ratios = ["16:9", "9:16"];
         const state = {
             modelSlug: params.get("model") || "sora2",
             modelName: params.get("api_model") || "sora-2",
@@ -325,15 +439,31 @@
             aspectRatio: "16:9",
             duration: 10,
             resolution: "720p",
-            // Изображение хранит URL после presigned upload
+            // Изображение (presigned URL)
             imageUrl: null,
             imageSize: 0,
             imageMime: null,
             imageName: null,
             imageUploading: false,
+            // Pricing
             priceLabel: "—",
             tokensPerSecond: null,
             priceBaseDuration: initialPriceBaseDuration,
+        };
+
+        const els = {
+            modeToggle: document.getElementById("modeToggle"),
+            ratioGrid: document.getElementById("ratioGrid"),
+            durationToggle: document.getElementById("durationToggle"),
+            resolutionToggle: document.getElementById("resolutionToggle"),
+            prompt: document.getElementById("prompt"),
+            promptCount: document.getElementById("promptCount"),
+            imageUploadSection: document.getElementById("imageUploadSection"),
+            startImageBox: document.getElementById("startImageBox"),
+            startImageInput: document.getElementById("startImageInput"),
+            startImageError: document.getElementById("startImageError"),
+            formatSection: document.getElementById("formatSection"),
+            error: document.getElementById("error"),
         };
 
         // Загрузка изображения через presigned URL в Supabase
@@ -354,39 +484,30 @@
             return public_url;
         }
 
-        const els = {
-            modeToggle: document.getElementById("modeToggle"),
-            ratioGrid: document.getElementById("ratioGrid"),
-            durationGrid: document.getElementById("durationGrid"),
-            resolutionGrid: document.getElementById("resolutionGrid"),
-            prompt: document.getElementById("prompt"),
-            promptCount: document.getElementById("promptCount"),
-            imgBlock: document.getElementById("imgBlock"),
-            imgInput: document.getElementById("imgInput"),
-            imgPreview: document.getElementById("imgPreview"),
-            error: document.getElementById("error"),
-        };
-
         function setActive(container, target) {
             container.querySelectorAll(".chip, .pill").forEach(btn => btn.classList.remove("active"));
             target.classList.add("active");
         }
 
-        function sanitizeDuration(value) {
-            const num = Number(value);
-            if (durations.includes(num)) return num;
-            if (!Number.isNaN(num)) return Math.min(Math.max(num, 2), 60);
-            return 8;
-        }
-
-        function sanitizeRatio(value) {
-            return ratios.includes(value) ? value : "16:9";
+        function updateCounts() {
+            state.prompt = els.prompt.value.trim();
+            els.promptCount.textContent = `${state.prompt.length}/4000`;
+            if (tg?.MainButton) {
+                if (state.prompt.length > 0) {
+                    tg.MainButton.show();
+                } else {
+                    tg.MainButton.hide();
+                }
+            }
         }
 
         function setError(text) {
-            els.error.textContent = text || "";
-            els.error.style.display = text ? "block" : "none";
-            if (text && tg) tg.showAlert(text);
+            if (tg) {
+                if (text) tg.showAlert(text);
+            } else {
+                els.error.textContent = text;
+                els.error.style.display = text ? "block" : "none";
+            }
         }
 
         function parseTokens(label) {
@@ -410,48 +531,161 @@
             }
         }
 
-        function updatePriceForDuration() {
+        function updatePrice() {
             if (!Number.isFinite(state.tokensPerSecond)) {
-                setPriceLabel(state.priceLabel || "—");
+                setPriceLabel("—");
                 return;
             }
             const total = state.tokensPerSecond * state.duration;
             setPriceLabel(formatPrice(total));
         }
 
-        function updateCounts() {
-            state.prompt = els.prompt.value.trim();
-            els.promptCount.textContent = `${state.prompt.length}/4000`;
-            if (tg?.MainButton) {
-                if (state.prompt.length > 0) {
-                    setPriceLabel(state.priceLabel || "—");
-                    tg.MainButton.show();
-                } else {
-                    tg.MainButton.hide();
-                }
+        function switchMode(mode) {
+            state.generationType = mode;
+            els.imageUploadSection.style.display = mode === "image2video" ? "block" : "none";
+            els.formatSection.style.display = mode === "text2video" ? "block" : "none";
+        }
+
+        function sanitizeDuration(value) {
+            const allowed = [10, 15];
+            const num = Number(value);
+            return allowed.includes(num) ? num : 10;
+        }
+
+        function sanitizeRatio(value) {
+            const allowed = ["16:9", "9:16"];
+            return allowed.includes(value) ? value : "16:9";
+        }
+
+        // Обработка загрузки изображения
+        async function handleImageUpload(file) {
+            const errorEl = els.startImageError;
+            const boxEl = els.startImageBox;
+
+            errorEl.textContent = "";
+
+            if (!file) {
+                resetImage();
+                return;
             }
+
+            if (!["image/png", "image/jpeg", "image/webp"].includes(file.type)) {
+                errorEl.textContent = "Поддерживаются JPG, PNG или WebP.";
+                resetImage();
+                return;
+            }
+
+            if (file.size > MAX_IMAGE_SIZE) {
+                errorEl.textContent = "Изображение слишком большое (макс 10 МБ).";
+                resetImage();
+                return;
+            }
+
+            // Показываем превью сразу (для UX)
+            const reader = new FileReader();
+            reader.onload = () => {
+                const dataUrl = reader.result;
+                updateImageBoxUI(boxEl, file, dataUrl, true); // true = uploading
+            };
+            reader.readAsDataURL(file);
+
+            state.imageUploading = true;
+
+            try {
+                console.log("[Sora2 WebApp] Uploading image to Supabase...");
+                const publicUrl = await uploadToSupabase(file);
+                console.log("[Sora2 WebApp] Upload complete:", publicUrl);
+
+                state.imageUrl = publicUrl;
+                state.imageSize = file.size;
+                state.imageMime = file.type;
+                state.imageName = file.name;
+                state.imageUploading = false;
+
+                // Обновляем UI - убираем индикатор загрузки
+                updateImageBoxUI(boxEl, file, reader.result, false);
+
+            } catch (error) {
+                console.error("[Sora2 WebApp] Upload error:", error);
+                errorEl.textContent = "Ошибка загрузки. Попробуйте ещё раз.";
+                resetImage();
+            }
+        }
+
+        function resetImage() {
+            state.imageUrl = null;
+            state.imageSize = 0;
+            state.imageMime = null;
+            state.imageName = null;
+            state.imageUploading = false;
+            els.startImageInput.value = "";
+            resetImageBoxUI(els.startImageBox);
+        }
+
+        function updateImageBoxUI(boxEl, file, dataUrl, isUploading = false) {
+            boxEl.classList.add("has-file");
+            const sizeKb = (file.size / 1024).toFixed(1);
+            const statusText = isUploading ? "Загрузка..." : `${file.name} · ${sizeKb} КБ`;
+            const removeBtn = isUploading ? "" : '<span class="upload-remove">✕</span>';
+
+            boxEl.innerHTML = `
+                <input type="file" accept="image/jpeg,image/png,image/webp" ${isUploading ? 'disabled' : ''}>
+                <img class="upload-preview" src="${dataUrl}" alt="preview" style="${isUploading ? 'opacity: 0.5;' : ''}">
+                <div class="upload-file-info">
+                    <span>${statusText}</span>
+                    ${removeBtn}
+                </div>
+            `;
+
+            const newInput = boxEl.querySelector('input[type="file"]');
+            const removeBtnEl = boxEl.querySelector('.upload-remove');
+
+            newInput.addEventListener("change", (e) => {
+                handleImageUpload(e.target.files?.[0]);
+            });
+
+            if (removeBtnEl) {
+                removeBtnEl.addEventListener("click", (e) => {
+                    e.stopPropagation();
+                    resetImage();
+                });
+            }
+        }
+
+        function resetImageBoxUI(boxEl) {
+            boxEl.classList.remove("has-file");
+            boxEl.innerHTML = `
+                <input type="file" id="startImageInput" accept="image/jpeg,image/png,image/webp">
+                <div class="upload-icon">+</div>
+                <div class="upload-text">Загрузить</div>
+            `;
+
+            els.startImageInput = document.getElementById("startImageInput");
+            els.startImageInput.addEventListener("change", (e) => {
+                handleImageUpload(e.target.files?.[0]);
+            });
         }
 
         function sendData() {
             try {
                 els.prompt.blur();
-                setError("");
-
+                if (!tg) {
+                    setError("Откройте страницу через Telegram, чтобы отправить настройки.");
+                    return;
+                }
                 if (!state.prompt) {
-                    tg?.showAlert("Введите промт, чтобы продолжить.");
-                    if (!tg) alert("Введите промт и откройте страницу через Telegram.");
+                    tg.showAlert("Введите промт");
                     return;
                 }
 
-                // Проверка изображения для image2video
+                // Проверяем наличие изображения для image2video
                 if (state.generationType === "image2video") {
                     if (!state.imageUrl) {
-                        tg?.showAlert("Загрузите изображение для режима Изображение → Видео.");
-                        if (!tg) alert("Загрузите изображение для режима Изображение → Видео.");
+                        tg.showAlert("Загрузите изображение для режима Image → Video.");
                         return;
                     }
                     if (state.imageUploading) {
-                        tg?.showAlert("Дождитесь окончания загрузки изображения.");
+                        tg.showAlert("Дождитесь окончания загрузки изображения.");
                         return;
                     }
                 }
@@ -468,32 +702,32 @@
                 };
 
                 if (state.generationType === "image2video") {
-                    // Отправляем URL вместо base64
                     payload.imageUrl = state.imageUrl;
                     payload.imageSize = state.imageSize;
                     payload.imageMime = state.imageMime;
                     payload.imageName = state.imageName;
                 }
 
-                if (!tg) {
-                    alert("Откройте страницу через Telegram, чтобы отправить настройки.");
-                    return;
-                }
-
                 const userId = tg.initDataUnsafe?.user?.id;
                 if (!userId) {
-                    tg.showAlert("Не удалось получить ID пользователя. Откройте WebApp из Telegram.");
+                    tg.showAlert("Ошибка: Не удалось определить пользователя Telegram.");
                     return;
                 }
 
-                console.log("[Sora2 WebApp] Sending payload:", JSON.stringify(payload));
-                tg.MainButton.showProgress();
+                try {
+                    tg.MainButton.showProgress();
+                } catch (_) { }
+
+                console.log("[Sora2 WebApp] Sending payload:", payload);
 
                 // Теперь payload маленький - всегда используем keepalive
-                fetch("/api/sora2/webapp/submit", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ user_id: userId, data: payload }),
+                fetch('/api/sora2/webapp/submit', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        user_id: userId,
+                        data: payload,
+                    }),
                     keepalive: true
                 });
 
@@ -501,135 +735,73 @@
                 console.log("[Sora2 WebApp] Request sent, closing immediately...");
                 tg.close();
 
-            } catch (error) {
-                console.error("[Sora2 WebApp] Exception:", error);
-                if (tg) {
-                    tg.MainButton.hideProgress();
-                    tg.showAlert("Критическая ошибка: " + error.message);
-                }
+            } catch (e) {
+                if (tg) tg.showAlert("Critical Error: " + e.message);
             }
         }
 
+        // Event listeners
         els.prompt.addEventListener("input", updateCounts);
 
         els.modeToggle.addEventListener("click", (e) => {
             const btn = e.target.closest(".chip");
             if (!btn) return;
-            e.preventDefault();
             setActive(els.modeToggle, btn);
-            state.generationType = btn.dataset.mode;
-            els.imgBlock.style.display = state.generationType === "image2video" ? "block" : "none";
+            switchMode(btn.dataset.mode);
         });
 
         els.ratioGrid.addEventListener("click", (e) => {
             const btn = e.target.closest(".pill");
             if (!btn) return;
-            e.preventDefault();
             setActive(els.ratioGrid, btn);
             state.aspectRatio = sanitizeRatio(btn.dataset.ratio);
         });
 
-        els.durationGrid.addEventListener("click", (e) => {
-            const btn = e.target.closest(".pill");
+        els.durationToggle.addEventListener("click", (e) => {
+            const btn = e.target.closest(".chip");
             if (!btn) return;
-            e.preventDefault();
-            setActive(els.durationGrid, btn);
+            setActive(els.durationToggle, btn);
             state.duration = sanitizeDuration(btn.dataset.duration);
-            updatePriceForDuration();
+            updatePrice();
         });
 
-        els.resolutionGrid.addEventListener("click", (e) => {
-            const btn = e.target.closest(".pill");
+        els.resolutionToggle.addEventListener("click", (e) => {
+            const btn = e.target.closest(".chip");
             if (!btn) return;
-            e.preventDefault();
-            setActive(els.resolutionGrid, btn);
+            setActive(els.resolutionToggle, btn);
             state.resolution = btn.dataset.resolution;
         });
 
-        const MAX_IMAGE_SIZE = 10 * 1024 * 1024; // 10 MB
-        function resetImage() {
-            state.imageUrl = null;
-            state.imageSize = 0;
-            state.imageMime = null;
-            state.imageName = null;
-            state.imageUploading = false;
-            els.imgInput.value = "";
-            els.imgPreview.textContent = "Файл не выбран";
-        }
-
-        els.imgInput.addEventListener("change", async (e) => {
-            try {
-                const file = e.target.files?.[0];
-                if (!file) {
-                    resetImage();
-                    return;
-                }
-                if (!["image/png", "image/jpeg", "image/webp"].includes(file.type)) {
-                    setError("Поддерживаются JPG, PNG или WebP.");
-                    resetImage();
-                    return;
-                }
-                if (file.size > MAX_IMAGE_SIZE) {
-                    setError("Изображение слишком большое (макс 10 МБ).");
-                    resetImage();
-                    return;
-                }
-
-                // Показываем статус загрузки
-                els.imgPreview.textContent = "Загрузка...";
-                state.imageUploading = true;
-                state.imageMime = file.type;
-                state.imageName = file.name;
-                state.imageSize = file.size;
-
-                try {
-                    console.log("[Sora2 WebApp] Uploading image to Supabase...");
-                    const publicUrl = await uploadToSupabase(file);
-                    console.log("[Sora2 WebApp] Upload complete:", publicUrl);
-
-                    state.imageUrl = publicUrl;
-                    state.imageUploading = false;
-                    const sizeKb = (file.size / 1024).toFixed(1);
-                    els.imgPreview.textContent = `${file.name} · ${sizeKb} КБ`;
-                    setError("");
-                } catch (err) {
-                    console.error("[Sora2 WebApp] Upload error:", err);
-                    setError("Ошибка загрузки. Попробуйте ещё раз.");
-                    resetImage();
-                }
-            } catch (err) {
-                console.error("[Sora2 WebApp] File load error:", err);
-                setError("Не удалось загрузить файл. Попробуйте другой.");
-                resetImage();
-            }
+        els.startImageInput.addEventListener("change", (e) => {
+            handleImageUpload(e.target.files?.[0]);
         });
 
+        // Инициализация цен
         const baseTokens = parseTokens(priceFromParams);
         if (baseTokens !== null) {
             const baseDuration = Number.isFinite(state.priceBaseDuration) && state.priceBaseDuration > 0
                 ? state.priceBaseDuration
-                : 1;
-            state.priceBaseDuration = baseDuration;
+                : 10;
             state.tokensPerSecond = baseTokens / baseDuration;
-            updatePriceForDuration();
+            updatePrice();
         } else {
             setPriceLabel("—");
         }
 
         updateCounts();
-        els.imgBlock.style.display = "none";
+        switchMode("text2video");
 
         if (tg) {
             try {
                 tg.ready();
                 tg.expand();
-                if (!state.prompt) tg.MainButton.hide();
                 tg.onEvent("mainButtonClicked", sendData);
-            } catch (e) { /* ignore */ }
+            } catch (e) {
+                /* ignore */
+            }
         } else {
-            alert("Откройте страницу через Telegram, чтобы отправить настройки.");
+            setError("Откройте страницу через Telegram, чтобы отправить настройки.");
         }
-
     </script>
 </body>
 
