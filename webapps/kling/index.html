@@ -125,7 +125,13 @@
         .chip.active {
             background: linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 100%);
             color: #04101f;
-            box-shadow: 0 10px 24px rgba(55, 215, 255, 0.35);
+            box-shadow: 0 10px 24px rgba(241, 155, 40, 0.35);
+        }
+
+        .chip.disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            pointer-events: none;
         }
 
         .label {
@@ -202,23 +208,108 @@
             accent-color: var(--accent);
         }
 
-        .upload {
-            border: 1px dashed var(--border);
-            border-radius: 12px;
-            background: rgba(15, 28, 45, 0.7);
-            padding: 12px;
-            margin-top: 8px;
+        /* Стили для блоков загрузки изображений */
+        .upload-section {
+            margin-top: 12px;
         }
 
-        .upload input {
-            width: 100%;
-            color: var(--muted);
+        .upload-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 8px;
         }
 
-        .upload .preview {
-            margin-top: 6px;
+        .upload-title {
             font-size: 13px;
+            font-weight: 700;
+            text-transform: uppercase;
+            color: var(--text);
+            line-height: 1.3;
+        }
+
+        .upload-hint {
+            font-size: 12px;
             color: var(--muted);
+            text-align: right;
+            white-space: nowrap;
+        }
+
+        .upload-box {
+            border: 2px dashed var(--border);
+            border-radius: 16px;
+            background: rgba(15, 28, 45, 0.5);
+            min-height: 180px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.15s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .upload-box:hover {
+            border-color: var(--accent);
+            background: rgba(241, 155, 40, 0.05);
+        }
+
+        .upload-box.has-file {
+            border-style: solid;
+            border-color: var(--accent);
+        }
+
+        .upload-box input[type="file"] {
+            position: absolute;
+            inset: 0;
+            opacity: 0;
+            cursor: pointer;
+        }
+
+        .upload-icon {
+            font-size: 32px;
+            color: var(--muted);
+            margin-bottom: 8px;
+        }
+
+        .upload-text {
+            font-size: 14px;
+            color: var(--muted);
+        }
+
+        .upload-preview {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            max-height: 180px;
+        }
+
+        .upload-file-info {
+            position: absolute;
+            bottom: 8px;
+            left: 8px;
+            right: 8px;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 6px 10px;
+            border-radius: 8px;
+            font-size: 12px;
+            color: var(--text);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .upload-remove {
+            color: var(--danger);
+            cursor: pointer;
+            font-weight: 700;
+        }
+
+        .upload-error {
+            color: var(--danger);
+            font-size: 12px;
+            margin-top: 6px;
         }
 
         .footer {
@@ -322,23 +413,56 @@
             </p>
         </div>
 
+        <div class="section" id="qualitySection">
+            <p class="section-title">Качество</p>
+            <div class="chip-toggle" id="qualityToggle">
+                <div class="chip active" data-quality="std">Standard</div>
+                <div class="chip" data-quality="pro">Pro</div>
+            </div>
+            <p class="muted" id="qualityHint">
+                Standard — быстрая генерация. Pro — повышенное качество, медленнее.
+            </p>
+        </div>
+
         <div class="section">
             <p class="section-title">Промт</p>
             <p class="label">Текстовый запрос</p>
             <textarea id="prompt" placeholder="Опишите сюжет или сцену..." maxlength="4000" enterkeyhint="done"
                 inputmode="text"></textarea>
             <div class="count" id="promptCount">0/4000</div>
+        </div>
 
-            <div class="upload" id="uploadBlock" style="display:none;">
-                <p class="label" style="margin:0 0 6px;">Загрузите изображение (JPG/PNG/WebP, до 10 МБ)</p>
-                <input type="file" id="imgInput" accept="image/*">
-                <div class="preview" id="imgPreview">Файл не выбран</div>
-                <p class="muted" style="margin-top: 8px;">
-                    Требования для изображения:<br>
-                    — формат JPG/PNG/WebP<br>
-                    — размер до 10 МБ<br>
-                    — разрешение не менее 300 px по стороне
-                </p>
+        <!-- Блок загрузки для image2video -->
+        <div class="section" id="imageUploadSection" style="display:none;">
+            <p class="section-title">Изображения</p>
+
+            <!-- Начальное изображение -->
+            <div class="upload-section">
+                <div class="upload-header">
+                    <span class="upload-title">Начальное изображение<br>(обязательно)</span>
+                    <span class="upload-hint">JPG/PNG • ≤ 10 МБ</span>
+                </div>
+                <div class="upload-box" id="startImageBox">
+                    <input type="file" id="startImageInput" accept="image/jpeg,image/png,image/webp">
+                    <div class="upload-icon">+</div>
+                    <div class="upload-text">Загрузить</div>
+                </div>
+                <div class="upload-error" id="startImageError"></div>
+            </div>
+
+            <!-- Конечное изображение -->
+            <div class="upload-section" style="margin-top: 16px;">
+                <div class="upload-header">
+                    <span class="upload-title">Конечное изображение<br>(необязательно)</span>
+                    <span class="upload-hint">JPG/PNG • ≤ 10 МБ</span>
+                </div>
+                <div class="upload-box" id="tailImageBox">
+                    <input type="file" id="tailImageInput" accept="image/jpeg,image/png,image/webp">
+                    <div class="upload-icon">+</div>
+                    <div class="upload-text">Загрузить</div>
+                </div>
+                <div class="upload-error" id="tailImageError"></div>
+                <p class="muted">При загрузке конечного изображения автоматически включается режим Pro.</p>
             </div>
         </div>
 
@@ -382,31 +506,54 @@
             if (tg) tg.showAlert(`Error: ${msg}\nLine: ${line}`);
             return false;
         };
+
         const params = new URLSearchParams(window.location.search);
         const MAX_IMAGE_SIZE = 10 * 1024 * 1024; // 10 MB
+
+        // Цены в USD за секунду (будут конвертированы в токены)
+        const PRICE_PER_SECOND_STD = 0.042;
+        const PRICE_PER_SECOND_PRO = 0.07;
+
         const state = {
             modelSlug: params.get("model") || "kling-v2-5-turbo",
-            mode: "text2video",
+            generationType: "text2video",
+            quality: "std", // std или pro
             prompt: "",
             aspectRatio: "16:9",
             duration: Number(params.get("duration")) || 5,
+            // Начальное изображение
             imageData: null,
             imageMime: null,
             imageName: null,
+            // Конечное изображение (tail)
+            imageTailData: null,
+            imageTailMime: null,
+            imageTailName: null,
+            // Pricing
             priceLabel: "—",
-            tokensPerSecond: null,
-            // Базовая длительность, для которой посчитан прайс в query/start_param; если нет — считаем 10 сек.
+            tokensPerSecondStd: null,
+            tokensPerSecondPro: null,
+            // Базовая длительность, для которой посчитан прайс в query/start_param
             priceBaseDuration: Number(params.get("price_base_duration")) || Number(params.get("duration")) || 10,
+            // Флаг: tail image загружен (автоматически pro)
+            tailImageLoaded: false,
         };
 
         const els = {
             modeToggle: document.getElementById("modeToggle"),
+            qualityToggle: document.getElementById("qualityToggle"),
+            qualitySection: document.getElementById("qualitySection"),
+            qualityHint: document.getElementById("qualityHint"),
             ratioGrid: document.getElementById("ratioGrid"),
             prompt: document.getElementById("prompt"),
             promptCount: document.getElementById("promptCount"),
-            uploadBlock: document.getElementById("uploadBlock"),
-            imgInput: document.getElementById("imgInput"),
-            imgPreview: document.getElementById("imgPreview"),
+            imageUploadSection: document.getElementById("imageUploadSection"),
+            startImageBox: document.getElementById("startImageBox"),
+            startImageInput: document.getElementById("startImageInput"),
+            startImageError: document.getElementById("startImageError"),
+            tailImageBox: document.getElementById("tailImageBox"),
+            tailImageInput: document.getElementById("tailImageInput"),
+            tailImageError: document.getElementById("tailImageError"),
             durationToggle: document.getElementById("durationToggle"),
             formatSection: document.getElementById("formatSection"),
             error: document.getElementById("error"),
@@ -464,23 +611,30 @@
             }
         }
 
-        function updatePriceForDuration() {
-            if (!Number.isFinite(state.tokensPerSecond)) {
-                setPriceLabel(state.priceLabel || "—");
+        function updatePrice() {
+            const tokensPerSec = state.quality === "pro" ? state.tokensPerSecondPro : state.tokensPerSecondStd;
+            if (!Number.isFinite(tokensPerSec)) {
+                setPriceLabel("—");
                 return;
             }
-            const total = state.tokensPerSecond * state.duration;
+            const total = tokensPerSec * state.duration;
             setPriceLabel(formatPrice(total));
         }
 
-        function switchMode(mode) {
-            state.mode = mode;
-            els.uploadBlock.style.display = mode === "image2video" ? "block" : "none";
-            els.formatSection.style.display = mode === "text2video" ? "block" : "none";
-            const req = document.getElementById("requirementsSection");
-            if (req) {
-                req.style.display = mode === "image2video" ? "block" : "none";
+        function setQuality(quality, updateUI = true) {
+            state.quality = quality;
+            if (updateUI) {
+                els.qualityToggle.querySelectorAll(".chip").forEach(btn => {
+                    btn.classList.toggle("active", btn.dataset.quality === quality);
+                });
             }
+            updatePrice();
+        }
+
+        function switchMode(mode) {
+            state.generationType = mode;
+            els.imageUploadSection.style.display = mode === "image2video" ? "block" : "none";
+            els.formatSection.style.display = mode === "text2video" ? "block" : "none";
         }
 
         function sanitizeDuration(value) {
@@ -494,6 +648,146 @@
             return allowed.includes(value) ? value : "16:9";
         }
 
+        // Обработка загрузки изображения
+        function handleImageUpload(file, type) {
+            const errorEl = type === "start" ? els.startImageError : els.tailImageError;
+            const boxEl = type === "start" ? els.startImageBox : els.tailImageBox;
+
+            errorEl.textContent = "";
+
+            if (!file) {
+                resetImage(type);
+                return;
+            }
+
+            if (!file.type.startsWith("image/")) {
+                errorEl.textContent = "Нужен JPG/PNG ≤ 10 МБ.";
+                resetImage(type);
+                return;
+            }
+
+            if (file.size > MAX_IMAGE_SIZE) {
+                errorEl.textContent = "Нужен JPG/PNG ≤ 10 МБ.";
+                resetImage(type);
+                return;
+            }
+
+            const reader = new FileReader();
+            reader.onload = () => {
+                const result = reader.result;
+                if (typeof result === "string") {
+                    const base64 = result.split(",")[1] || result;
+
+                    if (type === "start") {
+                        state.imageData = base64;
+                        state.imageMime = file.type;
+                        state.imageName = file.name;
+                    } else {
+                        state.imageTailData = base64;
+                        state.imageTailMime = file.type;
+                        state.imageTailName = file.name;
+                        state.tailImageLoaded = true;
+                        // Автоматически переключаем на Pro при загрузке tail image
+                        setQuality("pro");
+                        // Блокируем возможность переключить на std
+                        updateQualityToggleState();
+                    }
+
+                    // Обновляем UI бокса
+                    updateImageBoxUI(boxEl, file, result);
+                }
+            };
+            reader.onerror = () => {
+                errorEl.textContent = "Не удалось прочитать файл.";
+                resetImage(type);
+            };
+            reader.readAsDataURL(file);
+        }
+
+        function resetImage(type) {
+            const boxEl = type === "start" ? els.startImageBox : els.tailImageBox;
+            const inputEl = type === "start" ? els.startImageInput : els.tailImageInput;
+
+            if (type === "start") {
+                state.imageData = null;
+                state.imageMime = null;
+                state.imageName = null;
+            } else {
+                state.imageTailData = null;
+                state.imageTailMime = null;
+                state.imageTailName = null;
+                state.tailImageLoaded = false;
+                // Разблокируем переключатель качества
+                updateQualityToggleState();
+            }
+
+            inputEl.value = "";
+            resetImageBoxUI(boxEl);
+        }
+
+        function updateImageBoxUI(boxEl, file, dataUrl) {
+            boxEl.classList.add("has-file");
+            const sizeKb = (file.size / 1024).toFixed(1);
+            boxEl.innerHTML = `
+                <input type="file" accept="image/jpeg,image/png,image/webp">
+                <img class="upload-preview" src="${dataUrl}" alt="preview">
+                <div class="upload-file-info">
+                    <span>${file.name} · ${sizeKb} КБ</span>
+                    <span class="upload-remove">✕</span>
+                </div>
+            `;
+
+            // Добавляем обработчики для нового input и кнопки удаления
+            const newInput = boxEl.querySelector('input[type="file"]');
+            const removeBtn = boxEl.querySelector('.upload-remove');
+            const type = boxEl.id === "startImageBox" ? "start" : "tail";
+
+            newInput.addEventListener("change", (e) => {
+                handleImageUpload(e.target.files?.[0], type);
+            });
+
+            removeBtn.addEventListener("click", (e) => {
+                e.stopPropagation();
+                resetImage(type);
+            });
+        }
+
+        function resetImageBoxUI(boxEl) {
+            boxEl.classList.remove("has-file");
+            const type = boxEl.id === "startImageBox" ? "start" : "tail";
+            const inputId = type === "start" ? "startImageInput" : "tailImageInput";
+
+            boxEl.innerHTML = `
+                <input type="file" id="${inputId}" accept="image/jpeg,image/png,image/webp">
+                <div class="upload-icon">+</div>
+                <div class="upload-text">Загрузить</div>
+            `;
+
+            // Восстанавливаем ссылку на input
+            if (type === "start") {
+                els.startImageInput = document.getElementById("startImageInput");
+                els.startImageInput.addEventListener("change", (e) => {
+                    handleImageUpload(e.target.files?.[0], "start");
+                });
+            } else {
+                els.tailImageInput = document.getElementById("tailImageInput");
+                els.tailImageInput.addEventListener("change", (e) => {
+                    handleImageUpload(e.target.files?.[0], "tail");
+                });
+            }
+        }
+
+        function updateQualityToggleState() {
+            const stdChip = els.qualityToggle.querySelector('[data-quality="std"]');
+            if (state.tailImageLoaded) {
+                stdChip.classList.add("disabled");
+                els.qualityHint.textContent = "Конечное изображение требует режим Pro.";
+            } else {
+                stdChip.classList.remove("disabled");
+                els.qualityHint.textContent = "Standard — быстрая генерация. Pro — повышенное качество, медленнее.";
+            }
+        }
+
         function sendData() {
             try {
                 els.prompt.blur();
@@ -505,25 +799,35 @@
                     tg.showAlert("Введите промт");
                     return;
                 }
-                if (state.mode === "image2video" && !state.imageData) {
-                    tg.showAlert("Загрузите изображение для режима Image → Video.");
+                if (state.generationType === "image2video" && !state.imageData) {
+                    tg.showAlert("Загрузите начальное изображение для режима Image → Video.");
                     return;
                 }
 
                 const payload = {
                     kind: "kling_settings",
                     modelSlug: state.modelSlug,
-                    generationType: state.mode,
+                    generationType: state.generationType,
                     prompt: state.prompt,
                     duration: state.duration,
+                    mode: state.quality, // std или pro
                 };
-                if (state.mode === "text2video") {
+
+                if (state.generationType === "text2video") {
                     payload.aspectRatio = state.aspectRatio;
                 }
-                if (state.mode === "image2video") {
+
+                if (state.generationType === "image2video") {
                     payload.imageData = state.imageData;
                     payload.imageMime = state.imageMime;
                     payload.imageName = state.imageName;
+
+                    // Конечное изображение (если есть)
+                    if (state.imageTailData) {
+                        payload.imageTailData = state.imageTailData;
+                        payload.imageTailMime = state.imageTailMime;
+                        payload.imageTailName = state.imageTailName;
+                    }
                 }
 
                 const userId = tg.initDataUnsafe?.user?.id;
@@ -539,9 +843,9 @@
                 console.log("[Kling WebApp] Sending payload:", payload);
 
                 // keepalive ломается с крупными файлами (>64 КБ), отключаем для image2video с картинкой
-                const canUseKeepalive = state.mode !== "image2video" || !state.imageData;
+                const hasLargeData = state.imageData || state.imageTailData;
+                const canUseKeepalive = state.generationType !== "image2video" || !hasLargeData;
 
-                // Safer fetch with simple timeout race
                 const fetchPromise = fetch('/api/kling/webapp/submit', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -577,6 +881,7 @@
             }
         }
 
+        // Event listeners
         els.prompt.addEventListener("input", updateCounts);
 
         els.modeToggle.addEventListener("click", (e) => {
@@ -584,6 +889,13 @@
             if (!btn) return;
             setActive(els.modeToggle, btn);
             switchMode(btn.dataset.mode);
+        });
+
+        els.qualityToggle.addEventListener("click", (e) => {
+            const btn = e.target.closest(".chip");
+            if (!btn || btn.classList.contains("disabled")) return;
+            setActive(els.qualityToggle, btn);
+            setQuality(btn.dataset.quality, false);
         });
 
         els.ratioGrid.addEventListener("click", (e) => {
@@ -598,73 +910,46 @@
             if (!btn) return;
             setActive(els.durationToggle, btn);
             state.duration = sanitizeDuration(btn.dataset.duration);
-            updatePriceForDuration();
+            updatePrice();
         });
 
-        function resetImage() {
-            state.imageData = null;
-            state.imageMime = null;
-            state.imageName = null;
-            els.imgInput.value = "";
-            els.imgPreview.textContent = "Файл не выбран";
-        }
-
-        els.imgInput.addEventListener("change", (e) => {
-            try {
-                const file = e.target.files?.[0];
-                if (!file) {
-                    resetImage();
-                    return;
-                }
-                // Relaxed validation: allow any image type
-                if (!file.type.startsWith("image/")) {
-                    setError("Пожалуйста, выберите изображение.");
-                    resetImage();
-                    return;
-                }
-                if (file.size > MAX_IMAGE_SIZE) {
-                    setError("Изображение слишком большое (макс 10 МБ).");
-                    resetImage();
-                    return;
-                }
-                const reader = new FileReader();
-                reader.onload = () => {
-                    const result = reader.result;
-                    if (typeof result === "string") {
-                        const base64 = result.split(",")[1] || result;
-                        state.imageData = base64;
-                        state.imageMime = file.type;
-                        state.imageName = file.name;
-                        const sizeKb = (file.size / 1024).toFixed(1);
-                        els.imgPreview.textContent = `${file.name} · ${sizeKb} КБ`;
-                        setError("");
-                    }
-                };
-                reader.onerror = (e) => {
-                    setError("Не удалось прочитать файл. Попробуйте другое изображение.");
-                    resetImage();
-                };
-                reader.readAsDataURL(file);
-            } catch (err) {
-                console.error("File input error:", err);
-                setError("Ошибка при выборе файла: " + err.message);
-                resetImage();
-            }
+        els.startImageInput.addEventListener("change", (e) => {
+            handleImageUpload(e.target.files?.[0], "start");
         });
 
-        const priceFromQuery = new URLSearchParams(window.location.search).get("price");
+        els.tailImageInput.addEventListener("change", (e) => {
+            handleImageUpload(e.target.files?.[0], "tail");
+        });
+
+        // Инициализация цен
+        const priceFromQuery = params.get("price");
+        const priceProFromQuery = params.get("price_pro");
         const startParamRaw = tg?.initDataUnsafe?.start_param;
+
         let rawPrice = priceFromQuery;
+        let rawPricePro = priceProFromQuery;
+
         if (!rawPrice && startParamRaw && startParamRaw.startsWith("price=")) {
             rawPrice = startParamRaw.replace("price=", "");
         }
-        const baseTokens = parseTokens(rawPrice);
-        if (baseTokens !== null) {
+
+        const baseTokensStd = parseTokens(rawPrice);
+        const baseTokensPro = parseTokens(rawPricePro);
+
+        if (baseTokensStd !== null) {
             const baseDuration = Number.isFinite(state.priceBaseDuration) && state.priceBaseDuration > 0
                 ? state.priceBaseDuration
                 : state.duration;
-            state.tokensPerSecond = baseTokens / baseDuration;
-            updatePriceForDuration();
+            state.tokensPerSecondStd = baseTokensStd / baseDuration;
+
+            // Если pro цена не передана, рассчитываем пропорционально
+            if (baseTokensPro !== null) {
+                state.tokensPerSecondPro = baseTokensPro / baseDuration;
+            } else {
+                // Pro стоит примерно в 1.67 раза дороже (0.07 / 0.042)
+                state.tokensPerSecondPro = state.tokensPerSecondStd * (PRICE_PER_SECOND_PRO / PRICE_PER_SECOND_STD);
+            }
+            updatePrice();
         } else {
             setPriceLabel("—");
         }
