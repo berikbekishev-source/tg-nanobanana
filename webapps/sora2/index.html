@@ -325,13 +325,34 @@
             aspectRatio: "16:9",
             duration: 10,
             resolution: "720p",
-            imageData: null,
+            // Изображение хранит URL после presigned upload
+            imageUrl: null,
+            imageSize: 0,
             imageMime: null,
             imageName: null,
+            imageUploading: false,
             priceLabel: "—",
             tokensPerSecond: null,
             priceBaseDuration: initialPriceBaseDuration,
         };
+
+        // Загрузка изображения через presigned URL в Supabase
+        async function uploadToSupabase(file) {
+            const resp = await fetch('/api/storage/presigned-upload', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ content_type: file.type })
+            });
+            if (!resp.ok) throw new Error('Не удалось получить URL');
+            const { upload_url, public_url } = await resp.json();
+            const upload = await fetch(upload_url, {
+                method: 'PUT',
+                headers: { 'Content-Type': file.type },
+                body: file
+            });
+            if (!upload.ok) throw new Error('Не удалось загрузить');
+            return public_url;
+        }
 
         const els = {
             modeToggle: document.getElementById("modeToggle"),
@@ -421,10 +442,18 @@
                     if (!tg) alert("Введите промт и откройте страницу через Telegram.");
                     return;
                 }
-                if (state.generationType === "image2video" && !state.imageData) {
-                    tg?.showAlert("Загрузите изображение для режима Изображение → Видео.");
-                    if (!tg) alert("Загрузите изображение для режима Изображение → Видео.");
-                    return;
+
+                // Проверка изображения для image2video
+                if (state.generationType === "image2video") {
+                    if (!state.imageUrl) {
+                        tg?.showAlert("Загрузите изображение для режима Изображение → Видео.");
+                        if (!tg) alert("Загрузите изображение для режима Изображение → Видео.");
+                        return;
+                    }
+                    if (state.imageUploading) {
+                        tg?.showAlert("Дождитесь окончания загрузки изображения.");
+                        return;
+                    }
                 }
 
                 const payload = {
@@ -439,7 +468,9 @@
                 };
 
                 if (state.generationType === "image2video") {
-                    payload.imageData = state.imageData;
+                    // Отправляем URL вместо base64
+                    payload.imageUrl = state.imageUrl;
+                    payload.imageSize = state.imageSize;
                     payload.imageMime = state.imageMime;
                     payload.imageName = state.imageName;
                 }
@@ -458,41 +489,18 @@
                 console.log("[Sora2 WebApp] Sending payload:", JSON.stringify(payload));
                 tg.MainButton.showProgress();
 
-                // keepalive ломается с крупными файлами (>64 КБ), отключаем для image2video
-                const canUseKeepalive = state.generationType !== "image2video" || !state.imageData;
-
-                const fetchPromise = fetch("/api/sora2/webapp/submit", {
+                // Теперь payload маленький - всегда используем keepalive
+                fetch("/api/sora2/webapp/submit", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({ user_id: userId, data: payload }),
-                    keepalive: canUseKeepalive
+                    keepalive: true
                 });
 
-                // 30 second timeout для загрузки изображений
-                const timeoutPromise = new Promise((_, reject) =>
-                    setTimeout(() => reject(new Error("Время ожидания истекло")), 30000)
-                );
+                // Сразу закрываем webapp - не ждём ответа
+                console.log("[Sora2 WebApp] Request sent, closing immediately...");
+                tg.close();
 
-                Promise.race([fetchPromise, timeoutPromise])
-                    .then((response) => {
-                        if (response.ok) {
-                            console.log("[Sora2 WebApp] Success, closing...");
-                            tg.close();
-                        } else {
-                            tg.MainButton.hideProgress();
-                            tg.showAlert("Ошибка сервера. Попробуйте позже.");
-                            console.error("[Sora2 WebApp] Server error", response.status);
-                        }
-                    })
-                    .catch((error) => {
-                        tg.MainButton.hideProgress();
-                        if (error.message.includes("Время ожидания")) {
-                            tg.showAlert("Время ожидания истекло. Попробуйте еще раз.");
-                        } else {
-                            tg.showAlert("Ошибка сети: " + error.message);
-                        }
-                        console.error("[Sora2 WebApp] Network error", error);
-                    });
             } catch (error) {
                 console.error("[Sora2 WebApp] Exception:", error);
                 if (tg) {
@@ -540,14 +548,16 @@
 
         const MAX_IMAGE_SIZE = 10 * 1024 * 1024; // 10 MB
         function resetImage() {
-            state.imageData = null;
+            state.imageUrl = null;
+            state.imageSize = 0;
             state.imageMime = null;
             state.imageName = null;
+            state.imageUploading = false;
             els.imgInput.value = "";
             els.imgPreview.textContent = "Файл не выбран";
         }
 
-        els.imgInput.addEventListener("change", (e) => {
+        els.imgInput.addEventListener("change", async (e) => {
             try {
                 const file = e.target.files?.[0];
                 if (!file) {
@@ -564,30 +574,29 @@
                     resetImage();
                     return;
                 }
-                const reader = new FileReader();
-                reader.onload = () => {
-                    try {
-                        const result = reader.result;
-                        if (typeof result === "string") {
-                            const base64 = result.split(",")[1] || result;
-                            state.imageData = base64;
-                            state.imageMime = file.type;
-                            state.imageName = file.name;
-                            const sizeKb = (file.size / 1024).toFixed(1);
-                            els.imgPreview.textContent = `${file.name} · ${sizeKb} КБ`;
-                            setError("");
-                        }
-                    } catch (err) {
-                        console.error("[Sora2 WebApp] File parse error:", err);
-                        setError("Не удалось обработать файл.");
-                        resetImage();
-                    }
-                };
-                reader.onerror = () => {
-                    setError("Не удалось прочитать файл.");
+
+                // Показываем статус загрузки
+                els.imgPreview.textContent = "Загрузка...";
+                state.imageUploading = true;
+                state.imageMime = file.type;
+                state.imageName = file.name;
+                state.imageSize = file.size;
+
+                try {
+                    console.log("[Sora2 WebApp] Uploading image to Supabase...");
+                    const publicUrl = await uploadToSupabase(file);
+                    console.log("[Sora2 WebApp] Upload complete:", publicUrl);
+
+                    state.imageUrl = publicUrl;
+                    state.imageUploading = false;
+                    const sizeKb = (file.size / 1024).toFixed(1);
+                    els.imgPreview.textContent = `${file.name} · ${sizeKb} КБ`;
+                    setError("");
+                } catch (err) {
+                    console.error("[Sora2 WebApp] Upload error:", err);
+                    setError("Ошибка загрузки. Попробуйте ещё раз.");
                     resetImage();
-                };
-                reader.readAsDataURL(file);
+                }
             } catch (err) {
                 console.error("[Sora2 WebApp] File load error:", err);
                 setError("Не удалось загрузить файл. Попробуйте другой.");

@@ -349,12 +349,31 @@
             prompt: "",
             aspectRatio: "9:16",
             resolution: "720p",
-            start: { data: null, mime: null, name: null },
-            end: { data: null, mime: null, name: null },
+            // Изображения хранят URL после presigned upload
+            start: { url: null, size: 0, mime: null, name: null, uploading: false },
+            end: { url: null, size: 0, mime: null, name: null, uploading: false },
             priceLabel: "—",
             tokensPerSecond: null,
             priceBaseDuration: 8,
         };
+
+        // Загрузка изображения через presigned URL в Supabase
+        async function uploadToSupabase(file) {
+            const resp = await fetch('/api/storage/presigned-upload', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ content_type: file.type })
+            });
+            if (!resp.ok) throw new Error('Не удалось получить URL');
+            const { upload_url, public_url } = await resp.json();
+            const upload = await fetch(upload_url, {
+                method: 'PUT',
+                headers: { 'Content-Type': file.type },
+                body: file
+            });
+            if (!upload.ok) throw new Error('Не удалось загрузить');
+            return public_url;
+        }
 
         const els = {
             modeToggle: document.getElementById("modeToggle"),
@@ -439,8 +458,8 @@
         function toggleUploads(show) {
             els.uploadsSection.style.display = show ? "block" : "none";
             if (!show) {
-                state.start = { data: null, mime: null, name: null };
-                state.end = { data: null, mime: null, name: null };
+                state.start = { url: null, size: 0, mime: null, name: null, uploading: false };
+                state.end = { url: null, size: 0, mime: null, name: null, uploading: false };
                 els.startInput.value = "";
                 els.endInput.value = "";
                 els.startPreview.style.display = "none";
@@ -454,10 +473,10 @@
             return `${(bytes / 1024).toFixed(1)} КБ`;
         }
 
-        function handleFile(inputEl, target, previewEl, thumbEl, infoEl) {
+        async function handleFile(inputEl, target, previewEl, thumbEl, infoEl) {
             const file = inputEl.files?.[0];
             if (!file) {
-                state[target] = { data: null, mime: null, name: null };
+                state[target] = { url: null, size: 0, mime: null, name: null, uploading: false };
                 previewEl.style.display = "none";
                 return;
             }
@@ -465,62 +484,69 @@
                 showAlert("Нужен файл изображения.");
                 inputEl.value = "";
                 previewEl.style.display = "none";
-                state[target] = { data: null, mime: null, name: null };
+                state[target] = { url: null, size: 0, mime: null, name: null, uploading: false };
                 return;
             }
             if (file.size > MAX_BYTES) {
                 showAlert("Изображение слишком большое (макс 5 МБ).");
                 inputEl.value = "";
                 previewEl.style.display = "none";
-                state[target] = { data: null, mime: null, name: null };
+                state[target] = { url: null, size: 0, mime: null, name: null, uploading: false };
                 return;
             }
 
+            // Показываем превью сразу
             const reader = new FileReader();
             reader.onload = () => {
-                const result = reader.result;
-                if (typeof result === "string") {
-                    const base64 = result.split(",")[1] || result;
-                    state[target] = { data: base64, mime: file.type, name: file.name };
-                    thumbEl.style.backgroundImage = `url(${result})`;
-                    infoEl.textContent = `${file.name} · ${formatSize(file.size)}`;
-                    previewEl.style.display = "grid";
-                }
-            };
-            reader.onerror = () => {
-                showAlert("Не удалось прочитать файл. Попробуйте выбрать другой.");
-                inputEl.value = "";
-                previewEl.style.display = "none";
-                state[target] = { data: null, mime: null, name: null };
+                thumbEl.style.backgroundImage = `url(${reader.result})`;
+                infoEl.textContent = "Загрузка...";
+                previewEl.style.display = "grid";
             };
             reader.readAsDataURL(file);
-        }
 
-        function buildPayload(prompt) {
-            const paramsPayload = {
-                aspectRatio: state.aspectRatio,
-            };
+            state[target] = { url: null, size: file.size, mime: file.type, name: file.name, uploading: true };
 
-            if (state.mode === "image2video") {
-                paramsPayload.startImage = state.start.data;
-                paramsPayload.startImageMime = state.start.mime;
-                paramsPayload.startImageName = state.start.name;
-                if (state.end.data) {
-                paramsPayload.endImage = state.end.data;
-                paramsPayload.endImageMime = state.end.mime;
-                paramsPayload.endImageName = state.end.name;
+            try {
+                console.log(`[Veo WebApp] Uploading ${target} image...`);
+                const publicUrl = await uploadToSupabase(file);
+                console.log(`[Veo WebApp] Upload complete: ${publicUrl}`);
+                state[target] = { url: publicUrl, size: file.size, mime: file.type, name: file.name, uploading: false };
+                infoEl.textContent = `${file.name} · ${formatSize(file.size)}`;
+            } catch (error) {
+                console.error(`[Veo WebApp] Upload error:`, error);
+                showAlert("Ошибка загрузки. Попробуйте ещё раз.");
+                inputEl.value = "";
+                previewEl.style.display = "none";
+                state[target] = { url: null, size: 0, mime: null, name: null, uploading: false };
             }
         }
 
-        paramsPayload.resolution = state.resolution;
-
-        return {
-            kind: "veo_video_settings",
-            modelSlug: state.modelSlug,
-            mode: state.mode,
+        function buildPayload(prompt) {
+            const payload = {
+                kind: "veo_video_settings",
+                modelSlug: state.modelSlug,
+                generationType: state.mode, // backend ожидает generationType
                 prompt,
-                params: paramsPayload,
+                aspectRatio: state.aspectRatio,
+                resolution: state.resolution,
             };
+
+            if (state.mode === "image2video") {
+                // Отправляем URL вместо base64
+                payload.imageUrl = state.start.url;
+                payload.imageSize = state.start.size;
+                payload.imageMime = state.start.mime;
+                payload.imageName = state.start.name;
+
+                if (state.end.url) {
+                    payload.imageTailUrl = state.end.url;
+                    payload.imageTailSize = state.end.size;
+                    payload.imageTailMime = state.end.mime;
+                    payload.imageTailName = state.end.name;
+                }
+            }
+
+            return payload;
         }
 
         function sendData() {
@@ -535,9 +561,17 @@
                     showAlert(`Промт слишком длинный (> ${MAX_PROMPT} символов).`);
                     return;
                 }
-                if (state.mode === "image2video" && !state.start.data) {
-                    showAlert("Загрузите начальный кадр (до 5 МБ).");
-                    return;
+
+                // Проверка изображения для image2video
+                if (state.mode === "image2video") {
+                    if (!state.start.url) {
+                        showAlert("Загрузите начальный кадр (до 5 МБ).");
+                        return;
+                    }
+                    if (state.start.uploading || state.end.uploading) {
+                        showAlert("Дождитесь окончания загрузки изображения.");
+                        return;
+                    }
                 }
 
                 const payload = buildPayload(prompt);
@@ -556,10 +590,8 @@
                 console.log("[Veo WebApp] Sending payload:", JSON.stringify(payload));
                 tg.MainButton?.showProgress();
 
-                // keepalive ломается с крупными файлами (>64 КБ), отключаем для image2video
-                const canUseKeepalive = state.mode !== "image2video" || !state.start.data;
-
-                const fetchPromise = fetch("/api/veo/webapp/submit", {
+                // Теперь payload маленький - всегда используем keepalive
+                fetch("/api/veo/webapp/submit", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({
@@ -567,34 +599,13 @@
                         data: payload,
                         initData: tg.initData || "",
                     }),
-                    keepalive: canUseKeepalive
+                    keepalive: true
                 });
 
-                // 30 second timeout для загрузки изображений
-                const timeoutPromise = new Promise((_, reject) =>
-                    setTimeout(() => reject(new Error("Время ожидания истекло")), 30000)
-                );
+                // Сразу закрываем webapp - не ждём ответа
+                console.log("[Veo WebApp] Request sent, closing immediately...");
+                tg.close();
 
-                Promise.race([fetchPromise, timeoutPromise])
-                    .then((res) => {
-                        if (res.ok) {
-                            console.log("[Veo WebApp] Success, closing...");
-                            tg.close();
-                        } else {
-                            tg.MainButton?.hideProgress();
-                            showAlert("Ошибка сервера. Попробуйте позже.");
-                            console.error("[Veo WebApp] Server error", res.status);
-                        }
-                    })
-                    .catch((e) => {
-                        tg.MainButton?.hideProgress();
-                        if (e.message.includes("Время ожидания")) {
-                            showAlert("Время ожидания истекло. Попробуйте еще раз.");
-                        } else {
-                            showAlert("Ошибка сети: " + e.message);
-                        }
-                        console.error("[Veo WebApp] Network error:", e);
-                    });
             } catch (e) {
                 console.error("[Veo WebApp] Exception:", e);
                 if (tg) {

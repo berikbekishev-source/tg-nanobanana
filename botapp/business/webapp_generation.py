@@ -209,92 +209,115 @@ def process_kling_webapp(user_id: int, payload: Dict[str, Any]) -> Optional[int]
 
     # Обработка изображения для image2video
     if generation_type == "image2video":
-        image_b64 = payload.get("imageData")
-        if not image_b64:
-            _send_error_message(user_id, "❌ Загрузите изображение в WebApp для режима Image → Video.")
-            return None
-
-        try:
-            raw = base64.b64decode(image_b64)
-        except Exception:
-            _send_error_message(user_id, "❌ Не удалось прочитать изображение. Загрузите файл ещё раз.")
-            return None
-
-        if len(raw) > MAX_IMAGE_BYTES:
-            _send_error_message(user_id, "❌ Изображение слишком большое. Максимум 10 МБ.")
-            return None
-
+        # Приоритет: imageUrl (presigned upload) > imageData (base64)
+        image_url = payload.get("imageUrl")
         mime = payload.get("imageMime") or "image/png"
         file_name = payload.get("imageName") or "image.png"
+        image_size = 0
 
-        # Конвертируем и загружаем в Supabase
-        png_bytes = _convert_to_png_bytes(raw, mime)
-        try:
-            upload_obj = supabase_upload_png(png_bytes)
-        except Exception as exc:
-            logger.error("Ошибка загрузки в Supabase: %s", exc)
-            ErrorTracker.log(
-                origin=BotErrorEvent.Origin.CELERY,
-                severity=BotErrorEvent.Severity.WARNING,
-                handler="webapp_generation.process_kling_webapp",
-                chat_id=user_id,
-                payload={"reason": "supabase_upload_failed"},
-                exc=exc,
-            )
-            _send_error_message(user_id, "❌ Не удалось загрузить изображение. Попробуйте ещё раз.")
-            return None
+        if image_url:
+            # Новый способ: изображение уже загружено через presigned URL
+            logger.info(f"[Kling WebApp] Using presigned imageUrl for user {user_id}")
+            image_size = payload.get("imageSize") or 0
+        else:
+            # Старый способ: base64 данные, загружаем в Supabase
+            image_b64 = payload.get("imageData")
+            if not image_b64:
+                _send_error_message(user_id, "❌ Загрузите изображение в WebApp для режима Image → Video.")
+                return None
 
-        image_url = _extract_public_url(upload_obj)
-        if not image_url:
-            _send_error_message(user_id, "❌ Не удалось получить ссылку на изображение. Попробуйте снова.")
-            return None
+            try:
+                raw = base64.b64decode(image_b64)
+            except Exception:
+                _send_error_message(user_id, "❌ Не удалось прочитать изображение. Загрузите файл ещё раз.")
+                return None
+
+            if len(raw) > MAX_IMAGE_BYTES:
+                _send_error_message(user_id, "❌ Изображение слишком большое. Максимум 10 МБ.")
+                return None
+
+            image_size = len(raw)
+
+            # Конвертируем и загружаем в Supabase
+            png_bytes = _convert_to_png_bytes(raw, mime)
+            try:
+                upload_obj = supabase_upload_png(png_bytes)
+            except Exception as exc:
+                logger.error("Ошибка загрузки в Supabase: %s", exc)
+                ErrorTracker.log(
+                    origin=BotErrorEvent.Origin.CELERY,
+                    severity=BotErrorEvent.Severity.WARNING,
+                    handler="webapp_generation.process_kling_webapp",
+                    chat_id=user_id,
+                    payload={"reason": "supabase_upload_failed"},
+                    exc=exc,
+                )
+                _send_error_message(user_id, "❌ Не удалось загрузить изображение. Попробуйте ещё раз.")
+                return None
+
+            image_url = _extract_public_url(upload_obj)
+            if not image_url:
+                _send_error_message(user_id, "❌ Не удалось получить ссылку на изображение. Попробуйте снова.")
+                return None
 
         params["image_url"] = image_url
         source_media = {
             "file_name": file_name,
             "mime_type": mime,
             "storage_url": image_url,
-            "size_bytes": len(raw),
+            "size_bytes": image_size,
             "source": "kling_webapp",
         }
 
         # Обработка конечного изображения (tail) - только для v2-5-turbo и v2-1
+        # Приоритет: imageTailUrl (presigned) > imageTailData (base64)
+        tail_image_url = payload.get("imageTailUrl")
         tail_image_b64 = payload.get("imageTailData")
-        if tail_image_b64 and model_slug not in {"kling-v2-1-master", "kling-v2-6"}:
-            try:
-                tail_raw = base64.b64decode(tail_image_b64)
-            except Exception:
-                _send_error_message(user_id, "❌ Не удалось прочитать конечное изображение. Загрузите файл ещё раз.")
-                return None
 
-            if len(tail_raw) > MAX_IMAGE_BYTES:
-                _send_error_message(user_id, "❌ Конечное изображение слишком большое. Максимум 10 МБ.")
-                return None
-
+        if (tail_image_url or tail_image_b64) and model_slug not in {"kling-v2-1-master", "kling-v2-6"}:
             tail_mime = payload.get("imageTailMime") or "image/png"
             tail_file_name = payload.get("imageTailName") or "tail_image.png"
+            tail_size = 0
 
-            # Конвертируем и загружаем tail image в Supabase
-            tail_png_bytes = _convert_to_png_bytes(tail_raw, tail_mime)
-            try:
-                tail_upload_obj = supabase_upload_png(tail_png_bytes)
-            except Exception as exc:
-                logger.error("Ошибка загрузки tail image в Supabase: %s", exc)
-                ErrorTracker.log(
-                    origin=BotErrorEvent.Origin.CELERY,
-                    severity=BotErrorEvent.Severity.WARNING,
-                    handler="webapp_generation.process_kling_webapp",
-                    chat_id=user_id,
-                    payload={"reason": "supabase_upload_failed", "image_type": "tail"},
-                    exc=exc,
-                )
-                _send_error_message(user_id, "❌ Не удалось загрузить конечное изображение. Попробуйте ещё раз.")
-                return None
+            if tail_image_url:
+                # Новый способ: tail image уже загружен через presigned URL
+                logger.info(f"[Kling WebApp] Using presigned imageTailUrl for user {user_id}")
+                tail_size = payload.get("imageTailSize") or 0
+            else:
+                # Старый способ: base64 данные
+                try:
+                    tail_raw = base64.b64decode(tail_image_b64)
+                except Exception:
+                    _send_error_message(user_id, "❌ Не удалось прочитать конечное изображение. Загрузите файл ещё раз.")
+                    return None
 
-            tail_image_url = _extract_public_url(tail_upload_obj)
-            if not tail_image_url:
-                _send_error_message(user_id, "❌ Не удалось получить ссылку на конечное изображение. Попробуйте снова.")
-                return None
+                if len(tail_raw) > MAX_IMAGE_BYTES:
+                    _send_error_message(user_id, "❌ Конечное изображение слишком большое. Максимум 10 МБ.")
+                    return None
+
+                tail_size = len(tail_raw)
+
+                # Конвертируем и загружаем tail image в Supabase
+                tail_png_bytes = _convert_to_png_bytes(tail_raw, tail_mime)
+                try:
+                    tail_upload_obj = supabase_upload_png(tail_png_bytes)
+                except Exception as exc:
+                    logger.error("Ошибка загрузки tail image в Supabase: %s", exc)
+                    ErrorTracker.log(
+                        origin=BotErrorEvent.Origin.CELERY,
+                        severity=BotErrorEvent.Severity.WARNING,
+                        handler="webapp_generation.process_kling_webapp",
+                        chat_id=user_id,
+                        payload={"reason": "supabase_upload_failed", "image_type": "tail"},
+                        exc=exc,
+                    )
+                    _send_error_message(user_id, "❌ Не удалось загрузить конечное изображение. Попробуйте ещё раз.")
+                    return None
+
+                tail_image_url = _extract_public_url(tail_upload_obj)
+                if not tail_image_url:
+                    _send_error_message(user_id, "❌ Не удалось получить ссылку на конечное изображение. Попробуйте снова.")
+                    return None
 
             params["image_tail"] = tail_image_url
             # При наличии tail image принудительно ставим pro
@@ -305,7 +328,7 @@ def process_kling_webapp(user_id: int, payload: Dict[str, Any]) -> Optional[int]
             source_media["tail_file_name"] = tail_file_name
             source_media["tail_mime_type"] = tail_mime
             source_media["tail_storage_url"] = tail_image_url
-            source_media["tail_size_bytes"] = len(tail_raw)
+            source_media["tail_size_bytes"] = tail_size
 
     # Определяем модель для расчёта стоимости
     pricing_model = model
@@ -452,43 +475,54 @@ def process_veo_webapp(user_id: int, payload: Dict[str, Any]) -> Optional[int]:
 
     # Обработка изображения для image2video
     if generation_type == "image2video":
-        image_b64 = payload.get("imageData")
-        if not image_b64:
-            _send_error_message(user_id, "❌ Загрузите изображение для режима Image → Video.")
-            return None
-
-        try:
-            raw = base64.b64decode(image_b64)
-        except Exception:
-            _send_error_message(user_id, "❌ Не удалось прочитать изображение. Загрузите файл ещё раз.")
-            return None
-
-        if len(raw) > MAX_IMAGE_BYTES:
-            _send_error_message(user_id, "❌ Изображение слишком большое. Максимум 10 МБ.")
-            return None
-
+        # Приоритет: imageUrl (presigned upload) > imageData (base64)
+        image_url = payload.get("imageUrl")
         mime = payload.get("imageMime") or "image/png"
         file_name = payload.get("imageName") or "image.png"
+        image_size = 0
 
-        png_bytes = _convert_to_png_bytes(raw, mime)
-        try:
-            upload_obj = supabase_upload_png(png_bytes)
-        except Exception as exc:
-            logger.error("Ошибка загрузки в Supabase: %s", exc)
-            _send_error_message(user_id, "❌ Не удалось загрузить изображение. Попробуйте ещё раз.")
-            return None
+        if image_url:
+            # Новый способ: изображение уже загружено через presigned URL
+            logger.info(f"[Veo WebApp] Using presigned imageUrl for user {user_id}")
+            image_size = payload.get("imageSize") or 0
+        else:
+            # Старый способ: base64 данные, загружаем в Supabase
+            image_b64 = payload.get("imageData")
+            if not image_b64:
+                _send_error_message(user_id, "❌ Загрузите изображение для режима Image → Video.")
+                return None
 
-        image_url = _extract_public_url(upload_obj)
-        if not image_url:
-            _send_error_message(user_id, "❌ Не удалось получить ссылку на изображение. Попробуйте снова.")
-            return None
+            try:
+                raw = base64.b64decode(image_b64)
+            except Exception:
+                _send_error_message(user_id, "❌ Не удалось прочитать изображение. Загрузите файл ещё раз.")
+                return None
+
+            if len(raw) > MAX_IMAGE_BYTES:
+                _send_error_message(user_id, "❌ Изображение слишком большое. Максимум 10 МБ.")
+                return None
+
+            image_size = len(raw)
+
+            png_bytes = _convert_to_png_bytes(raw, mime)
+            try:
+                upload_obj = supabase_upload_png(png_bytes)
+            except Exception as exc:
+                logger.error("Ошибка загрузки в Supabase: %s", exc)
+                _send_error_message(user_id, "❌ Не удалось загрузить изображение. Попробуйте ещё раз.")
+                return None
+
+            image_url = _extract_public_url(upload_obj)
+            if not image_url:
+                _send_error_message(user_id, "❌ Не удалось получить ссылку на изображение. Попробуйте снова.")
+                return None
 
         params["image_url"] = image_url
         source_media = {
             "file_name": file_name,
             "mime_type": mime,
             "storage_url": image_url,
-            "size_bytes": len(raw),
+            "size_bytes": image_size,
             "source": "veo_webapp",
         }
 
@@ -594,43 +628,54 @@ def process_sora_webapp(user_id: int, payload: Dict[str, Any]) -> Optional[int]:
     source_media = None
 
     if generation_type == "image2video":
-        image_b64 = payload.get("imageData")
-        if not image_b64:
-            _send_error_message(user_id, "❌ Загрузите изображение для режима Image → Video.")
-            return None
-
-        try:
-            raw = base64.b64decode(image_b64)
-        except Exception:
-            _send_error_message(user_id, "❌ Не удалось прочитать изображение. Загрузите файл ещё раз.")
-            return None
-
-        if len(raw) > MAX_IMAGE_BYTES:
-            _send_error_message(user_id, "❌ Изображение слишком большое. Максимум 10 МБ.")
-            return None
-
+        # Приоритет: imageUrl (presigned upload) > imageData (base64)
+        image_url = payload.get("imageUrl")
         mime = payload.get("imageMime") or "image/png"
         file_name = payload.get("imageName") or "image.png"
+        image_size = 0
 
-        png_bytes = _convert_to_png_bytes(raw, mime)
-        try:
-            upload_obj = supabase_upload_png(png_bytes)
-        except Exception as exc:
-            logger.error("Ошибка загрузки в Supabase: %s", exc)
-            _send_error_message(user_id, "❌ Не удалось загрузить изображение. Попробуйте ещё раз.")
-            return None
+        if image_url:
+            # Новый способ: изображение уже загружено через presigned URL
+            logger.info(f"[Sora WebApp] Using presigned imageUrl for user {user_id}")
+            image_size = payload.get("imageSize") or 0
+        else:
+            # Старый способ: base64 данные, загружаем в Supabase
+            image_b64 = payload.get("imageData")
+            if not image_b64:
+                _send_error_message(user_id, "❌ Загрузите изображение для режима Image → Video.")
+                return None
 
-        image_url = _extract_public_url(upload_obj)
-        if not image_url:
-            _send_error_message(user_id, "❌ Не удалось получить ссылку на изображение. Попробуйте снова.")
-            return None
+            try:
+                raw = base64.b64decode(image_b64)
+            except Exception:
+                _send_error_message(user_id, "❌ Не удалось прочитать изображение. Загрузите файл ещё раз.")
+                return None
+
+            if len(raw) > MAX_IMAGE_BYTES:
+                _send_error_message(user_id, "❌ Изображение слишком большое. Максимум 10 МБ.")
+                return None
+
+            image_size = len(raw)
+
+            png_bytes = _convert_to_png_bytes(raw, mime)
+            try:
+                upload_obj = supabase_upload_png(png_bytes)
+            except Exception as exc:
+                logger.error("Ошибка загрузки в Supabase: %s", exc)
+                _send_error_message(user_id, "❌ Не удалось загрузить изображение. Попробуйте ещё раз.")
+                return None
+
+            image_url = _extract_public_url(upload_obj)
+            if not image_url:
+                _send_error_message(user_id, "❌ Не удалось получить ссылку на изображение. Попробуйте снова.")
+                return None
 
         params["image_url"] = image_url
         source_media = {
             "file_name": file_name,
             "mime_type": mime,
             "storage_url": image_url,
-            "size_bytes": len(raw),
+            "size_bytes": image_size,
             "source": "sora_webapp",
         }
 
@@ -731,43 +776,54 @@ def process_runway_webapp(user_id: int, payload: Dict[str, Any]) -> Optional[int
     source_media = None
 
     if generation_type == "image2video":
-        image_b64 = payload.get("imageData")
-        if not image_b64:
-            _send_error_message(user_id, "❌ Загрузите изображение для режима Image → Video.")
-            return None
-
-        try:
-            raw = base64.b64decode(image_b64)
-        except Exception:
-            _send_error_message(user_id, "❌ Не удалось прочитать изображение. Загрузите файл ещё раз.")
-            return None
-
-        if len(raw) > MAX_IMAGE_BYTES:
-            _send_error_message(user_id, "❌ Изображение слишком большое. Максимум 10 МБ.")
-            return None
-
+        # Приоритет: imageUrl (presigned upload) > imageData (base64)
+        image_url = payload.get("imageUrl")
         mime = payload.get("imageMime") or "image/png"
         file_name = payload.get("imageName") or "image.png"
+        image_size = 0
 
-        png_bytes = _convert_to_png_bytes(raw, mime)
-        try:
-            upload_obj = supabase_upload_png(png_bytes)
-        except Exception as exc:
-            logger.error("Ошибка загрузки в Supabase: %s", exc)
-            _send_error_message(user_id, "❌ Не удалось загрузить изображение. Попробуйте ещё раз.")
-            return None
+        if image_url:
+            # Новый способ: изображение уже загружено через presigned URL
+            logger.info(f"[Runway WebApp] Using presigned imageUrl for user {user_id}")
+            image_size = payload.get("imageSize") or 0
+        else:
+            # Старый способ: base64 данные, загружаем в Supabase
+            image_b64 = payload.get("imageData")
+            if not image_b64:
+                _send_error_message(user_id, "❌ Загрузите изображение для режима Image → Video.")
+                return None
 
-        image_url = _extract_public_url(upload_obj)
-        if not image_url:
-            _send_error_message(user_id, "❌ Не удалось получить ссылку на изображение. Попробуйте снова.")
-            return None
+            try:
+                raw = base64.b64decode(image_b64)
+            except Exception:
+                _send_error_message(user_id, "❌ Не удалось прочитать изображение. Загрузите файл ещё раз.")
+                return None
+
+            if len(raw) > MAX_IMAGE_BYTES:
+                _send_error_message(user_id, "❌ Изображение слишком большое. Максимум 10 МБ.")
+                return None
+
+            image_size = len(raw)
+
+            png_bytes = _convert_to_png_bytes(raw, mime)
+            try:
+                upload_obj = supabase_upload_png(png_bytes)
+            except Exception as exc:
+                logger.error("Ошибка загрузки в Supabase: %s", exc)
+                _send_error_message(user_id, "❌ Не удалось загрузить изображение. Попробуйте ещё раз.")
+                return None
+
+            image_url = _extract_public_url(upload_obj)
+            if not image_url:
+                _send_error_message(user_id, "❌ Не удалось получить ссылку на изображение. Попробуйте снова.")
+                return None
 
         params["image_url"] = image_url
         source_media = {
             "file_name": file_name,
             "mime_type": mime,
             "storage_url": image_url,
-            "size_bytes": len(raw),
+            "size_bytes": image_size,
             "source": "runway_webapp",
         }
 
