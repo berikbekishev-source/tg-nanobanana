@@ -532,8 +532,6 @@
             priceLabel: "—",
             tokensPerSecondStd: null,
             tokensPerSecondPro: null,
-            // Базовая длительность, для которой посчитан прайс в query/start_param
-            priceBaseDuration: Number(params.get("price_base_duration")) || Number(params.get("duration")) || 10,
             // Флаг: tail image загружен (автоматически pro)
             tailImageLoaded: false,
         };
@@ -559,9 +557,6 @@
         };
 
         state.duration = sanitizeDuration(state.duration);
-        if (!Number.isFinite(state.priceBaseDuration) || state.priceBaseDuration <= 0) {
-            state.priceBaseDuration = 10;
-        }
 
         function setActive(container, target) {
             container.querySelectorAll(".chip, .pill").forEach(btn => btn.classList.remove("active"));
@@ -920,30 +915,19 @@
             handleImageUpload(e.target.files?.[0], "tail");
         });
 
-        // Инициализация цен
-        const priceFromQuery = params.get("price");
-        const priceProFromQuery = params.get("price_pro");
-        const startParamRaw = tg?.initDataUnsafe?.start_param;
+        // Инициализация цен (цена за 1 секунду передаётся напрямую)
+        const pricePerSecFromQuery = params.get("price_per_sec");
+        const priceProPerSecFromQuery = params.get("price_pro_per_sec");
 
-        let rawPrice = priceFromQuery;
-        let rawPricePro = priceProFromQuery;
+        const tokensPerSecStd = parseTokens(pricePerSecFromQuery);
+        const tokensPerSecPro = parseTokens(priceProPerSecFromQuery);
 
-        if (!rawPrice && startParamRaw && startParamRaw.startsWith("price=")) {
-            rawPrice = startParamRaw.replace("price=", "");
-        }
-
-        const baseTokensStd = parseTokens(rawPrice);
-        const baseTokensPro = parseTokens(rawPricePro);
-
-        if (baseTokensStd !== null) {
-            const baseDuration = Number.isFinite(state.priceBaseDuration) && state.priceBaseDuration > 0
-                ? state.priceBaseDuration
-                : state.duration;
-            state.tokensPerSecondStd = baseTokensStd / baseDuration;
+        if (tokensPerSecStd !== null) {
+            state.tokensPerSecondStd = tokensPerSecStd;
 
             // Если pro цена не передана, рассчитываем пропорционально
-            if (baseTokensPro !== null) {
-                state.tokensPerSecondPro = baseTokensPro / baseDuration;
+            if (tokensPerSecPro !== null) {
+                state.tokensPerSecondPro = tokensPerSecPro;
             } else {
                 // Pro стоит примерно в 1.67 раза дороже (0.07 / 0.042)
                 state.tokensPerSecondPro = state.tokensPerSecondStd * (PRICE_PER_SECOND_PRO / PRICE_PER_SECOND_STD);
