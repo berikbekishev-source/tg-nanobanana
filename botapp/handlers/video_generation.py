@@ -1141,6 +1141,12 @@ async def _handle_midjourney_video_webapp_data_impl(message: Message, state: FSM
 async def _handle_kling_webapp_data_impl(message: Message, state: FSMContext, payload: dict):
     """Принимаем данные Kling WebApp и запускаем генерацию."""
     import asyncio
+    import logging
+    logger = logging.getLogger(__name__)
+
+    # Логируем payload для отладки (без image data)
+    debug_payload = {k: v for k, v in payload.items() if not k.endswith("Data")}
+    logger.info(f"[Kling WebApp] Received payload: {debug_payload}")
 
     data = await state.get_data()
     model_slug = payload.get("modelSlug") or data.get("model_slug") or data.get("selected_model") or "kling-v2-5-turbo"
@@ -1195,6 +1201,8 @@ async def _handle_kling_webapp_data_impl(message: Message, state: FSMContext, pa
             pricing_model = await sync_to_async(AIModel.objects.get)(slug="kling-v2-1-pro")
         except AIModel.DoesNotExist:
             pass
+
+    logger.info(f"[Kling WebApp] model_slug={model_slug}, quality_mode={quality_mode}, pricing_model={pricing_model.slug}")
 
     await state.update_data(
         model_id=int(model.id),
