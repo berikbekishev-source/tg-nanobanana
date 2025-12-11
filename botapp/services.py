@@ -251,13 +251,20 @@ def gemini_generate_images(
 
     payload["generationConfig"] = generation_config
 
+    # Логируем payload без изображений (они слишком большие)
+    payload_log = json.dumps({
+        "contents": [{"role": "user", "parts": [{"text": prompt[:200]}]}],
+        "generationConfig": generation_config,
+    }, ensure_ascii=False)
+    logger.info(f"[GEMINI_IMAGE] Payload: {payload_log}")
+
     imgs: List[bytes] = []
     with httpx.Client(timeout=120) as client:
         for i in range(quantity):
             logger.info(f"[GEMINI_IMAGE] Request to {url}, model={model_id}, iteration={i+1}/{quantity}")
             r = client.post(url, headers=headers, json=payload)
             if r.status_code >= 400:
-                logger.error(f"[GEMINI_IMAGE] HTTP {r.status_code} error: {r.text[:1000]}")
+                logger.error(f"[GEMINI_IMAGE] HTTP {r.status_code} error: {r.text[:2000]}")
             r.raise_for_status()
             data = r.json()
 
