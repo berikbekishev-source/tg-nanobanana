@@ -124,10 +124,13 @@ def process_kling_webapp(user_id: int, payload: Dict[str, Any]) -> Optional[int]
         return None
 
     # Получаем модель
+    # Для webapp не требуем is_active=True, т.к. некоторые модели скрыты из общего списка
+    # но доступны через webapp (например kling-v2-1-master)
     model_slug = payload.get("modelSlug") or "kling-v2-5-turbo"
     try:
-        model = AIModel.objects.get(slug=model_slug, is_active=True)
+        model = AIModel.objects.get(slug=model_slug)
     except AIModel.DoesNotExist:
+        logger.warning(f"[Kling WebApp] Model not found: {model_slug}")
         _send_error_message(user_id, "❌ Модель Kling недоступна. Выберите её заново из списка моделей.")
         return None
 
@@ -152,6 +155,8 @@ def process_kling_webapp(user_id: int, payload: Dict[str, Any]) -> Optional[int]
     generation_type = (payload.get("generationType") or "text2video").lower()
     if generation_type not in {"text2video", "image2video"}:
         generation_type = "text2video"
+
+    logger.info(f"[Kling WebApp] Starting: model_slug={model_slug}, generation_type={generation_type}, has_imageData={bool(payload.get('imageData'))}")
 
     # Длительность
     try:
@@ -320,7 +325,7 @@ def process_kling_webapp(user_id: int, payload: Dict[str, Any]) -> Optional[int]
         except AIModel.DoesNotExist:
             pass
 
-    logger.info(f"[Kling WebApp] model_slug={model_slug}, quality_mode={quality_mode}, pricing_model={pricing_model.slug}")
+    logger.info(f"[Kling WebApp] model_slug={model_slug}, quality_mode={quality_mode}, pricing_model={pricing_model.slug}, generation_type={generation_type}")
 
     # Создаём запрос на генерацию
     try:
@@ -336,9 +341,11 @@ def process_kling_webapp(user_id: int, payload: Dict[str, Any]) -> Optional[int]
             source_media=source_media,
         )
     except InsufficientBalanceError as exc:
+        logger.warning(f"[Kling WebApp] Insufficient balance for user {user_id}: {exc}")
         _send_error_message(user_id, str(exc))
         return None
     except ValueError as exc:
+        logger.warning(f"[Kling WebApp] ValueError for user {user_id}: {exc}")
         _send_error_message(user_id, str(exc))
         return None
     except Exception as exc:

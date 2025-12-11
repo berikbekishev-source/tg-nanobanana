@@ -304,14 +304,25 @@ class KlingVideoProvider(BaseVideoProvider):
     def _poll_task(self, task_id: str) -> Dict[str, Any]:
         deadline = time.time() + self._poll_timeout
         last_payload: Dict[str, Any] = {}
+        consecutive_errors = 0
+        max_consecutive_errors = 3
 
         while time.time() < deadline:
             try:
                 last_payload = self._fetch_task_payload(task_id)
+                consecutive_errors = 0  # Reset on success
             except VideoGenerationError as exc:
                 message = str(exc)
+                # Retry on 404 (task not ready yet) or 502/503/504 (temporary API issues)
                 if "404" in message or "ResourceNotFound" in message:
                     time.sleep(self._poll_interval)
+                    continue
+                if any(code in message for code in ("502", "503", "504", "Bad Gateway", "Service Unavailable", "Gateway Timeout")):
+                    consecutive_errors += 1
+                    logger.warning("Kling API temporary error (attempt %d/%d): %s", consecutive_errors, max_consecutive_errors, message)
+                    if consecutive_errors >= max_consecutive_errors:
+                        raise
+                    time.sleep(self._poll_interval * 2)  # Wait longer on server errors
                     continue
                 raise
             status, is_final = self._extract_status(last_payload)
