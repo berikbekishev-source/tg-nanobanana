@@ -207,6 +207,11 @@ class KlingVideoProvider(BaseVideoProvider):
         if negative_prompt and not (model and "v2-5" in model):
             payload["negative_prompt"] = negative_prompt
 
+        # enable_audio доступен для text2video (особенно для kling-v2-6)
+        enable_audio = params.get("enable_audio")
+        if isinstance(enable_audio, bool):
+            payload["enable_audio"] = enable_audio
+
         return payload
 
     def _build_image_payload(

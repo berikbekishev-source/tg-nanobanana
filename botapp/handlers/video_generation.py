@@ -1161,18 +1161,30 @@ async def _handle_kling_webapp_data_impl(message: Message, state: FSMContext, pa
         await state.clear()
         return
 
-    # Определяем режим качества (std/pro)
+    # Определяем режим качества (std/pro) и enable_audio
     quality_mode = (payload.get("mode") or "std").lower()
     if quality_mode not in {"std", "pro"}:
         quality_mode = "std"
 
-    # Для режима Pro используем отдельную модель для расчёта стоимости
+    enable_audio = payload.get("enableAudio") is True or payload.get("enable_audio") is True
+
+    # Для kling-v2-6 с enable_audio требуется mode=pro
+    if model_slug == "kling-v2-6" and enable_audio:
+        quality_mode = "pro"
+
+    # Определяем модель для расчёта стоимости
     pricing_model = model
-    if quality_mode == "pro":
+    if model_slug == "kling-v2-6" and enable_audio:
+        # Для kling-v2-6 с аудио используем kling-v2-6-pro-with-sound
+        try:
+            pricing_model = await sync_to_async(AIModel.objects.get)(slug="kling-v2-6-pro-with-sound")
+        except AIModel.DoesNotExist:
+            pass
+    elif model_slug == "kling-v2-5-turbo" and quality_mode == "pro":
+        # Для kling-v2-5-turbo в режиме Pro
         try:
             pricing_model = await sync_to_async(AIModel.objects.get)(slug="kling-v2-5-turbo-pro")
         except AIModel.DoesNotExist:
-            # Если модель Pro не найдена, используем базовую
             pass
 
     await state.update_data(
@@ -1258,6 +1270,10 @@ async def _handle_kling_webapp_data_impl(message: Message, state: FSMContext, pa
         "aspect_ratio": aspect_ratio,
         "mode": quality_mode,
     }
+
+    # Добавляем enable_audio если включено
+    if enable_audio:
+        params["enable_audio"] = True
 
     # Для image2video - валидируем изображения, но НЕ загружаем в Supabase
     # Загрузка будет выполнена в фоне
