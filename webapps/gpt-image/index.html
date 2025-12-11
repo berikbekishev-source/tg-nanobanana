@@ -1,20 +1,11 @@
 <!DOCTYPE html>
 <html lang="ru">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>GPT Image · INTEGER</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
-    <script>
-        // Глобальный обработчик ошибок в WebApp
-        window.onerror = function (msg, url, line, col, error) {
-            const tg = window.Telegram?.WebApp;
-            if (tg) {
-                tg.showAlert(`JS Error: ${msg}\nLine: ${line}`);
-            }
-            return false;
-        };
-    </script>
     <style>
         :root {
             --bg: #0f1c2d;
@@ -27,12 +18,14 @@
             --danger: #ff6b6b;
             --border: #223956;
             --radius: 18px;
-            --shadow: 0 12px 35px rgba(0, 0, 0, 0.35);
-            --dot: radial-gradient(circle, rgba(255,255,255,0.06) 1px, transparent 0);
+            --shadow: 0 14px 40px rgba(0, 0, 0, 0.4);
+            --dot: radial-gradient(circle, rgba(255, 255, 255, 0.06) 1px, transparent 0);
             --font: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
         }
 
-        * { box-sizing: border-box; }
+        * {
+            box-sizing: border-box;
+        }
 
         body {
             margin: 0;
@@ -49,7 +42,7 @@
             border: 1px solid var(--border);
             border-radius: var(--radius);
             box-shadow: var(--shadow);
-            padding: 16px 16px 6px;
+            padding: 16px 16px 10px;
             position: relative;
             overflow: hidden;
         }
@@ -58,8 +51,8 @@
             content: "";
             position: absolute;
             inset: 0;
-            background: radial-gradient(circle at 20% 20%, rgba(241,155,40,0.15), transparent 45%),
-                        radial-gradient(circle at 80% 10%, rgba(246,178,79,0.08), transparent 35%);
+            background: radial-gradient(circle at 20% 20%, rgba(241, 155, 40, 0.15), transparent 45%),
+                radial-gradient(circle at 80% 10%, rgba(246, 178, 79, 0.08), transparent 35%);
             pointer-events: none;
         }
 
@@ -67,20 +60,20 @@
             display: flex;
             align-items: center;
             gap: 12px;
-            margin-bottom: 10px;
+            margin-bottom: 8px;
         }
 
         .badge {
-            width: 42px;
-            height: 42px;
-            border-radius: 50%;
+            width: 44px;
+            height: 44px;
+            border-radius: 14px;
             background: linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 100%);
             color: #0f1c2d;
             font-weight: 800;
-            font-size: 18px;
+            font-size: 17px;
             display: grid;
             place-items: center;
-            box-shadow: 0 10px 24px rgba(241,155,40,0.35);
+            box-shadow: 0 10px 28px rgba(241, 155, 40, 0.35);
         }
 
         h1 {
@@ -93,7 +86,7 @@
         .sub {
             font-size: 13px;
             color: var(--muted);
-            margin: 0;
+            margin: 2px 0 0;
         }
 
         .section {
@@ -110,12 +103,6 @@
             margin: 0 0 10px;
         }
 
-        .label {
-            font-size: 13px;
-            color: var(--muted);
-            margin: 10px 0 6px;
-        }
-
         .chip-toggle {
             display: grid;
             grid-template-columns: repeat(2, 1fr);
@@ -129,7 +116,7 @@
             border-radius: 14px;
             padding: 12px;
             font-size: 14px;
-            font-weight: 600;
+            font-weight: 700;
             text-align: center;
             cursor: pointer;
             transition: all 0.15s ease;
@@ -137,15 +124,21 @@
 
         .chip.active {
             background: linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 100%);
-            color: #0f1c2d;
-            box-shadow: 0 10px 24px rgba(241,155,40,0.35);
+            color: #04101f;
+            box-shadow: 0 10px 24px rgba(241, 155, 40, 0.35);
+        }
+
+        .label {
+            font-size: 13px;
+            color: var(--muted);
+            margin: 10px 0 6px;
         }
 
         textarea {
             width: 100%;
             min-height: 120px;
             padding: 12px;
-            background: #0d1a2b;
+            background: #0a1222;
             border: 1px solid var(--border);
             border-radius: 12px;
             color: var(--text);
@@ -168,7 +161,7 @@
 
         .grid {
             display: grid;
-            grid-template-columns: repeat(3, 1fr);
+            grid-template-columns: repeat(2, 1fr);
             gap: 8px;
         }
 
@@ -178,7 +171,7 @@
             border-radius: 12px;
             padding: 10px;
             text-align: center;
-            font-weight: 600;
+            font-weight: 700;
             font-size: 14px;
             color: var(--text);
             cursor: pointer;
@@ -188,36 +181,119 @@
         .pill.active {
             background: linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 100%);
             color: #0f1c2d;
-            box-shadow: 0 8px 18px rgba(241,155,40,0.28);
+            box-shadow: 0 8px 20px rgba(241, 155, 40, 0.28);
         }
 
-        .upload {
-            display: none;
-            margin-top: 10px;
-            padding: 12px;
-            border: 1px dashed var(--border);
-            border-radius: 12px;
-            background: rgba(15, 28, 45, 0.7);
+        /* Upload box styles */
+        .upload-section {
+            margin-top: 12px;
         }
 
-        .upload input {
-            width: 100%;
-            color: var(--muted);
+        .upload-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 8px;
         }
 
-        .upload .preview {
-            margin-top: 8px;
+        .upload-title {
             font-size: 13px;
+            font-weight: 700;
+            text-transform: uppercase;
+            color: var(--text);
+            line-height: 1.3;
+        }
+
+        .upload-hint {
+            font-size: 12px;
             color: var(--muted);
+            text-align: right;
+            white-space: nowrap;
+        }
+
+        .upload-box {
+            border: 2px dashed var(--border);
+            border-radius: 16px;
+            background: rgba(15, 28, 45, 0.5);
+            min-height: 120px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.15s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .upload-box:hover {
+            border-color: var(--accent);
+            background: rgba(241, 155, 40, 0.05);
+        }
+
+        .upload-box.has-file {
+            border-style: solid;
+            border-color: var(--accent);
+        }
+
+        .upload-box input[type="file"] {
+            position: absolute;
+            inset: 0;
+            opacity: 0;
+            cursor: pointer;
+        }
+
+        .upload-icon {
+            font-size: 32px;
+            color: var(--muted);
+            margin-bottom: 8px;
+        }
+
+        .upload-text {
+            font-size: 14px;
+            color: var(--muted);
+        }
+
+        .upload-preview {
+            font-size: 13px;
+            color: var(--text);
+            padding: 12px;
+            text-align: center;
             line-height: 1.4;
         }
 
+        .upload-error {
+            color: var(--danger);
+            font-size: 12px;
+            margin-top: 6px;
+        }
+
+        .error {
+            color: var(--danger);
+            font-size: 13px;
+            margin-top: 6px;
+        }
+
+        .muted {
+            color: var(--muted);
+            font-size: 13px;
+            line-height: 1.5;
+            margin: 8px 0 0;
+        }
+
         @media (min-width: 640px) {
-            body { padding: 28px; }
-            .card { max-width: 640px; margin: 0 auto; }
+            body {
+                padding: 28px;
+            }
+
+            .card {
+                max-width: 640px;
+                margin: 0 auto;
+            }
         }
     </style>
 </head>
+
 <body>
     <div class="card">
         <div class="header">
@@ -229,27 +305,40 @@
         </div>
 
         <div class="section">
-            <p class="section-title">Параметры</p>
-            <p class="label">Тип генерации</p>
+            <p class="section-title">Режим</p>
             <div class="chip-toggle" id="typeToggle">
                 <div class="chip active" data-type="gpt_txt2img">Текст → Изображение</div>
                 <div class="chip" data-type="gpt_img2img">Изображение → Изображение</div>
             </div>
+        </div>
 
-            <p class="label" style="margin-top: 14px;">Текстовый запрос</p>
-            <textarea id="prompt" placeholder="Опишите, что нужно сгенерировать..." maxlength="4000" enterkeyhint="done" inputmode="text"></textarea>
+        <div class="section">
+            <p class="section-title">Промт</p>
+            <p class="label">Текстовый запрос</p>
+            <textarea id="prompt" placeholder="Опишите, что нужно сгенерировать..." maxlength="4000" enterkeyhint="done"
+                inputmode="text"></textarea>
             <div class="count" id="promptCount">0/4000</div>
+        </div>
 
-            <div class="upload" id="imgBlock">
-                <p class="label" style="margin:0 0 6px;">До 4 изображений для img2img (до 5 МБ каждое)</p>
-                <input type="file" id="imgInput" accept="image/*" multiple>
-                <div class="preview" id="imgPreview">Файлы не выбраны</div>
+        <div class="section" id="imageUploadSection" style="display:none;">
+            <p class="section-title">Изображения</p>
+            <div class="upload-section">
+                <div class="upload-header">
+                    <span class="upload-title">До 4 изображений</span>
+                    <span class="upload-hint">JPG/PNG • ≤ 5 МБ</span>
+                </div>
+                <div class="upload-box" id="uploadBox">
+                    <input type="file" id="imgInput" accept="image/*" multiple>
+                    <div class="upload-icon">+</div>
+                    <div class="upload-text">Загрузить</div>
+                </div>
+                <div class="upload-error" id="uploadError"></div>
             </div>
         </div>
 
         <div class="section">
             <p class="section-title">Размер</p>
-            <div class="grid" id="sizeGrid" style="grid-template-columns: repeat(2, 1fr);">
+            <div class="grid" id="sizeGrid">
                 <div class="pill" data-size="auto">Auto</div>
                 <div class="pill active" data-size="1024x1024">1024×1024</div>
                 <div class="pill" data-size="1024x1536">1024×1536</div>
@@ -259,18 +348,40 @@
 
         <div class="section">
             <p class="section-title">Качество</p>
-            <div class="chip-toggle" id="qualityToggle" style="grid-template-columns: repeat(2, 1fr);">
-                <div class="chip active" data-quality="auto">auto</div>
-                <div class="chip" data-quality="high">high</div>
-                <div class="chip" data-quality="medium">medium</div>
-                <div class="chip" data-quality="low">low</div>
+            <div class="grid" id="qualityGrid">
+                <div class="pill active" data-quality="auto">auto</div>
+                <div class="pill" data-quality="high">high</div>
+                <div class="pill" data-quality="medium">medium</div>
+                <div class="pill" data-quality="low">low</div>
             </div>
         </div>
+
+        <div class="section">
+            <p class="section-title">Подсказка</p>
+            <p class="muted">
+                Текст → Изображение: опишите желаемое изображение. <br>
+                Изображение → Изображение: загрузите референсы и опишите изменения. <br>
+                Примеры: «футуристический город на закате» или «добавь солнечные лучи на фото».
+            </p>
+        </div>
+
+        <div id="error" class="error" style="display:none;"></div>
+
     </div>
 
     <script>
         const tg = window.Telegram?.WebApp;
+
+        // Global error handler for debugging
+        window.onerror = function (msg, url, line, col, error) {
+            if (tg) tg.showAlert(`Error: ${msg}\nLine: ${line}`);
+            return false;
+        };
+
         const params = new URLSearchParams(window.location.search);
+        const MAX_FILES = 4;
+        const MAX_SIZE = 5 * 1024 * 1024; // 5 MB
+
         const state = {
             modelSlug: params.get("model") || "gpt-image-1",
             taskType: "gpt_txt2img",
@@ -286,10 +397,12 @@
             promptCount: document.getElementById("promptCount"),
             typeToggle: document.getElementById("typeToggle"),
             sizeGrid: document.getElementById("sizeGrid"),
-            qualityToggle: document.getElementById("qualityToggle"),
-            imgBlock: document.getElementById("imgBlock"),
+            qualityGrid: document.getElementById("qualityGrid"),
+            imageUploadSection: document.getElementById("imageUploadSection"),
+            uploadBox: document.getElementById("uploadBox"),
             imgInput: document.getElementById("imgInput"),
-            imgPreview: document.getElementById("imgPreview"),
+            uploadError: document.getElementById("uploadError"),
+            error: document.getElementById("error"),
         };
 
         function showError(text) {
@@ -332,9 +445,35 @@
             refreshMainButton();
         }
 
+        function switchMode(mode) {
+            state.taskType = mode;
+            els.imageUploadSection.style.display = mode === "gpt_img2img" ? "block" : "none";
+        }
+
+        function updateUploadBoxUI() {
+            const box = els.uploadBox;
+            if (state.images.length > 0) {
+                box.classList.add("has-file");
+                const names = state.images.map(f => `${f.name} · ${(f.size / 1024).toFixed(1)} КБ`).join("\n");
+                box.innerHTML = `
+                    <input type="file" accept="image/*" multiple>
+                    <div class="upload-preview">${names}</div>
+                `;
+                const newInput = box.querySelector('input[type="file"]');
+                newInput.addEventListener("change", handleFileChange);
+            } else {
+                box.classList.remove("has-file");
+                box.innerHTML = `
+                    <input type="file" accept="image/*" multiple>
+                    <div class="upload-icon">+</div>
+                    <div class="upload-text">Загрузить</div>
+                `;
+                const newInput = box.querySelector('input[type="file"]');
+                newInput.addEventListener("change", handleFileChange);
+            }
+        }
+
         async function filesToState(files) {
-            const MAX_FILES = 4;
-            const MAX_SIZE = 5 * 1024 * 1024; // 5 MB
             const accepted = Array.from(files).slice(0, MAX_FILES);
             if (accepted.length < files.length) {
                 tg?.showAlert?.("Выбрано больше 4 файлов. Лишние проигнорированы.");
@@ -343,11 +482,11 @@
             const results = [];
             for (const file of accepted) {
                 if (!file.type.startsWith("image/")) {
-                    tg?.showAlert?.("Нужен файл изображения.");
+                    els.uploadError.textContent = "Нужен файл изображения.";
                     return [];
                 }
                 if (file.size > MAX_SIZE) {
-                    tg?.showAlert?.("Изображение слишком большое (макс 5 МБ).");
+                    els.uploadError.textContent = "Изображение слишком большое (макс 5 МБ).";
                     return [];
                 }
                 const base64 = await new Promise((resolve, reject) => {
@@ -367,10 +506,24 @@
                     data: base64,
                     mime: file.type,
                     name: file.name,
+                    size: file.size,
                     sizeLabel: `${(file.size / 1024).toFixed(1)} КБ`,
                 });
             }
+            els.uploadError.textContent = "";
             return results;
+        }
+
+        async function handleFileChange(e) {
+            const files = e.target.files || [];
+            if (!files.length) {
+                state.images = [];
+                updateUploadBoxUI();
+                return;
+            }
+            const parsed = await filesToState(files);
+            state.images = parsed;
+            updateUploadBoxUI();
         }
 
         els.prompt.addEventListener("input", updateCounts);
@@ -379,8 +532,7 @@
             const btn = e.target.closest(".chip");
             if (!btn) return;
             setActive(els.typeToggle, btn);
-            state.taskType = btn.dataset.type;
-            els.imgBlock.style.display = state.taskType === "gpt_img2img" ? "block" : "none";
+            switchMode(btn.dataset.type);
         });
 
         els.sizeGrid.addEventListener("click", (e) => {
@@ -390,29 +542,14 @@
             state.size = btn.dataset.size;
         });
 
-        els.qualityToggle.addEventListener("click", (e) => {
-            const btn = e.target.closest(".chip");
+        els.qualityGrid.addEventListener("click", (e) => {
+            const btn = e.target.closest(".pill");
             if (!btn) return;
-            setActive(els.qualityToggle, btn);
+            setActive(els.qualityGrid, btn);
             state.quality = btn.dataset.quality;
         });
 
-        els.imgInput.addEventListener("change", async (e) => {
-            const files = e.target.files || [];
-            const parsed = await filesToState(files);
-            if (!parsed.length && state.taskType === "gpt_img2img") {
-                els.imgPreview.textContent = "Файлы не выбраны";
-                state.images = [];
-                return;
-            }
-            state.images = parsed;
-            if (parsed.length) {
-                const names = parsed.map(f => `${f.name} · ${f.sizeLabel}`).join("\n");
-                els.imgPreview.textContent = names;
-            } else {
-                els.imgPreview.textContent = "Файлы не выбраны";
-            }
-        });
+        els.imgInput.addEventListener("change", handleFileChange);
 
         function sendData() {
             try {
@@ -513,7 +650,7 @@
         }
 
         updateCounts();
-        els.imgBlock.style.display = "none";
+        switchMode("gpt_txt2img");
 
         if (tg) {
             try {
@@ -530,4 +667,5 @@
         }
     </script>
 </body>
+
 </html>

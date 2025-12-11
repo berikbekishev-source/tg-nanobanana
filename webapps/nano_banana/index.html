@@ -1,20 +1,11 @@
 <!DOCTYPE html>
 <html lang="ru">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Nano Banana · INTEGER</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
-    <script>
-        // Глобальный обработчик ошибок в WebApp
-        window.onerror = function (msg, url, line, col, error) {
-            const tg = window.Telegram?.WebApp;
-            if (tg) {
-                tg.showAlert(`JS Error: ${msg}\nLine: ${line}`);
-            }
-            return false;
-        };
-    </script>
     <style>
         :root {
             --bg: #0f1c2d;
@@ -27,12 +18,14 @@
             --danger: #ff6b6b;
             --border: #223956;
             --radius: 18px;
-            --shadow: 0 12px 35px rgba(0, 0, 0, 0.35);
-            --dot: radial-gradient(circle, rgba(255,255,255,0.06) 1px, transparent 0);
+            --shadow: 0 14px 40px rgba(0, 0, 0, 0.4);
+            --dot: radial-gradient(circle, rgba(255, 255, 255, 0.06) 1px, transparent 0);
             --font: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
         }
 
-        * { box-sizing: border-box; }
+        * {
+            box-sizing: border-box;
+        }
 
         body {
             margin: 0;
@@ -58,8 +51,8 @@
             content: "";
             position: absolute;
             inset: 0;
-            background: radial-gradient(circle at 20% 20%, rgba(241,155,40,0.15), transparent 45%),
-                        radial-gradient(circle at 80% 10%, rgba(246,178,79,0.08), transparent 35%);
+            background: radial-gradient(circle at 20% 20%, rgba(241, 155, 40, 0.15), transparent 45%),
+                radial-gradient(circle at 80% 10%, rgba(246, 178, 79, 0.08), transparent 35%);
             pointer-events: none;
         }
 
@@ -67,20 +60,20 @@
             display: flex;
             align-items: center;
             gap: 12px;
-            margin-bottom: 10px;
+            margin-bottom: 8px;
         }
 
         .badge {
-            width: 42px;
-            height: 42px;
-            border-radius: 50%;
+            width: 44px;
+            height: 44px;
+            border-radius: 14px;
             background: linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 100%);
             color: #0f1c2d;
             font-weight: 800;
-            font-size: 18px;
+            font-size: 17px;
             display: grid;
             place-items: center;
-            box-shadow: 0 10px 24px rgba(241,155,40,0.35);
+            box-shadow: 0 10px 28px rgba(241, 155, 40, 0.35);
         }
 
         h1 {
@@ -93,7 +86,7 @@
         .sub {
             font-size: 13px;
             color: var(--muted);
-            margin: 0;
+            margin: 2px 0 0;
         }
 
         .section {
@@ -123,7 +116,7 @@
             border-radius: 14px;
             padding: 12px;
             font-size: 14px;
-            font-weight: 600;
+            font-weight: 700;
             text-align: center;
             cursor: pointer;
             transition: all 0.15s ease;
@@ -131,8 +124,8 @@
 
         .chip.active {
             background: linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 100%);
-            color: #0f1c2d;
-            box-shadow: 0 10px 24px rgba(241,155,40,0.35);
+            color: #04101f;
+            box-shadow: 0 10px 24px rgba(241, 155, 40, 0.35);
         }
 
         .label {
@@ -145,7 +138,7 @@
             width: 100%;
             min-height: 120px;
             padding: 12px;
-            background: #0d1a2b;
+            background: #0a1222;
             border: 1px solid var(--border);
             border-radius: 12px;
             color: var(--text);
@@ -178,7 +171,7 @@
             border-radius: 12px;
             padding: 10px;
             text-align: center;
-            font-weight: 600;
+            font-weight: 700;
             font-size: 14px;
             color: var(--text);
             cursor: pointer;
@@ -188,35 +181,119 @@
         .pill.active {
             background: linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 100%);
             color: #0f1c2d;
-            box-shadow: 0 8px 18px rgba(241,155,40,0.28);
+            box-shadow: 0 8px 20px rgba(241, 155, 40, 0.28);
         }
 
-        .upload {
-            margin-top: 10px;
-            padding: 12px;
-            border: 1px dashed var(--border);
-            border-radius: 12px;
-            background: rgba(15, 28, 45, 0.7);
+        /* Upload box styles */
+        .upload-section {
+            margin-top: 12px;
         }
 
-        .upload input {
-            width: 100%;
-            color: var(--muted);
+        .upload-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 8px;
         }
 
-        .upload .preview {
-            margin-top: 8px;
+        .upload-title {
             font-size: 13px;
+            font-weight: 700;
+            text-transform: uppercase;
+            color: var(--text);
+            line-height: 1.3;
+        }
+
+        .upload-hint {
+            font-size: 12px;
             color: var(--muted);
+            text-align: right;
+            white-space: nowrap;
+        }
+
+        .upload-box {
+            border: 2px dashed var(--border);
+            border-radius: 16px;
+            background: rgba(15, 28, 45, 0.5);
+            min-height: 120px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.15s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .upload-box:hover {
+            border-color: var(--accent);
+            background: rgba(241, 155, 40, 0.05);
+        }
+
+        .upload-box.has-file {
+            border-style: solid;
+            border-color: var(--accent);
+        }
+
+        .upload-box input[type="file"] {
+            position: absolute;
+            inset: 0;
+            opacity: 0;
+            cursor: pointer;
+        }
+
+        .upload-icon {
+            font-size: 32px;
+            color: var(--muted);
+            margin-bottom: 8px;
+        }
+
+        .upload-text {
+            font-size: 14px;
+            color: var(--muted);
+        }
+
+        .upload-preview {
+            font-size: 13px;
+            color: var(--text);
+            padding: 12px;
+            text-align: center;
             line-height: 1.4;
         }
 
+        .upload-error {
+            color: var(--danger);
+            font-size: 12px;
+            margin-top: 6px;
+        }
+
+        .error {
+            color: var(--danger);
+            font-size: 13px;
+            margin-top: 6px;
+        }
+
+        .muted {
+            color: var(--muted);
+            font-size: 13px;
+            line-height: 1.5;
+            margin: 8px 0 0;
+        }
+
         @media (min-width: 640px) {
-            body { padding: 28px; }
-            .card { max-width: 640px; margin: 0 auto; }
+            body {
+                padding: 28px;
+            }
+
+            .card {
+                max-width: 640px;
+                margin: 0 auto;
+            }
         }
     </style>
 </head>
+
 <body>
     <div class="card">
         <div class="header">
@@ -228,21 +305,34 @@
         </div>
 
         <div class="section">
-            <p class="section-title">Параметры</p>
-            <p class="label">Тип генерации</p>
+            <p class="section-title">Режим</p>
             <div class="chip-toggle" id="typeToggle">
                 <div class="chip active" data-type="text2image">Текст → Изображение</div>
                 <div class="chip" data-type="image2image">Изображение → Изображение</div>
             </div>
+        </div>
 
-            <p class="label" style="margin-top: 14px;">Текстовый запрос</p>
-            <textarea id="prompt" placeholder="Опишите, что нужно сгенерировать..." maxlength="4000" enterkeyhint="done" inputmode="text"></textarea>
+        <div class="section">
+            <p class="section-title">Промт</p>
+            <p class="label">Текстовый запрос</p>
+            <textarea id="prompt" placeholder="Опишите, что нужно сгенерировать..." maxlength="4000" enterkeyhint="done"
+                inputmode="text"></textarea>
             <div class="count" id="promptCount">0/4000</div>
+        </div>
 
-            <div class="upload" id="imgBlock" style="display:none;">
-                <p class="label" style="margin:0 0 6px;">Загрузите до 5 изображений (до 10 МБ каждое)</p>
-                <input type="file" id="imgInput" accept="image/*" multiple>
-                <div class="preview" id="imgPreview">Файлы не выбраны</div>
+        <div class="section" id="imageUploadSection" style="display:none;">
+            <p class="section-title">Изображения</p>
+            <div class="upload-section">
+                <div class="upload-header">
+                    <span class="upload-title">До 5 изображений</span>
+                    <span class="upload-hint">JPG/PNG • ≤ 10 МБ</span>
+                </div>
+                <div class="upload-box" id="uploadBox">
+                    <input type="file" id="imgInput" accept="image/*" multiple>
+                    <div class="upload-icon">+</div>
+                    <div class="upload-text">Загрузить</div>
+                </div>
+                <div class="upload-error" id="uploadError"></div>
             </div>
         </div>
 
@@ -250,10 +340,29 @@
             <p class="section-title">Соотношение сторон</p>
             <div class="grid" id="ratioGrid"></div>
         </div>
+
+        <div class="section">
+            <p class="section-title">Подсказка</p>
+            <p class="muted">
+                Nano Banana использует Gemini 2.5 Flash для генерации изображений. <br>
+                Поддерживает редактирование: загрузите изображение и опишите изменения. <br>
+                Примеры: «кот в космическом скафандре» или «сделай фон ярче».
+            </p>
+        </div>
+
+        <div id="error" class="error" style="display:none;"></div>
+
     </div>
 
     <script>
         const tg = window.Telegram?.WebApp;
+
+        // Global error handler for debugging
+        window.onerror = function (msg, url, line, col, error) {
+            if (tg) tg.showAlert(`Error: ${msg}\nLine: ${line}`);
+            return false;
+        };
+
         const params = new URLSearchParams(window.location.search);
 
         const MAX_PROMPT = 4000;
@@ -275,9 +384,11 @@
             ratioGrid: document.getElementById("ratioGrid"),
             prompt: document.getElementById("prompt"),
             promptCount: document.getElementById("promptCount"),
-            imgBlock: document.getElementById("imgBlock"),
+            imageUploadSection: document.getElementById("imageUploadSection"),
+            uploadBox: document.getElementById("uploadBox"),
             imgInput: document.getElementById("imgInput"),
-            imgPreview: document.getElementById("imgPreview"),
+            uploadError: document.getElementById("uploadError"),
+            error: document.getElementById("error"),
         };
 
         function showError(text) {
@@ -327,19 +438,38 @@
             });
         }
 
-        function renderImagesPreview() {
-            if (!state.images.length) {
-                els.imgPreview.textContent = "Файлы не выбраны";
-                return;
+        function switchMode(mode) {
+            state.mode = mode;
+            els.imageUploadSection.style.display = mode === "image2image" ? "block" : "none";
+        }
+
+        function updateUploadBoxUI() {
+            const box = els.uploadBox;
+            if (state.images.length > 0) {
+                box.classList.add("has-file");
+                const parts = state.images.map(img => `${img.name} · ${formatSize(img.size)}`);
+                box.innerHTML = `
+                    <input type="file" accept="image/*" multiple>
+                    <div class="upload-preview">Выбрано ${state.images.length}:<br>${parts.join("<br>")}</div>
+                `;
+                const newInput = box.querySelector('input[type="file"]');
+                newInput.addEventListener("change", handleFileChange);
+            } else {
+                box.classList.remove("has-file");
+                box.innerHTML = `
+                    <input type="file" accept="image/*" multiple>
+                    <div class="upload-icon">+</div>
+                    <div class="upload-text">Загрузить</div>
+                `;
+                const newInput = box.querySelector('input[type="file"]');
+                newInput.addEventListener("change", handleFileChange);
             }
-            const parts = state.images.map(img => `${img.name} · ${formatSize(img.size)}`);
-            els.imgPreview.textContent = `Выбрано ${state.images.length}: ${parts.join("; ")}`;
         }
 
         async function handleFiles(files) {
             if (!files || !files.length) {
                 state.images = [];
-                renderImagesPreview();
+                updateUploadBoxUI();
                 return;
             }
 
@@ -352,11 +482,11 @@
             const prepared = [];
             for (const file of selected) {
                 if (!file.type.startsWith("image/")) {
-                    tg?.showAlert?.("Нужны файлы изображений.");
+                    els.uploadError.textContent = "Нужны файлы изображений.";
                     continue;
                 }
                 if (file.size > MAX_IMAGE_BYTES) {
-                    tg?.showAlert?.(`Файл ${file.name} слишком большой. Лимит 10 МБ.`);
+                    els.uploadError.textContent = `Файл ${file.name} слишком большой. Лимит 10 МБ.`;
                     continue;
                 }
                 const base64 = await new Promise((resolve, reject) => {
@@ -374,7 +504,7 @@
                     reader.readAsDataURL(file);
                 }).catch((err) => {
                     console.error(err);
-                    tg?.showAlert?.(`Ошибка чтения файла ${file.name}`);
+                    els.uploadError.textContent = `Ошибка чтения файла ${file.name}`;
                     return null;
                 });
                 if (!base64) continue;
@@ -386,8 +516,15 @@
                 });
             }
 
+            if (prepared.length > 0) {
+                els.uploadError.textContent = "";
+            }
             state.images = prepared;
-            renderImagesPreview();
+            updateUploadBoxUI();
+        }
+
+        async function handleFileChange(e) {
+            await handleFiles(e.target.files);
         }
 
         function setPriceLabel(label) {
@@ -483,14 +620,14 @@
             }
         }
 
+        // Event listeners
         els.prompt.addEventListener("input", updatePrompt);
 
         els.typeToggle.addEventListener("click", (e) => {
             const btn = e.target.closest(".chip");
             if (!btn) return;
             setActive(els.typeToggle, btn);
-            state.mode = btn.dataset.type;
-            els.imgBlock.style.display = state.mode === "image2image" ? "block" : "none";
+            switchMode(btn.dataset.type);
         });
 
         els.ratioGrid.addEventListener("click", (e) => {
@@ -500,12 +637,11 @@
             state.aspectRatio = btn.dataset.ratio;
         });
 
-        els.imgInput.addEventListener("change", (e) => {
-            handleFiles(e.target.files);
-        });
+        els.imgInput.addEventListener("change", handleFileChange);
 
+        // Initialize
         renderRatioOptions();
-        renderImagesPreview();
+        updateUploadBoxUI();
         updatePrompt();
 
         const priceFromQuery = params.get("price");
@@ -540,4 +676,5 @@
         }
     </script>
 </body>
+
 </html>
