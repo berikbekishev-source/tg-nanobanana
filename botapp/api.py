@@ -374,7 +374,9 @@ try:
             user_id = payload.get("user_id")
             data = payload.get("data")
 
-            logger.info(f"[WEBAPP_REST][KLING] Received submission for user {user_id}")
+            # Логируем для отладки (без image data)
+            debug_data = {k: (len(v) if k.endswith("Data") and v else v) for k, v in (data or {}).items()}
+            logger.info(f"[WEBAPP_REST][KLING] Received submission for user {user_id}, data keys: {debug_data}")
 
             if not user_id or not data:
                 return JsonResponse({"ok": False, "error": "Missing user_id or data"}, status=400)
