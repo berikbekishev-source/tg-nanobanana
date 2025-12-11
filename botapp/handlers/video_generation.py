@@ -1162,9 +1162,12 @@ async def _handle_kling_webapp_data_impl(message: Message, state: FSMContext, pa
         return
 
     # Определяем режим качества (std/pro) и enable_audio
-    quality_mode = (payload.get("mode") or "std").lower()
-    if quality_mode not in {"std", "pro"}:
-        quality_mode = "std"
+    # Для kling-v2-1-master mode не поддерживается
+    quality_mode = None
+    if model_slug != "kling-v2-1-master":
+        quality_mode = (payload.get("mode") or "std").lower()
+        if quality_mode not in {"std", "pro"}:
+            quality_mode = "std"
 
     enable_audio = payload.get("enableAudio") is True or payload.get("enable_audio") is True
 
@@ -1184,6 +1187,12 @@ async def _handle_kling_webapp_data_impl(message: Message, state: FSMContext, pa
         # Для kling-v2-5-turbo в режиме Pro
         try:
             pricing_model = await sync_to_async(AIModel.objects.get)(slug="kling-v2-5-turbo-pro")
+        except AIModel.DoesNotExist:
+            pass
+    elif model_slug == "kling-v2-1" and quality_mode == "pro":
+        # Для kling-v2-1 в режиме Pro
+        try:
+            pricing_model = await sync_to_async(AIModel.objects.get)(slug="kling-v2-1-pro")
         except AIModel.DoesNotExist:
             pass
 
@@ -1268,8 +1277,11 @@ async def _handle_kling_webapp_data_impl(message: Message, state: FSMContext, pa
         "duration": duration_value,
         "cfg_scale": cfg_scale_value,
         "aspect_ratio": aspect_ratio,
-        "mode": quality_mode,
     }
+
+    # mode только если поддерживается (не для kling-v2-1-master)
+    if quality_mode is not None:
+        params["mode"] = quality_mode
 
     # Добавляем enable_audio если включено
     if enable_audio:
@@ -1315,9 +1327,9 @@ async def _handle_kling_webapp_data_impl(message: Message, state: FSMContext, pa
             "file_name": file_name,
         }
 
-        # Конечное изображение (необязательно)
+        # Конечное изображение (необязательно, не поддерживается для kling-v2-1-master)
         tail_image_b64 = payload.get("imageTailData")
-        if tail_image_b64:
+        if tail_image_b64 and model_slug != "kling-v2-1-master":
             try:
                 tail_raw = base64.b64decode(tail_image_b64)
             except Exception:

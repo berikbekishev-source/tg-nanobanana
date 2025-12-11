@@ -271,8 +271,9 @@ class KlingVideoProvider(BaseVideoProvider):
         if reply_ref:
             payload["replyRef"] = reply_ref
 
+        # mode не поддерживается для kling-v2-1-master и kling-v2-5
         mode = params.get("mode")
-        if isinstance(mode, str):
+        if isinstance(mode, str) and normalized_model not in {"kling-v2-1-master", "kling-v2-5"}:
             normalized_mode = mode.strip().lower()
             if normalized_mode in {"std", "pro"}:
                 payload["mode"] = normalized_mode

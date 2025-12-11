@@ -132,3 +132,16 @@ def nanobanana_webapp(request):
     with open(page_path, "r", encoding="utf-8") as f:
         html_content = f.read()
     return HttpResponse(html_content, content_type="text/html")
+
+
+@csrf_exempt
+@xframe_options_exempt
+def kling_v21_webapp(request):
+    """Отдаёт статический WebApp настроек Kling v2-1."""
+    base_dir = os.path.dirname(__file__)
+    page_path = os.path.join(base_dir, "kling-v2-1", "index.html")
+    if not os.path.exists(page_path):
+        raise Http404("Kling v2-1 WebApp not found")
+    with open(page_path, "r", encoding="utf-8") as f:
+        html_content = f.read()
+    return HttpResponse(html_content, content_type="text/html")

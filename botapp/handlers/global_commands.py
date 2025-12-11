@@ -227,6 +227,27 @@ async def global_create_video_start(message: Message, state: FSMContext):
                         f"&price_audio={quote_plus(price_audio_label)}"
                         f"&price_base_duration={quote_plus(str(base_duration))}"
                     )
+                elif model.slug == "kling-v2-1":
+                    # Для kling-v2-1 используем отдельный webapp с ценами pro и master
+                    try:
+                        pro_model = await sync_to_async(AIModel.objects.get)(slug="kling-v2-1-pro")
+                        pro_cost = await sync_to_async(get_base_price_tokens)(pro_model)
+                        price_pro_label = f"⚡{pro_cost:.2f} токенов"
+                    except AIModel.DoesNotExist:
+                        price_pro_label = price_label
+                    try:
+                        master_model = await sync_to_async(AIModel.objects.get)(slug="kling-v2-1-master")
+                        master_cost = await sync_to_async(get_base_price_tokens)(master_model)
+                        price_master_label = f"⚡{master_cost:.2f} токенов"
+                    except AIModel.DoesNotExist:
+                        price_master_label = price_label
+                    kling_webapps[model.slug] = (
+                        f"{PUBLIC_BASE_URL}/kling-v2-1/?"
+                        f"model={quote_plus(model.slug)}&price={quote_plus(price_label)}"
+                        f"&price_pro={quote_plus(price_pro_label)}"
+                        f"&price_master={quote_plus(price_master_label)}"
+                        f"&price_base_duration={quote_plus(str(base_duration))}"
+                    )
                 else:
                     # Для kling-v2-5-turbo и других — старый webapp с ценой pro
                     try:
