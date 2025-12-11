@@ -1,6 +1,7 @@
 import json
 import logging
 import hashlib
+import uuid
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -13,6 +14,102 @@ from config.ninja_api import build_ninja_api
 
 api = build_ninja_api()
 logger = logging.getLogger(__name__)
+
+
+# ============================================================================
+# Presigned Upload для прямой загрузки изображений в Supabase из браузера
+# ============================================================================
+
+try:
+    from supabase import create_client
+    _supabase_available = True
+except ImportError:
+    _supabase_available = False
+
+
+@api.post("/storage/presigned-upload")
+def get_presigned_upload_url(request):
+    """
+    Генерирует presigned URL для прямой загрузки изображения в Supabase Storage.
+
+    Браузер может загрузить файл напрямую по этому URL без аутентификации.
+    Это позволяет:
+    - Разгрузить backend от обработки больших base64
+    - Мгновенно закрывать webapp после отправки
+    - Ускорить получение сообщения о старте генерации
+
+    Request body (JSON):
+        content_type: str - MIME тип файла (image/png, image/jpeg, image/webp)
+
+    Response:
+        upload_url: str - URL для PUT запроса с файлом
+        upload_token: str - токен для загрузки (Supabase)
+        public_url: str - публичный URL файла после загрузки
+        file_path: str - путь к файлу в storage
+    """
+    if not _supabase_available:
+        return JsonResponse(
+            {"ok": False, "error": "Supabase не настроен"},
+            status=503
+        )
+
+    try:
+        # Парсим тело запроса
+        try:
+            body = json.loads(request.body.decode("utf-8")) if request.body else {}
+        except json.JSONDecodeError:
+            body = {}
+
+        content_type = body.get("content_type", "image/png")
+
+        # Определяем расширение файла
+        ext_map = {
+            "image/png": "png",
+            "image/jpeg": "jpg",
+            "image/jpg": "jpg",
+            "image/webp": "webp",
+        }
+        extension = ext_map.get(content_type, "png")
+
+        # Генерируем уникальный путь
+        file_name = f"webapp-uploads/{uuid.uuid4().hex}.{extension}"
+
+        # Создаём Supabase клиент
+        supabase = create_client(settings.SUPABASE_URL, settings.SUPABASE_KEY)
+        bucket = settings.SUPABASE_BUCKET
+
+        # Создаём presigned URL для загрузки (действует 10 минут)
+        signed_result = supabase.storage.from_(bucket).create_signed_upload_url(file_name)
+
+        # Извлекаем данные из результата
+        # Supabase v2 возвращает dict с path, token, signedUrl
+        if isinstance(signed_result, dict):
+            upload_url = signed_result.get("signedUrl") or signed_result.get("signed_url", "")
+            upload_token = signed_result.get("token", "")
+        else:
+            # Fallback для других версий SDK
+            upload_url = str(signed_result)
+            upload_token = ""
+
+        # Формируем публичный URL
+        public_url = f"{settings.SUPABASE_URL}/storage/v1/object/public/{bucket}/{file_name}"
+
+        logger.info(f"[PRESIGNED_UPLOAD] Generated URL for {file_name}")
+
+        return JsonResponse({
+            "ok": True,
+            "upload_url": upload_url,
+            "upload_token": upload_token,
+            "public_url": public_url,
+            "file_path": file_name,
+        })
+
+    except Exception as exc:
+        logger.error(f"[PRESIGNED_UPLOAD] Error: {exc}", exc_info=True)
+        return JsonResponse(
+            {"ok": False, "error": f"Не удалось создать URL для загрузки: {str(exc)}"},
+            status=500
+        )
 
 
 try:
