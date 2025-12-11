@@ -33,11 +33,24 @@ def midjourney_video_webapp(request):
 @csrf_exempt
 @xframe_options_exempt
 def kling_webapp(request):
-    """Отдаёт статический WebApp настроек Kling."""
+    """Отдаёт статический WebApp настроек Kling v2-5-turbo."""
     base_dir = os.path.dirname(__file__)
     page_path = os.path.join(base_dir, "kling", "index.html")
     if not os.path.exists(page_path):
         raise Http404("Kling WebApp not found")
+    with open(page_path, "r", encoding="utf-8") as f:
+        html_content = f.read()
+    return HttpResponse(html_content, content_type="text/html")
+
+
+@csrf_exempt
+@xframe_options_exempt
+def kling_v26_webapp(request):
+    """Отдаёт статический WebApp настроек Kling v2-6."""
+    base_dir = os.path.dirname(__file__)
+    page_path = os.path.join(base_dir, "kling-v2-6", "index.html")
+    if not os.path.exists(page_path):
+        raise Http404("Kling v2-6 WebApp not found")
     with open(page_path, "r", encoding="utf-8") as f:
         html_content = f.read()
     return HttpResponse(html_content, content_type="text/html")

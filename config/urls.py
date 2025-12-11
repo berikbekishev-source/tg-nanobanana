@@ -22,7 +22,7 @@ from django.conf.urls.static import static
 from botapp.api import api  # Ninja API
 from lavatop.api import miniapp_api  # Payment API
 from lavatop.views import miniapp_payment
-from webapps.views import midjourney_webapp, midjourney_video_webapp, kling_webapp, veo_webapp, sora2_webapp, runway_webapp, runway_aleph_webapp, gpt_image_webapp, nanobanana_webapp
+from webapps.views import midjourney_webapp, midjourney_video_webapp, kling_webapp, kling_v26_webapp, veo_webapp, sora2_webapp, runway_webapp, runway_aleph_webapp, gpt_image_webapp, nanobanana_webapp
 
 urlpatterns = [
     path("admin/", admin.site.urls),
@@ -31,7 +31,8 @@ urlpatterns = [
     path("miniapp/", miniapp_payment, name='miniapp_payment'),  # Payment page
     path("midjourney/", midjourney_webapp, name='midjourney_webapp'),  # Midjourney WebApp
     path("midjourney_video/", midjourney_video_webapp, name='midjourney_video_webapp'),  # Midjourney Video WebApp
-    path("kling/", kling_webapp, name='kling_webapp'),  # Kling WebApp
+    path("kling/", kling_webapp, name='kling_webapp'),  # Kling v2-5-turbo WebApp
+    path("kling-v2-6/", kling_v26_webapp, name='kling_v26_webapp'),  # Kling v2-6 WebApp
     path("veo/", veo_webapp, name='veo_webapp'),  # Veo WebApp
     path("sora2/", sora2_webapp, name='sora2_webapp'),  # Sora 2 WebApp
     path("runway/", runway_webapp, name='runway_webapp'),  # Runway WebApp
