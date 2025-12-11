@@ -250,7 +250,10 @@ def gemini_generate_images(
     imgs: List[bytes] = []
     with httpx.Client(timeout=120) as client:
         for i in range(quantity):
+            logger.info(f"[GEMINI_IMAGE] Request to {url}, model={model_id}, iteration={i+1}/{quantity}")
             r = client.post(url, headers=headers, json=payload)
+            if r.status_code >= 400:
+                logger.error(f"[GEMINI_IMAGE] HTTP {r.status_code} error: {r.text[:1000]}")
             r.raise_for_status()
             data = r.json()
 
