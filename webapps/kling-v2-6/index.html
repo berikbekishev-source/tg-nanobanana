@@ -490,8 +490,6 @@
             priceLabel: "—",
             tokensPerSecondStd: null,
             tokensPerSecondAudio: null,
-            // Базовая длительность, для которой посчитан прайс
-            priceBaseDuration: Number(params.get("price_base_duration")) || Number(params.get("duration")) || 10,
         };
 
         const els = {
@@ -511,9 +509,6 @@
         };
 
         state.duration = sanitizeDuration(state.duration);
-        if (!Number.isFinite(state.priceBaseDuration) || state.priceBaseDuration <= 0) {
-            state.priceBaseDuration = 10;
-        }
 
         function setActive(container, target) {
             container.querySelectorAll(".chip, .pill").forEach(btn => btn.classList.remove("active"));
@@ -805,29 +800,18 @@
             handleImageUpload(e.target.files?.[0]);
         });
 
-        // Инициализация цен
-        const priceFromQuery = params.get("price");
-        const priceAudioFromQuery = params.get("price_audio");
-        const startParamRaw = tg?.initDataUnsafe?.start_param;
+        // Инициализация цен (цена за 1 секунду передаётся напрямую)
+        const pricePerSecFromQuery = params.get("price_per_sec");
+        const priceAudioPerSecFromQuery = params.get("price_audio_per_sec");
 
-        let rawPrice = priceFromQuery;
-        let rawPriceAudio = priceAudioFromQuery;
+        const tokensPerSecStd = parseTokens(pricePerSecFromQuery);
+        const tokensPerSecAudio = parseTokens(priceAudioPerSecFromQuery);
 
-        if (!rawPrice && startParamRaw && startParamRaw.startsWith("price=")) {
-            rawPrice = startParamRaw.replace("price=", "");
-        }
+        if (tokensPerSecStd !== null) {
+            state.tokensPerSecondStd = tokensPerSecStd;
 
-        const baseTokensStd = parseTokens(rawPrice);
-        const baseTokensAudio = parseTokens(rawPriceAudio);
-
-        if (baseTokensStd !== null) {
-            const baseDuration = Number.isFinite(state.priceBaseDuration) && state.priceBaseDuration > 0
-                ? state.priceBaseDuration
-                : state.duration;
-            state.tokensPerSecondStd = baseTokensStd / baseDuration;
-
-            if (baseTokensAudio !== null) {
-                state.tokensPerSecondAudio = baseTokensAudio / baseDuration;
+            if (tokensPerSecAudio !== null) {
+                state.tokensPerSecondAudio = tokensPerSecAudio;
             } else {
                 // Audio стоит дороже: 0.07 / 0.055
                 state.tokensPerSecondAudio = state.tokensPerSecondStd * (PRICE_PER_SECOND_AUDIO / PRICE_PER_SECOND_STD);
