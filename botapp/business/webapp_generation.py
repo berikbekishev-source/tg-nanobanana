@@ -173,11 +173,32 @@ def process_kling_webapp(user_id: int, payload: Dict[str, Any]) -> Optional[int]
     requested_aspect = payload.get("aspectRatio") or payload.get("aspect_ratio") or defaults.get("aspect_ratio") or "16:9"
     aspect_ratio = requested_aspect if requested_aspect in allowed_aspects else allowed_aspects[0]
 
+    # Определяем режим качества (std/pro)
+    # Для kling-v2-1-master mode не поддерживается
+    quality_mode = None
+    if model_slug != "kling-v2-1-master":
+        quality_mode = (payload.get("mode") or "std").lower()
+        if quality_mode not in {"std", "pro"}:
+            quality_mode = "std"
+
+    # enable_audio для kling-v2-6
+    enable_audio = payload.get("enableAudio") is True or payload.get("enable_audio") is True
+    if model_slug == "kling-v2-6" and enable_audio:
+        quality_mode = "pro"
+
     params = {
         "duration": duration_value,
         "cfg_scale": cfg_scale_value,
         "aspect_ratio": aspect_ratio,
     }
+
+    # mode только если поддерживается
+    if quality_mode is not None:
+        params["mode"] = quality_mode
+
+    # enable_audio если включено
+    if enable_audio:
+        params["enable_audio"] = True
 
     source_media = None
 
@@ -232,11 +253,80 @@ def process_kling_webapp(user_id: int, payload: Dict[str, Any]) -> Optional[int]
             "source": "kling_webapp",
         }
 
+        # Обработка конечного изображения (tail) - только для v2-5-turbo и v2-1
+        tail_image_b64 = payload.get("imageTailData")
+        if tail_image_b64 and model_slug not in {"kling-v2-1-master", "kling-v2-6"}:
+            try:
+                tail_raw = base64.b64decode(tail_image_b64)
+            except Exception:
+                _send_error_message(user_id, "❌ Не удалось прочитать конечное изображение. Загрузите файл ещё раз.")
+                return None
+
+            if len(tail_raw) > MAX_IMAGE_BYTES:
+                _send_error_message(user_id, "❌ Конечное изображение слишком большое. Максимум 10 МБ.")
+                return None
+
+            tail_mime = payload.get("imageTailMime") or "image/png"
+            tail_file_name = payload.get("imageTailName") or "tail_image.png"
+
+            # Конвертируем и загружаем tail image в Supabase
+            tail_png_bytes = _convert_to_png_bytes(tail_raw, tail_mime)
+            try:
+                tail_upload_obj = supabase_upload_png(tail_png_bytes)
+            except Exception as exc:
+                logger.error("Ошибка загрузки tail image в Supabase: %s", exc)
+                ErrorTracker.log(
+                    origin=BotErrorEvent.Origin.CELERY,
+                    severity=BotErrorEvent.Severity.WARNING,
+                    handler="webapp_generation.process_kling_webapp",
+                    chat_id=user_id,
+                    payload={"reason": "supabase_upload_failed", "image_type": "tail"},
+                    exc=exc,
+                )
+                _send_error_message(user_id, "❌ Не удалось загрузить конечное изображение. Попробуйте ещё раз.")
+                return None
+
+            tail_image_url = _extract_public_url(tail_upload_obj)
+            if not tail_image_url:
+                _send_error_message(user_id, "❌ Не удалось получить ссылку на конечное изображение. Попробуйте снова.")
+                return None
+
+            params["image_tail"] = tail_image_url
+            # При наличии tail image принудительно ставим pro
+            params["mode"] = "pro"
+            quality_mode = "pro"
+
+            # Добавляем информацию о tail image в source_media
+            source_media["tail_file_name"] = tail_file_name
+            source_media["tail_mime_type"] = tail_mime
+            source_media["tail_storage_url"] = tail_image_url
+            source_media["tail_size_bytes"] = len(tail_raw)
+
+    # Определяем модель для расчёта стоимости
+    pricing_model = model
+    if model_slug == "kling-v2-6" and enable_audio:
+        try:
+            pricing_model = AIModel.objects.get(slug="kling-v2-6-pro-with-sound")
+        except AIModel.DoesNotExist:
+            pass
+    elif model_slug == "kling-v2-5-turbo" and quality_mode == "pro":
+        try:
+            pricing_model = AIModel.objects.get(slug="kling-v2-5-turbo-pro")
+        except AIModel.DoesNotExist:
+            pass
+    elif model_slug == "kling-v2-1" and quality_mode == "pro":
+        try:
+            pricing_model = AIModel.objects.get(slug="kling-v2-1-pro")
+        except AIModel.DoesNotExist:
+            pass
+
+    logger.info(f"[Kling WebApp] model_slug={model_slug}, quality_mode={quality_mode}, pricing_model={pricing_model.slug}")
+
     # Создаём запрос на генерацию
     try:
         gen_request = GenerationService.create_generation_request(
             user=user,
-            ai_model=model,
+            ai_model=pricing_model,
             prompt=prompt,
             quantity=1,
             generation_type=generation_type,
