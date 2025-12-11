@@ -605,10 +605,22 @@ class KlingVideoProvider(BaseVideoProvider):
         raise VideoGenerationError("Для режима image2video необходимо загрузить изображение.")
 
     def _resolve_tail_image(self, *, params: Dict[str, Any]) -> Optional[str]:
+        """Обрабатывает конечное изображение (tail) - загружает через Kling assets API если нужно."""
         tail_image = params.get("image_tail") or params.get("tail_image") or params.get("imageTail")
         if not tail_image:
             return None
-        return str(tail_image)
+        url_str = str(tail_image)
+        # Если URL уже с домена Kling - используем как есть
+        if self._is_useapi_asset(url_str):
+            return url_str
+        # Иначе скачиваем и загружаем через Kling assets API
+        # (Kling API не может получить доступ к внешним URL напрямую)
+        image_bytes, mime = self._download_raw(url_str)
+        return self._upload_image_asset(
+            image_bytes,
+            mime_type=mime,
+            file_name="tail_image.png",
+        )
 
     def _download_file(self, url: str) -> Tuple[bytes, Optional[str]]:
         try:
