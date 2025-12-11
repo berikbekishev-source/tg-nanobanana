@@ -229,7 +229,11 @@ def gemini_generate_images(
 
     payload: Dict[str, Any] = {"contents": [{"role": "user", "parts": parts}]}
 
-    generation_config: Dict[str, Any] = {"responseModalities": ["IMAGE"]}
+    # gemini-2.5-flash-image требует TEXT и IMAGE, gemini-3-pro может только IMAGE
+    if "2.5-flash" in model_id or "2.0-flash" in model_id:
+        generation_config: Dict[str, Any] = {"responseModalities": ["TEXT", "IMAGE"]}
+    else:
+        generation_config: Dict[str, Any] = {"responseModalities": ["IMAGE"]}
     image_config: Dict[str, Any] = {}
 
     for key in ("temperature", "top_p", "top_k"):
