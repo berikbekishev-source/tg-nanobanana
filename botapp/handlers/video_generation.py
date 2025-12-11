@@ -1160,6 +1160,21 @@ async def _handle_kling_webapp_data_impl(message: Message, state: FSMContext, pa
         )
         await state.clear()
         return
+
+    # Определяем режим качества (std/pro)
+    quality_mode = (payload.get("mode") or "std").lower()
+    if quality_mode not in {"std", "pro"}:
+        quality_mode = "std"
+
+    # Для режима Pro используем отдельную модель для расчёта стоимости
+    pricing_model = model
+    if quality_mode == "pro":
+        try:
+            pricing_model = await sync_to_async(AIModel.objects.get)(slug="kling-v2-5-turbo-pro")
+        except AIModel.DoesNotExist:
+            # Если модель Pro не найдена, используем базовую
+            pass
+
     await state.update_data(
         model_id=int(model.id),
         model_slug=str(model.slug),
@@ -1189,10 +1204,10 @@ async def _handle_kling_webapp_data_impl(message: Message, state: FSMContext, pa
         return
 
     try:
-        cost_tokens = await sync_to_async(get_base_price_tokens)(model)
+        cost_tokens = await sync_to_async(get_base_price_tokens)(pricing_model)
         can_generate, error_msg = await sync_to_async(BalanceService.check_can_generate)(
             user,
-            model,
+            pricing_model,
             total_cost_tokens=cost_tokens,
         )
         if not can_generate:
@@ -1241,17 +1256,20 @@ async def _handle_kling_webapp_data_impl(message: Message, state: FSMContext, pa
         "duration": duration_value,
         "cfg_scale": cfg_scale_value,
         "aspect_ratio": aspect_ratio,
+        "mode": quality_mode,
     }
 
-    # Для image2video - валидируем изображение, но НЕ загружаем в Supabase
+    # Для image2video - валидируем изображения, но НЕ загружаем в Supabase
     # Загрузка будет выполнена в фоне
     image_data_for_background = None
+    tail_image_data_for_background = None
 
     if generation_type == "image2video":
+        # Начальное изображение (обязательно)
         image_b64 = payload.get("imageData")
         if not image_b64:
             await message.answer(
-                "Загрузите изображение в WebApp для режима Image → Video.",
+                "Загрузите начальное изображение в WebApp для режима Image → Video.",
                 reply_markup=get_cancel_keyboard(),
             )
             return
@@ -1281,6 +1299,37 @@ async def _handle_kling_webapp_data_impl(message: Message, state: FSMContext, pa
             "file_name": file_name,
         }
 
+        # Конечное изображение (необязательно)
+        tail_image_b64 = payload.get("imageTailData")
+        if tail_image_b64:
+            try:
+                tail_raw = base64.b64decode(tail_image_b64)
+            except Exception:
+                await message.answer(
+                    "Не удалось прочитать конечное изображение. Загрузите файл ещё раз.",
+                    reply_markup=get_cancel_keyboard(),
+                )
+                return
+
+            if len(tail_raw) > MAX_KLING_IMAGE_BYTES:
+                await message.answer(
+                    "Конечное изображение слишком большое. Максимум 10 МБ.",
+                    reply_markup=get_cancel_keyboard(),
+                )
+                return
+
+            tail_mime = payload.get("imageTailMime") or "image/png"
+            tail_file_name = payload.get("imageTailName") or "tail_image.png"
+
+            tail_image_data_for_background = {
+                "raw": tail_raw,
+                "mime": tail_mime,
+                "file_name": tail_file_name,
+            }
+            # При наличии конечного изображения принудительно ставим Pro
+            params["mode"] = "pro"
+            quality_mode = "pro"
+
     # Закрываем state - webapp закроется мгновенно
     await state.clear()
 
@@ -1290,12 +1339,14 @@ async def _handle_kling_webapp_data_impl(message: Message, state: FSMContext, pa
             message=message,
             user=user,
             model=model,
+            pricing_model=pricing_model,
             prompt=prompt,
             generation_type=generation_type,
             params=params,
             duration_value=duration_value,
             aspect_ratio=aspect_ratio,
             image_data=image_data_for_background,
+            tail_image_data=tail_image_data_for_background,
         )
     )
 
@@ -1305,17 +1356,19 @@ async def _kling_background_process(
     message: Message,
     user,
     model,
+    pricing_model,
     prompt: str,
     generation_type: str,
     params: dict,
     duration_value: int,
     aspect_ratio: str,
     image_data: dict | None,
+    tail_image_data: dict | None = None,
 ):
-    """Фоновая обработка Kling генерации - загрузка изображения и запуск задачи."""
+    """Фоновая обработка Kling генерации - загрузка изображений и запуск задачи."""
     source_media = None
 
-    # Загружаем изображение в Supabase если нужно
+    # Загружаем начальное изображение в Supabase если нужно
     if generation_type == "image2video" and image_data:
         raw = image_data["raw"]
         mime = image_data["mime"]
@@ -1330,11 +1383,11 @@ async def _kling_background_process(
                 severity=BotErrorEvent.Severity.WARNING,
                 handler="video_generation._kling_background_process",
                 chat_id=message.chat.id,
-                payload={"reason": "supabase_upload_failed"},
+                payload={"reason": "supabase_upload_failed", "image_type": "start"},
                 exc=exc,
             )
             await message.answer(
-                "❌ Не удалось загрузить изображение. Попробуйте ещё раз.",
+                "❌ Не удалось загрузить начальное изображение. Попробуйте ещё раз.",
                 reply_markup=get_main_menu_inline_keyboard(),
             )
             return
@@ -1356,11 +1409,52 @@ async def _kling_background_process(
             "source": "kling_webapp",
         }
 
-    # Создаём запрос на генерацию
+        # Загружаем конечное изображение (tail) если есть
+        if tail_image_data:
+            tail_raw = tail_image_data["raw"]
+            tail_mime = tail_image_data["mime"]
+            tail_file_name = tail_image_data["file_name"]
+
+            tail_png_bytes = _convert_to_png_bytes(tail_raw, tail_mime)
+            try:
+                tail_upload_obj = await sync_to_async(supabase_upload_png)(tail_png_bytes)
+            except Exception as exc:
+                await ErrorTracker.alog(
+                    origin=BotErrorEvent.Origin.TELEGRAM,
+                    severity=BotErrorEvent.Severity.WARNING,
+                    handler="video_generation._kling_background_process",
+                    chat_id=message.chat.id,
+                    payload={"reason": "supabase_upload_failed", "image_type": "tail"},
+                    exc=exc,
+                )
+                await message.answer(
+                    "❌ Не удалось загрузить конечное изображение. Попробуйте ещё раз.",
+                    reply_markup=get_main_menu_inline_keyboard(),
+                )
+                return
+
+            tail_image_url = _extract_public_url(tail_upload_obj)
+            if not tail_image_url:
+                await message.answer(
+                    "❌ Не удалось получить ссылку на конечное изображение. Попробуйте снова.",
+                    reply_markup=get_main_menu_inline_keyboard(),
+                )
+                return
+
+            params["image_tail"] = tail_image_url
+            # При наличии tail image принудительно ставим pro (провайдер требует)
+            params["mode"] = "pro"
+            # Добавляем информацию о tail image в source_media
+            source_media["tail_file_name"] = tail_file_name
+            source_media["tail_mime_type"] = tail_mime
+            source_media["tail_storage_url"] = tail_image_url
+            source_media["tail_size_bytes"] = len(tail_raw)
+
+    # Создаём запрос на генерацию (используем pricing_model для расчёта стоимости)
     try:
         gen_request = await sync_to_async(GenerationService.create_generation_request)(
             user=user,
-            ai_model=model,
+            ai_model=pricing_model,
             prompt=prompt,
             quantity=1,
             generation_type=generation_type,
