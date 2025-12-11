@@ -1161,18 +1161,39 @@ async def _handle_kling_webapp_data_impl(message: Message, state: FSMContext, pa
         await state.clear()
         return
 
-    # Определяем режим качества (std/pro)
-    quality_mode = (payload.get("mode") or "std").lower()
-    if quality_mode not in {"std", "pro"}:
-        quality_mode = "std"
+    # Определяем режим качества (std/pro) и enable_audio
+    # Для kling-v2-1-master mode не поддерживается
+    quality_mode = None
+    if model_slug != "kling-v2-1-master":
+        quality_mode = (payload.get("mode") or "std").lower()
+        if quality_mode not in {"std", "pro"}:
+            quality_mode = "std"
 
-    # Для режима Pro используем отдельную модель для расчёта стоимости
+    enable_audio = payload.get("enableAudio") is True or payload.get("enable_audio") is True
+
+    # Для kling-v2-6 с enable_audio требуется mode=pro
+    if model_slug == "kling-v2-6" and enable_audio:
+        quality_mode = "pro"
+
+    # Определяем модель для расчёта стоимости
     pricing_model = model
-    if quality_mode == "pro":
+    if model_slug == "kling-v2-6" and enable_audio:
+        # Для kling-v2-6 с аудио используем kling-v2-6-pro-with-sound
+        try:
+            pricing_model = await sync_to_async(AIModel.objects.get)(slug="kling-v2-6-pro-with-sound")
+        except AIModel.DoesNotExist:
+            pass
+    elif model_slug == "kling-v2-5-turbo" and quality_mode == "pro":
+        # Для kling-v2-5-turbo в режиме Pro
         try:
             pricing_model = await sync_to_async(AIModel.objects.get)(slug="kling-v2-5-turbo-pro")
         except AIModel.DoesNotExist:
-            # Если модель Pro не найдена, используем базовую
+            pass
+    elif model_slug == "kling-v2-1" and quality_mode == "pro":
+        # Для kling-v2-1 в режиме Pro
+        try:
+            pricing_model = await sync_to_async(AIModel.objects.get)(slug="kling-v2-1-pro")
+        except AIModel.DoesNotExist:
             pass
 
     await state.update_data(
@@ -1256,8 +1277,15 @@ async def _handle_kling_webapp_data_impl(message: Message, state: FSMContext, pa
         "duration": duration_value,
         "cfg_scale": cfg_scale_value,
         "aspect_ratio": aspect_ratio,
-        "mode": quality_mode,
     }
+
+    # mode только если поддерживается (не для kling-v2-1-master)
+    if quality_mode is not None:
+        params["mode"] = quality_mode
+
+    # Добавляем enable_audio если включено
+    if enable_audio:
+        params["enable_audio"] = True
 
     # Для image2video - валидируем изображения, но НЕ загружаем в Supabase
     # Загрузка будет выполнена в фоне
@@ -1299,9 +1327,9 @@ async def _handle_kling_webapp_data_impl(message: Message, state: FSMContext, pa
             "file_name": file_name,
         }
 
-        # Конечное изображение (необязательно)
+        # Конечное изображение (необязательно, не поддерживается для kling-v2-1-master)
         tail_image_b64 = payload.get("imageTailData")
-        if tail_image_b64:
+        if tail_image_b64 and model_slug != "kling-v2-1-master":
             try:
                 tail_raw = base64.b64decode(tail_image_b64)
             except Exception:
