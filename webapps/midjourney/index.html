@@ -6,16 +6,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Midjourney · INTEGER</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
-    <script>
-        // Global error handler for client-side debugging
-        window.onerror = function (msg, url, line, col, error) {
-            const tg = window.Telegram?.WebApp;
-            if (tg) {
-                tg.showAlert(`JS Error: ${msg}\nLine: ${line}`);
-            }
-            return false;
-        };
-    </script>
     <style>
         :root {
             --bg: #0f1c2d;
@@ -28,7 +18,7 @@
             --danger: #ff6b6b;
             --border: #223956;
             --radius: 18px;
-            --shadow: 0 12px 35px rgba(0, 0, 0, 0.35);
+            --shadow: 0 14px 40px rgba(0, 0, 0, 0.4);
             --dot: radial-gradient(circle, rgba(255, 255, 255, 0.06) 1px, transparent 0);
             --font: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
         }
@@ -52,7 +42,7 @@
             border: 1px solid var(--border);
             border-radius: var(--radius);
             box-shadow: var(--shadow);
-            padding: 16px 16px 6px;
+            padding: 16px 16px 10px;
             position: relative;
             overflow: hidden;
         }
@@ -70,20 +60,20 @@
             display: flex;
             align-items: center;
             gap: 12px;
-            margin-bottom: 10px;
+            margin-bottom: 8px;
         }
 
         .badge {
-            width: 42px;
-            height: 42px;
-            border-radius: 50%;
+            width: 44px;
+            height: 44px;
+            border-radius: 14px;
             background: linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 100%);
             color: #0f1c2d;
             font-weight: 800;
-            font-size: 18px;
+            font-size: 17px;
             display: grid;
             place-items: center;
-            box-shadow: 0 10px 24px rgba(241, 155, 40, 0.35);
+            box-shadow: 0 10px 28px rgba(241, 155, 40, 0.35);
         }
 
         h1 {
@@ -96,7 +86,7 @@
         .sub {
             font-size: 13px;
             color: var(--muted);
-            margin: 0;
+            margin: 2px 0 0;
         }
 
         .section {
@@ -126,7 +116,7 @@
             border-radius: 14px;
             padding: 12px;
             font-size: 14px;
-            font-weight: 600;
+            font-weight: 700;
             text-align: center;
             cursor: pointer;
             transition: all 0.15s ease;
@@ -134,7 +124,7 @@
 
         .chip.active {
             background: linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 100%);
-            color: #0f1c2d;
+            color: #04101f;
             box-shadow: 0 10px 24px rgba(241, 155, 40, 0.35);
         }
 
@@ -148,7 +138,7 @@
             width: 100%;
             min-height: 120px;
             padding: 12px;
-            background: #0d1a2b;
+            background: #0a1222;
             border: 1px solid var(--border);
             border-radius: 12px;
             color: var(--text);
@@ -181,7 +171,7 @@
             border-radius: 12px;
             padding: 10px;
             text-align: center;
-            font-weight: 600;
+            font-weight: 700;
             font-size: 14px;
             color: var(--text);
             cursor: pointer;
@@ -191,29 +181,23 @@
         .pill.active {
             background: linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 100%);
             color: #0f1c2d;
-            box-shadow: 0 8px 18px rgba(241, 155, 40, 0.28);
-        }
-
-        .select-row {
-            display: flex;
-            gap: 10px;
-            align-items: center;
-            margin-top: 8px;
+            box-shadow: 0 8px 20px rgba(241, 155, 40, 0.28);
         }
 
         select {
-            flex: 1;
+            width: 100%;
             background: #0f1c2d;
             border: 1px solid var(--border);
             color: var(--text);
             border-radius: 12px;
-            padding: 10px 12px;
+            padding: 12px;
             font-size: 14px;
+            font-weight: 700;
             outline: none;
         }
 
         .slider-block {
-            margin: 12px 0;
+            margin: 12px 0 0;
         }
 
         .slider-header {
@@ -224,63 +208,126 @@
             color: var(--muted);
         }
 
+        .slider-value {
+            font-weight: 700;
+            color: var(--text);
+        }
+
         input[type="range"] {
             width: 100%;
             margin-top: 8px;
             accent-color: var(--accent);
         }
 
-        .footer {
-            position: sticky;
-            bottom: 0;
-            margin-top: 16px;
-            background: linear-gradient(180deg, transparent, #0f1c2d 45%);
-            padding-top: 12px;
+        .slider-range {
+            font-size: 11px;
+            color: var(--muted);
+            text-align: right;
+            margin-top: 2px;
         }
 
-        .price-row {
+        /* Upload box styles */
+        .upload-section {
+            margin-top: 12px;
+        }
+
+        .upload-header {
             display: flex;
             justify-content: space-between;
-            align-items: baseline;
-            margin-bottom: 10px;
-            background: rgba(20, 38, 60, 0.7);
-            border: 1px solid var(--border);
-            border-radius: 12px;
-            padding: 12px;
+            align-items: flex-start;
+            margin-bottom: 8px;
         }
 
-        .price-label {
+        .upload-title {
             font-size: 13px;
+            font-weight: 700;
+            text-transform: uppercase;
+            color: var(--text);
+            line-height: 1.3;
+        }
+
+        .upload-hint {
+            font-size: 12px;
+            color: var(--muted);
+            text-align: right;
+            white-space: nowrap;
+        }
+
+        .upload-box {
+            border: 2px dashed var(--border);
+            border-radius: 16px;
+            background: rgba(15, 28, 45, 0.5);
+            min-height: 120px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.15s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .upload-box:hover {
+            border-color: var(--accent);
+            background: rgba(241, 155, 40, 0.05);
+        }
+
+        .upload-box.has-file {
+            border-style: solid;
+            border-color: var(--accent);
+        }
+
+        .upload-box input[type="file"] {
+            position: absolute;
+            inset: 0;
+            opacity: 0;
+            cursor: pointer;
+        }
+
+        .upload-icon {
+            font-size: 32px;
+            color: var(--muted);
+            margin-bottom: 8px;
+        }
+
+        .upload-text {
+            font-size: 14px;
             color: var(--muted);
         }
 
-        .price-value {
-            font-size: 20px;
-            font-weight: 800;
-            color: var(--accent-2);
-        }
-
-        .main-btn {
+        .upload-preview {
             width: 100%;
-            padding: 16px;
-            border: none;
-            border-radius: 14px;
-            background: linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 100%);
-            color: #0f1c2d;
-            font-weight: 800;
-            font-size: 16px;
+            height: 100%;
+            object-fit: contain;
+            max-height: 120px;
+        }
+
+        .upload-file-info {
+            position: absolute;
+            bottom: 8px;
+            left: 8px;
+            right: 8px;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 6px 10px;
+            border-radius: 8px;
+            font-size: 12px;
+            color: var(--text);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .upload-remove {
+            color: var(--danger);
             cursor: pointer;
-            box-shadow: 0 12px 30px rgba(241, 155, 40, 0.35);
-            transition: transform 0.12s ease, box-shadow 0.12s ease;
+            font-weight: 700;
         }
 
-        .main-btn:hover {
-            transform: translateY(-1px);
-            box-shadow: 0 14px 32px rgba(241, 155, 40, 0.4);
-        }
-
-        .main-btn:active {
-            transform: translateY(0);
+        .upload-error {
+            color: var(--danger);
+            font-size: 12px;
+            margin-top: 6px;
         }
 
         .error {
@@ -289,24 +336,11 @@
             margin-top: 6px;
         }
 
-        .upload {
-            display: none;
-            margin-top: 10px;
-            padding: 12px;
-            border: 1px dashed var(--border);
-            border-radius: 12px;
-            background: rgba(15, 28, 45, 0.7);
-        }
-
-        .upload input {
-            width: 100%;
+        .muted {
             color: var(--muted);
-        }
-
-        .upload .preview {
-            margin-top: 8px;
             font-size: 13px;
-            color: var(--muted);
+            line-height: 1.5;
+            margin: 8px 0 0;
         }
 
         @media (min-width: 640px) {
@@ -333,22 +367,34 @@
         </div>
 
         <div class="section">
-            <p class="section-title">Параметры</p>
-            <p class="label">Тип генерации</p>
+            <p class="section-title">Режим</p>
             <div class="chip-toggle" id="typeToggle">
                 <div class="chip active" data-type="mj_txt2img">Текст → Изображение</div>
                 <div class="chip" data-type="mj_img2img">Изображение → Изображение</div>
             </div>
+        </div>
 
-            <p class="label" style="margin-top: 14px;">Текстовый запрос</p>
+        <div class="section">
+            <p class="section-title">Промт</p>
+            <p class="label">Текстовый запрос</p>
             <textarea id="prompt" placeholder="Опишите, что нужно сгенерировать..." maxlength="4000" enterkeyhint="done"
                 inputmode="text"></textarea>
             <div class="count" id="promptCount">0/4000</div>
+        </div>
 
-            <div class="upload" id="imgBlock">
-                <p class="label" style="margin:0 0 6px;">Изображение для img2img</p>
-                <input type="file" id="imgInput" accept="image/*">
-                <div class="preview" id="imgPreview">Файл не выбран</div>
+        <div class="section" id="imageUploadSection" style="display:none;">
+            <p class="section-title">Изображение</p>
+            <div class="upload-section">
+                <div class="upload-header">
+                    <span class="upload-title">Референс</span>
+                    <span class="upload-hint">JPG/PNG • ≤ 3 МБ</span>
+                </div>
+                <div class="upload-box" id="uploadBox">
+                    <input type="file" id="imgInput" accept="image/*">
+                    <div class="upload-icon">+</div>
+                    <div class="upload-text">Загрузить</div>
+                </div>
+                <div class="upload-error" id="uploadError"></div>
             </div>
         </div>
 
@@ -371,16 +417,14 @@
 
         <div class="section">
             <p class="section-title">Версия Midjourney</p>
-            <div class="select-row">
-                <select id="version">
-                    <option value="7" selected>Версия 7</option>
-                    <option value="6.1">Версия 6.1</option>
-                    <option value="6">Версия 6</option>
-                    <option value="5.2">Версия 5.2</option>
-                    <option value="5.1">Версия 5.1</option>
-                    <option value="niji6">Niji 6</option>
-                </select>
-            </div>
+            <select id="version">
+                <option value="7" selected>Версия 7</option>
+                <option value="6.1">Версия 6.1</option>
+                <option value="6">Версия 6</option>
+                <option value="5.2">Версия 5.2</option>
+                <option value="5.1">Версия 5.1</option>
+                <option value="niji6">Niji 6</option>
+            </select>
         </div>
 
         <div class="section">
@@ -389,38 +433,38 @@
             <div class="slider-block">
                 <div class="slider-header">
                     <span>Стилизация</span>
-                    <span id="stylizationValue">200</span>
+                    <span class="slider-value" id="stylizationValue">200</span>
                 </div>
                 <input type="range" id="stylization" min="0" max="1000" step="10" value="200">
-                <div class="slider-header">
-                    <span></span>
-                    <span class="label">0 / 1000</span>
-                </div>
+                <div class="slider-range">0 — 1000</div>
             </div>
 
             <div class="slider-block">
                 <div class="slider-header">
                     <span>Странность</span>
-                    <span id="weirdnessValue">0</span>
+                    <span class="slider-value" id="weirdnessValue">0</span>
                 </div>
                 <input type="range" id="weirdness" min="0" max="3000" step="50" value="0">
-                <div class="slider-header">
-                    <span></span>
-                    <span class="label">0 / 3000</span>
-                </div>
+                <div class="slider-range">0 — 3000</div>
             </div>
 
             <div class="slider-block">
                 <div class="slider-header">
                     <span>Разнообразие</span>
-                    <span id="varietyValue">10</span>
+                    <span class="slider-value" id="varietyValue">10</span>
                 </div>
                 <input type="range" id="variety" min="0" max="100" step="5" value="10">
-                <div class="slider-header">
-                    <span></span>
-                    <span class="label">0 / 100</span>
-                </div>
+                <div class="slider-range">0 — 100</div>
             </div>
+        </div>
+
+        <div class="section">
+            <p class="section-title">Подсказка</p>
+            <p class="muted">
+                Midjourney создаёт художественные изображения по текстовому описанию. <br>
+                Используйте параметры стилизации для контроля над стилем. <br>
+                Примеры: «портрет киберпанк воина, неон» или «минималистичный пейзаж в стиле Хокусая».
+            </p>
         </div>
 
         <div id="error" class="error" style="display:none;"></div>
@@ -429,7 +473,16 @@
 
     <script>
         const tg = window.Telegram?.WebApp;
+
+        // Global error handler for debugging
+        window.onerror = function (msg, url, line, col, error) {
+            if (tg) tg.showAlert(`Error: ${msg}\nLine: ${line}`);
+            return false;
+        };
+
         const params = new URLSearchParams(window.location.search);
+        const MAX_SIZE = 3 * 1024 * 1024; // 3 MB
+
         const state = {
             modelSlug: params.get("model") || "midjourney-v7-fast",
             taskType: "mj_txt2img",
@@ -443,6 +496,7 @@
             imageData: null,
             imageMime: null,
             imageName: null,
+            imageSize: 0,
         };
 
         const els = {
@@ -457,10 +511,11 @@
             weirdnessValue: document.getElementById("weirdnessValue"),
             varietyValue: document.getElementById("varietyValue"),
             version: document.getElementById("version"),
-            error: document.getElementById("error"),
-            imgBlock: document.getElementById("imgBlock"),
+            imageUploadSection: document.getElementById("imageUploadSection"),
+            uploadBox: document.getElementById("uploadBox"),
             imgInput: document.getElementById("imgInput"),
-            imgPreview: document.getElementById("imgPreview"),
+            uploadError: document.getElementById("uploadError"),
+            error: document.getElementById("error"),
         };
 
         function setActive(container, target) {
@@ -495,6 +550,93 @@
             }
         }
 
+        function switchMode(mode) {
+            state.taskType = mode;
+            els.imageUploadSection.style.display = mode === "mj_img2img" ? "block" : "none";
+        }
+
+        function resetImage() {
+            state.imageData = null;
+            state.imageMime = null;
+            state.imageName = null;
+            state.imageSize = 0;
+            resetUploadBoxUI();
+        }
+
+        function updateUploadBoxUI(file, dataUrl) {
+            const box = els.uploadBox;
+            box.classList.add("has-file");
+            const sizeKb = (file.size / 1024).toFixed(1);
+            box.innerHTML = `
+                <input type="file" accept="image/*">
+                <img class="upload-preview" src="${dataUrl}" alt="preview">
+                <div class="upload-file-info">
+                    <span>${file.name} · ${sizeKb} КБ</span>
+                    <span class="upload-remove">✕</span>
+                </div>
+            `;
+
+            const newInput = box.querySelector('input[type="file"]');
+            const removeBtn = box.querySelector('.upload-remove');
+
+            newInput.addEventListener("change", handleFileChange);
+            removeBtn.addEventListener("click", (e) => {
+                e.stopPropagation();
+                resetImage();
+            });
+        }
+
+        function resetUploadBoxUI() {
+            const box = els.uploadBox;
+            box.classList.remove("has-file");
+            box.innerHTML = `
+                <input type="file" accept="image/*">
+                <div class="upload-icon">+</div>
+                <div class="upload-text">Загрузить</div>
+            `;
+
+            const newInput = box.querySelector('input[type="file"]');
+            newInput.addEventListener("change", handleFileChange);
+        }
+
+        function handleFileChange(e) {
+            const file = e.target.files?.[0];
+            els.uploadError.textContent = "";
+
+            if (!file) {
+                resetImage();
+                return;
+            }
+            if (!file.type.startsWith("image/")) {
+                els.uploadError.textContent = "Нужен файл изображения.";
+                resetImage();
+                return;
+            }
+            if (file.size > MAX_SIZE) {
+                els.uploadError.textContent = "Изображение слишком большое (макс 3 МБ).";
+                resetImage();
+                return;
+            }
+
+            const reader = new FileReader();
+            reader.onload = () => {
+                const result = reader.result;
+                if (typeof result === "string") {
+                    const base64 = result.split(",")[1] || result;
+                    state.imageData = base64;
+                    state.imageMime = file.type;
+                    state.imageName = file.name;
+                    state.imageSize = file.size;
+                    updateUploadBoxUI(file, result);
+                }
+            };
+            reader.onerror = () => {
+                els.uploadError.textContent = "Не удалось прочитать файл.";
+                resetImage();
+            };
+            reader.readAsDataURL(file);
+        }
+
         function sendData() {
             try {
                 els.prompt.blur();
@@ -508,14 +650,14 @@
                     return;
                 }
 
-            const payload = {
-                kind: "midjourney_settings",
-                taskType: state.taskType,
-                prompt: state.prompt,
-                speed: "fast",
-                aspectRatio: state.aspectRatio,
-                version: state.version,
-                stylization: state.stylization,
+                const payload = {
+                    kind: "midjourney_settings",
+                    taskType: state.taskType,
+                    prompt: state.prompt,
+                    speed: "fast",
+                    aspectRatio: state.aspectRatio,
+                    version: state.version,
+                    stylization: state.stylization,
                     weirdness: state.weirdness,
                     variety: state.variety,
                     modelSlug: state.modelSlug,
@@ -580,15 +722,14 @@
             }
         }
 
-        // Handlers
+        // Event listeners
         els.prompt.addEventListener("input", updateCounts);
 
         els.typeToggle.addEventListener("click", (e) => {
             const btn = e.target.closest(".chip");
             if (!btn) return;
             setActive(els.typeToggle, btn);
-            state.taskType = btn.dataset.type;
-            els.imgBlock.style.display = state.taskType === "mj_img2img" ? "block" : "none";
+            switchMode(btn.dataset.type);
         });
 
         els.ratioGrid.addEventListener("click", (e) => {
@@ -614,55 +755,9 @@
             });
         });
 
-        // Загрузка изображения
-        const MAX_SIZE = 3 * 1024 * 1024; // 3 MB
+        els.imgInput.addEventListener("change", handleFileChange);
 
-        function resetImage() {
-            state.imageData = null;
-            state.imageMime = null;
-            state.imageName = null;
-            els.imgInput.value = "";
-            els.imgPreview.textContent = "Файл не выбран";
-        }
-
-        els.imgInput.addEventListener("change", (e) => {
-            const file = e.target.files?.[0];
-            if (!file) {
-                resetImage();
-                return;
-            }
-            if (!file.type.startsWith("image/")) {
-                setError("Нужен файл изображения.");
-                resetImage();
-                return;
-            }
-            if (file.size > MAX_SIZE) {
-                setError("Изображение слишком большое (макс 3 МБ).");
-                resetImage();
-                return;
-            }
-            const reader = new FileReader();
-            reader.onload = () => {
-                const result = reader.result;
-                if (typeof result === "string") {
-                    const base64 = result.split(",")[1] || result;
-                    state.imageData = base64;
-                    state.imageMime = file.type;
-                    state.imageName = file.name;
-                    els.imgPreview.textContent = `${file.name} · ${(file.size / 1024).toFixed(1)} КБ`;
-                    setError("");
-                }
-            };
-            reader.onerror = () => {
-                setError("Не удалось прочитать файл.");
-                resetImage();
-            };
-            reader.readAsDataURL(file);
-        });
-
-        els.submitBtn?.addEventListener("click", sendData);
-
-        // Установим цену из query (?price=...) или initData.start_param = price=...
+        // Initialize price
         const priceFromQuery = params.get("price");
         if (priceFromQuery) {
             setPriceLabel(priceFromQuery);
@@ -681,13 +776,12 @@
         }
 
         updateCounts();
-        els.imgBlock.style.display = "none";
+        switchMode("mj_txt2img");
 
         if (tg) {
             try {
                 tg.ready();
                 tg.expand();
-                // Hide button initially if prompt is empty
                 if (!state.prompt) tg.MainButton.hide();
                 tg.onEvent("mainButtonClicked", sendData);
             } catch (e) {
