@@ -27,7 +27,7 @@ from botapp.keyboards import (
 )
 from botapp.models import TgUser, AIModel
 from botapp.business.balance import BalanceService
-from botapp.business.pricing import get_base_price_tokens
+from botapp.business.pricing import get_base_price_tokens, calculate_request_cost
 from botapp.reference_prompt import REFERENCE_PROMPT_MODELS, REFERENCE_PROMPT_PRICING_SLUG
 from botapp.reference_prompt.pricing import build_reference_prompt_price_line
 
@@ -204,7 +204,7 @@ async def global_create_video_start(message: Message, state: FSMContext):
         for model in models:
             if model.provider == "kling":
                 # Цена за 1 секунду (webapp умножает на выбранную длительность)
-                cost_per_sec = await sync_to_async(get_base_price_tokens)(model)
+                _, cost_per_sec = await sync_to_async(calculate_request_cost)(model, duration=1)
                 price_per_sec_label = f"⚡{cost_per_sec:.2f}"
 
                 # Для kling-v2-6 используем отдельный webapp с ценой audio
@@ -212,7 +212,7 @@ async def global_create_video_start(message: Message, state: FSMContext):
                     # Получаем цену для режима с аудио
                     try:
                         audio_model = await sync_to_async(AIModel.objects.get)(slug="kling-v2-6-pro-with-sound")
-                        audio_cost_per_sec = await sync_to_async(get_base_price_tokens)(audio_model)
+                        _, audio_cost_per_sec = await sync_to_async(calculate_request_cost)(audio_model, duration=1)
                         price_audio_per_sec_label = f"⚡{audio_cost_per_sec:.2f}"
                     except AIModel.DoesNotExist:
                         price_audio_per_sec_label = price_per_sec_label
@@ -225,13 +225,13 @@ async def global_create_video_start(message: Message, state: FSMContext):
                     # Для kling-v2-1 используем отдельный webapp с ценами pro и master
                     try:
                         pro_model = await sync_to_async(AIModel.objects.get)(slug="kling-v2-1-pro")
-                        pro_cost_per_sec = await sync_to_async(get_base_price_tokens)(pro_model)
+                        _, pro_cost_per_sec = await sync_to_async(calculate_request_cost)(pro_model, duration=1)
                         price_pro_per_sec_label = f"⚡{pro_cost_per_sec:.2f}"
                     except AIModel.DoesNotExist:
                         price_pro_per_sec_label = price_per_sec_label
                     try:
                         master_model = await sync_to_async(AIModel.objects.get)(slug="kling-v2-1-master")
-                        master_cost_per_sec = await sync_to_async(get_base_price_tokens)(master_model)
+                        _, master_cost_per_sec = await sync_to_async(calculate_request_cost)(master_model, duration=1)
                         price_master_per_sec_label = f"⚡{master_cost_per_sec:.2f}"
                     except AIModel.DoesNotExist:
                         price_master_per_sec_label = price_per_sec_label
@@ -245,7 +245,7 @@ async def global_create_video_start(message: Message, state: FSMContext):
                     # Для kling-v2-5-turbo и других — старый webapp с ценой pro
                     try:
                         pro_model = await sync_to_async(AIModel.objects.get)(slug="kling-v2-5-turbo-pro")
-                        pro_cost_per_sec = await sync_to_async(get_base_price_tokens)(pro_model)
+                        _, pro_cost_per_sec = await sync_to_async(calculate_request_cost)(pro_model, duration=1)
                         price_pro_per_sec_label = f"⚡{pro_cost_per_sec:.2f}"
                     except AIModel.DoesNotExist:
                         price_pro_per_sec_label = price_per_sec_label
