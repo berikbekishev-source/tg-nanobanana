@@ -482,15 +482,35 @@
             prompt: "",
             aspectRatio: "16:9",
             duration: Number(params.get("duration")) || 5,
-            // Начальное изображение
-            imageData: null,
+            // Начальное изображение (presigned URL)
+            imageUrl: null,
+            imageSize: 0,
             imageMime: null,
             imageName: null,
+            imageUploading: false,
             // Pricing
             priceLabel: "—",
             tokensPerSecondStd: null,
             tokensPerSecondAudio: null,
         };
+
+        // Загрузка изображения через presigned URL в Supabase
+        async function uploadToSupabase(file) {
+            const resp = await fetch('/api/storage/presigned-upload', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ content_type: file.type })
+            });
+            if (!resp.ok) throw new Error('Не удалось получить URL');
+            const { upload_url, public_url } = await resp.json();
+            const upload = await fetch(upload_url, {
+                method: 'PUT',
+                headers: { 'Content-Type': file.type },
+                body: file
+            });
+            if (!upload.ok) throw new Error('Не удалось загрузить');
+            return public_url;
+        }
 
         const els = {
             modeToggle: document.getElementById("modeToggle"),
@@ -590,8 +610,8 @@
             return allowed.includes(value) ? value : "16:9";
         }
 
-        // Обработка загрузки изображения
-        function handleImageUpload(file) {
+        // Обработка загрузки изображения (async presigned upload)
+        async function handleImageUpload(file) {
             const errorEl = els.startImageError;
             const boxEl = els.startImageBox;
 
@@ -614,28 +634,45 @@
                 return;
             }
 
-            const reader = new FileReader();
-            reader.onload = () => {
-                const result = reader.result;
-                if (typeof result === "string") {
-                    const base64 = result.split(",")[1] || result;
-                    state.imageData = base64;
-                    state.imageMime = file.type;
-                    state.imageName = file.name;
-                    updateImageBoxUI(boxEl, file, result);
-                }
-            };
-            reader.onerror = () => {
-                errorEl.textContent = "Не удалось прочитать файл.";
+            // Показываем статус загрузки
+            boxEl.classList.add("has-file");
+            boxEl.innerHTML = `
+                <input type="file" accept="image/jpeg,image/png,image/webp">
+                <div class="upload-icon">⏳</div>
+                <div class="upload-text">Загрузка...</div>
+            `;
+
+            state.imageUploading = true;
+            state.imageMime = file.type;
+            state.imageName = file.name;
+            state.imageSize = file.size;
+
+            try {
+                console.log("[Kling v2-6 WebApp] Uploading image to Supabase...");
+                const publicUrl = await uploadToSupabase(file);
+                console.log("[Kling v2-6 WebApp] Upload complete:", publicUrl);
+
+                // Читаем файл для превью
+                const reader = new FileReader();
+                reader.onload = () => {
+                    state.imageUrl = publicUrl;
+                    state.imageUploading = false;
+                    updateImageBoxUI(boxEl, file, reader.result);
+                };
+                reader.readAsDataURL(file);
+            } catch (err) {
+                console.error("[Kling v2-6 WebApp] Upload error:", err);
+                errorEl.textContent = "Ошибка загрузки. Попробуйте ещё раз.";
                 resetImage();
-            };
-            reader.readAsDataURL(file);
+            }
         }
 
         function resetImage() {
-            state.imageData = null;
+            state.imageUrl = null;
+            state.imageSize = 0;
             state.imageMime = null;
             state.imageName = null;
+            state.imageUploading = false;
             els.startImageInput.value = "";
             resetImageBoxUI(els.startImageBox);
         }
@@ -690,8 +727,12 @@
                     tg.showAlert("Введите промт");
                     return;
                 }
-                if (state.generationType === "image2video" && !state.imageData) {
+                if (state.generationType === "image2video" && !state.imageUrl) {
                     tg.showAlert("Загрузите изображение для режима Image → Video.");
+                    return;
+                }
+                if (state.imageUploading) {
+                    tg.showAlert("Дождитесь окончания загрузки изображения.");
                     return;
                 }
 
@@ -714,7 +755,9 @@
                 }
 
                 if (state.generationType === "image2video") {
-                    payload.imageData = state.imageData;
+                    // Отправляем URL вместо base64
+                    payload.imageUrl = state.imageUrl;
+                    payload.imageSize = state.imageSize;
                     payload.imageMime = state.imageMime;
                     payload.imageName = state.imageName;
                 }
@@ -731,39 +774,21 @@
 
                 console.log("[Kling v2-6 WebApp] Sending payload:", payload);
 
-                const hasLargeData = state.imageData;
-                const canUseKeepalive = state.generationType !== "image2video" || !hasLargeData;
-
-                const fetchPromise = fetch('/api/kling/webapp/submit', {
+                // Теперь payload маленький - всегда используем keepalive
+                fetch('/api/kling/webapp/submit', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         user_id: userId,
                         data: payload,
                     }),
-                    keepalive: canUseKeepalive
+                    keepalive: true
                 });
 
-                const timeoutPromise = new Promise((_, reject) =>
-                    setTimeout(() => reject(new Error("Timeout")), 30000)
-                );
+                // Сразу закрываем webapp - не ждём ответа
+                console.log("[Kling v2-6 WebApp] Request sent, closing immediately...");
+                tg.close();
 
-                Promise.race([fetchPromise, timeoutPromise])
-                    .then((response) => {
-                        if (response.ok) {
-                            console.log("[Kling v2-6 WebApp] Success, closing...");
-                            tg.close();
-                        } else {
-                            try { tg.MainButton.hideProgress(); } catch (_) { }
-                            tg.showAlert("Ошибка сервера. Попробуйте позже.");
-                            console.error("[Kling v2-6 WebApp] Server error", response.status);
-                        }
-                    })
-                    .catch((error) => {
-                        try { tg.MainButton.hideProgress(); } catch (_) { }
-                        tg.showAlert("Ошибка сети: " + error.message);
-                        console.error("[Kling v2-6 WebApp] Network error", error);
-                    });
             } catch (e) {
                 if (tg) tg.showAlert("Critical Error: " + e.message);
             }
