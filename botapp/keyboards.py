@@ -83,8 +83,6 @@ def get_image_models_keyboard(
 
     for model in models:
         if model.type == 'image' and model.is_active:
-            if model.slug == "nano-banana":
-                continue
             # Для Midjourney и GPT Image сразу открываем WebApp, остальные — через callback
             if model.provider == "midjourney" and midjourney_webapps.get(model.slug):
                 builder.button(
