@@ -4,10 +4,14 @@ from django.db import migrations
 
 
 def add_kling_v26_models(apps, schema_editor):
-    """Создаёт модели kling-v2-6 и kling-v2-6-pro-with-sound."""
+    """Создаёт модели kling-v2-6 и kling-v2-6-pro-with-sound, обновляет эмодзи у kling моделей."""
     AIModel = apps.get_model("botapp", "AIModel")
     PricingSettings = apps.get_model("botapp", "PricingSettings")
     pricing_settings = PricingSettings.objects.order_by("id").first()
+
+    # Обновляем эмодзи у существующих kling моделей на 🐉
+    AIModel.objects.filter(slug="kling-v2-5-turbo").update(display_name="🐉 Kling v2-5-turbo")
+    AIModel.objects.filter(slug="kling-v2-5-turbo-pro").update(display_name="🐉 Kling v2-5-turbo Pro")
 
     def calc_price(base_cost: Decimal):
         if not pricing_settings:
@@ -107,9 +111,12 @@ def add_kling_v26_models(apps, schema_editor):
 
 
 def remove_kling_v26_models(apps, schema_editor):
-    """Удаляет модели kling-v2-6."""
+    """Удаляет модели kling-v2-6 и восстанавливает старые эмодзи."""
     AIModel = apps.get_model("botapp", "AIModel")
     AIModel.objects.filter(slug__in=["kling-v2-6", "kling-v2-6-pro-with-sound"]).delete()
+    # Восстанавливаем старые эмодзи
+    AIModel.objects.filter(slug="kling-v2-5-turbo").update(display_name="🎥 Kling v2-5-turbo")
+    AIModel.objects.filter(slug="kling-v2-5-turbo-pro").update(display_name="🎥 Kling v2-5-turbo Pro")
 
 
 class Migration(migrations.Migration):

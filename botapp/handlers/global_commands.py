@@ -211,11 +211,36 @@ async def global_create_video_start(message: Message, state: FSMContext):
                     except (TypeError, ValueError):
                         default_duration = None
                 base_duration = default_duration if default_duration and default_duration > 0 else 10
-                kling_webapps[model.slug] = (
-                    f"{PUBLIC_BASE_URL}/kling/?"
-                    f"model={quote_plus(model.slug)}&price={quote_plus(price_label)}"
-                    f"&price_base_duration={quote_plus(str(base_duration))}"
-                )
+
+                # Для kling-v2-6 используем отдельный webapp с ценой audio
+                if model.slug == "kling-v2-6":
+                    # Получаем цену для режима с аудио
+                    try:
+                        audio_model = await sync_to_async(AIModel.objects.get)(slug="kling-v2-6-pro-with-sound")
+                        audio_cost = await sync_to_async(get_base_price_tokens)(audio_model)
+                        price_audio_label = f"⚡{audio_cost:.2f} токенов"
+                    except AIModel.DoesNotExist:
+                        price_audio_label = price_label
+                    kling_webapps[model.slug] = (
+                        f"{PUBLIC_BASE_URL}/kling-v2-6/?"
+                        f"model={quote_plus(model.slug)}&price={quote_plus(price_label)}"
+                        f"&price_audio={quote_plus(price_audio_label)}"
+                        f"&price_base_duration={quote_plus(str(base_duration))}"
+                    )
+                else:
+                    # Для kling-v2-5-turbo и других — старый webapp с ценой pro
+                    try:
+                        pro_model = await sync_to_async(AIModel.objects.get)(slug="kling-v2-5-turbo-pro")
+                        pro_cost = await sync_to_async(get_base_price_tokens)(pro_model)
+                        price_pro_label = f"⚡{pro_cost:.2f} токенов"
+                    except AIModel.DoesNotExist:
+                        price_pro_label = price_label
+                    kling_webapps[model.slug] = (
+                        f"{PUBLIC_BASE_URL}/kling/?"
+                        f"model={quote_plus(model.slug)}&price={quote_plus(price_label)}"
+                        f"&price_pro={quote_plus(price_pro_label)}"
+                        f"&price_base_duration={quote_plus(str(base_duration))}"
+                    )
             if model.provider == "veo" or model.slug.startswith("veo"):
                 cost = await sync_to_async(get_base_price_tokens)(model)
                 price_label = f"⚡{cost:.2f} токенов"
