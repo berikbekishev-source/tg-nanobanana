@@ -834,7 +834,15 @@
                     tg.MainButton.showProgress();
                 } catch (_) { }
 
-                console.log("[Kling WebApp] Sending payload:", payload);
+                // Логируем размеры данных
+                const payloadSize = JSON.stringify({user_id: userId, data: payload}).length;
+                console.log("[Kling WebApp] Sending payload:", {
+                    ...payload,
+                    imageData: payload.imageData ? `[${payload.imageData.length} chars]` : null,
+                    imageTailData: payload.imageTailData ? `[${payload.imageTailData.length} chars]` : null,
+                });
+                console.log("[Kling WebApp] Total payload size:", payloadSize, "bytes (~" + Math.round(payloadSize / 1024 / 1024 * 10) / 10 + " MB)");
+                console.log("[Kling WebApp] Has tail image:", !!state.imageTailData);
 
                 // keepalive ломается с крупными файлами (>64 КБ), отключаем для image2video с картинкой
                 const hasLargeData = state.imageData || state.imageTailData;

@@ -333,9 +333,9 @@ ERROR_ALERT_COOLDOWN = int(os.getenv("ERROR_ALERT_COOLDOWN", "300"))
 ERROR_LOG_RETENTION_DAYS = int(os.getenv("ERROR_LOG_RETENTION_DAYS", "30"))
 
 # --- Upload limits ---
-# Поднимаем лимиты для WebApp: base64 изображений может быть крупным
-DATA_UPLOAD_MAX_MEMORY_SIZE = 50 * 1024 * 1024  # 50 MB
-FILE_UPLOAD_MAX_MEMORY_SIZE = 50 * 1024 * 1024
+# Поднимаем лимиты для WebApp: два base64 изображения могут быть крупными
+DATA_UPLOAD_MAX_MEMORY_SIZE = 100 * 1024 * 1024  # 100 MB (два изображения по ~27 МБ в base64)
+FILE_UPLOAD_MAX_MEMORY_SIZE = 100 * 1024 * 1024
 
 # Test comment for Railway reconnect verification (deployment test)
 # E2E test timestamp: 2025-11-18 19:40 (with Railway CLI verification)
