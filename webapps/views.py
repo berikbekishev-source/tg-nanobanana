@@ -145,3 +145,16 @@ def kling_v21_webapp(request):
     with open(page_path, "r", encoding="utf-8") as f:
         html_content = f.read()
     return HttpResponse(html_content, content_type="text/html")
+
+
+@csrf_exempt
+@xframe_options_exempt
+def nano_banana_webapp(request):
+    """Отдаёт статический WebApp настроек Nano Banana (Gemini 2.5 Flash)."""
+    base_dir = os.path.dirname(__file__)
+    page_path = os.path.join(base_dir, "nano_banana", "index.html")
+    if not os.path.exists(page_path):
+        raise Http404("Nano Banana WebApp not found")
+    with open(page_path, "r", encoding="utf-8") as f:
+        html_content = f.read()
+    return HttpResponse(html_content, content_type="text/html")

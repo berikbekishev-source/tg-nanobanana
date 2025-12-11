@@ -147,12 +147,13 @@ async def global_create_image_start(message: Message, state: FSMContext):
             if (
                 model.provider in {"gemini_vertex", "gemini"}
                 and model.slug.startswith("nano-banana")
-                and model.slug != "nano-banana"
             ):
                 cost = await sync_to_async(get_base_price_tokens)(model)
                 price_label = f"⚡{cost:.2f} токенов"
+                # nano-banana-pro использует /nanobanana/, nano-banana использует /nano-banana/
+                webapp_path = "/nanobanana/" if model.slug == "nano-banana-pro" else "/nano-banana/"
                 nano_banana_webapps[model.slug] = (
-                    f"{PUBLIC_BASE_URL}/nanobanana/?"
+                    f"{PUBLIC_BASE_URL}{webapp_path}?"
                     f"model={quote_plus(model.slug)}&price={quote_plus(price_label)}"
                 )
 
