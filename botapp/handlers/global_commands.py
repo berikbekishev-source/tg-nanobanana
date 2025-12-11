@@ -202,8 +202,7 @@ async def global_create_video_start(message: Message, state: FSMContext):
     if PUBLIC_BASE_URL:
         for model in models:
             if model.provider == "kling":
-                cost = await sync_to_async(get_base_price_tokens)(model)
-                price_label = f"⚡{cost:.2f} токенов"
+                cost_per_sec = await sync_to_async(get_base_price_tokens)(model)
                 default_duration = None
                 if isinstance(model.default_params, dict):
                     try:
@@ -211,14 +210,16 @@ async def global_create_video_start(message: Message, state: FSMContext):
                     except (TypeError, ValueError):
                         default_duration = None
                 base_duration = default_duration if default_duration and default_duration > 0 else 10
+                # Цена за base_duration секунд (webapp делит на base_duration для получения цены за секунду)
+                price_label = f"⚡{(cost_per_sec * base_duration):.2f} токенов"
 
                 # Для kling-v2-6 используем отдельный webapp с ценой audio
                 if model.slug == "kling-v2-6":
                     # Получаем цену для режима с аудио
                     try:
                         audio_model = await sync_to_async(AIModel.objects.get)(slug="kling-v2-6-pro-with-sound")
-                        audio_cost = await sync_to_async(get_base_price_tokens)(audio_model)
-                        price_audio_label = f"⚡{audio_cost:.2f} токенов"
+                        audio_cost_per_sec = await sync_to_async(get_base_price_tokens)(audio_model)
+                        price_audio_label = f"⚡{(audio_cost_per_sec * base_duration):.2f} токенов"
                     except AIModel.DoesNotExist:
                         price_audio_label = price_label
                     kling_webapps[model.slug] = (
@@ -231,14 +232,14 @@ async def global_create_video_start(message: Message, state: FSMContext):
                     # Для kling-v2-1 используем отдельный webapp с ценами pro и master
                     try:
                         pro_model = await sync_to_async(AIModel.objects.get)(slug="kling-v2-1-pro")
-                        pro_cost = await sync_to_async(get_base_price_tokens)(pro_model)
-                        price_pro_label = f"⚡{pro_cost:.2f} токенов"
+                        pro_cost_per_sec = await sync_to_async(get_base_price_tokens)(pro_model)
+                        price_pro_label = f"⚡{(pro_cost_per_sec * base_duration):.2f} токенов"
                     except AIModel.DoesNotExist:
                         price_pro_label = price_label
                     try:
                         master_model = await sync_to_async(AIModel.objects.get)(slug="kling-v2-1-master")
-                        master_cost = await sync_to_async(get_base_price_tokens)(master_model)
-                        price_master_label = f"⚡{master_cost:.2f} токенов"
+                        master_cost_per_sec = await sync_to_async(get_base_price_tokens)(master_model)
+                        price_master_label = f"⚡{(master_cost_per_sec * base_duration):.2f} токенов"
                     except AIModel.DoesNotExist:
                         price_master_label = price_label
                     kling_webapps[model.slug] = (
@@ -252,8 +253,8 @@ async def global_create_video_start(message: Message, state: FSMContext):
                     # Для kling-v2-5-turbo и других — старый webapp с ценой pro
                     try:
                         pro_model = await sync_to_async(AIModel.objects.get)(slug="kling-v2-5-turbo-pro")
-                        pro_cost = await sync_to_async(get_base_price_tokens)(pro_model)
-                        price_pro_label = f"⚡{pro_cost:.2f} токенов"
+                        pro_cost_per_sec = await sync_to_async(get_base_price_tokens)(pro_model)
+                        price_pro_label = f"⚡{(pro_cost_per_sec * base_duration):.2f} токенов"
                     except AIModel.DoesNotExist:
                         price_pro_label = price_label
                     kling_webapps[model.slug] = (
