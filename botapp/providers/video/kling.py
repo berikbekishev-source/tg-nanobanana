@@ -154,6 +154,7 @@ class KlingVideoProvider(BaseVideoProvider):
             tail_image_url=tail_image_url,
         )
 
+        logger.info(f"[Kling] image2video payload: {payload}")
         create_response = self._request("POST", self._IMAGE2VIDEO_ENDPOINT, json_payload=payload)
         task_id = self._extract_task_id(create_response)
         if not task_id:
