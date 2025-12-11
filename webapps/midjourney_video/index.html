@@ -7,7 +7,6 @@
     <title>Midjourney Video · INTEGER</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <script>
-        // Глобальный обработчик ошибок для отладки в Telegram
         window.onerror = function (msg, url, line, col, error) {
             const tg = window.Telegram?.WebApp;
             if (tg) tg.showAlert(`JS Error: ${msg}\nLine: ${line}`);
@@ -154,48 +153,108 @@
             margin-top: 4px;
         }
 
-        .grid {
-            display: grid;
-            grid-template-columns: repeat(3, 1fr);
-            gap: 8px;
+        /* Upload box styles */
+        .upload-section {
+            margin-top: 12px;
         }
 
-        .pill {
-            background: #0f1c2d;
-            border: 1px solid var(--border);
-            border-radius: 12px;
-            padding: 10px;
-            text-align: center;
-            font-weight: 700;
-            font-size: 14px;
-            color: var(--text);
-            cursor: pointer;
-            transition: all 0.12s ease;
+        .upload-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 8px;
         }
 
-        .pill.active {
-            background: linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 100%);
-            color: #0f1c2d;
-            box-shadow: 0 8px 20px rgba(241, 155, 40, 0.28);
-        }
-
-        .upload {
-            border: 1px dashed var(--border);
-            border-radius: 12px;
-            background: rgba(15, 28, 45, 0.7);
-            padding: 12px;
-            margin-top: 8px;
-        }
-
-        .upload input {
-            width: 100%;
-            color: var(--muted);
-        }
-
-        .upload .preview {
-            margin-top: 6px;
+        .upload-title {
             font-size: 13px;
+            font-weight: 700;
+            text-transform: uppercase;
+            color: var(--text);
+            line-height: 1.3;
+        }
+
+        .upload-hint {
+            font-size: 12px;
             color: var(--muted);
+            text-align: right;
+            white-space: nowrap;
+        }
+
+        .upload-box {
+            border: 2px dashed var(--border);
+            border-radius: 16px;
+            background: rgba(15, 28, 45, 0.5);
+            min-height: 120px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.15s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .upload-box:hover {
+            border-color: var(--accent);
+            background: rgba(241, 155, 40, 0.05);
+        }
+
+        .upload-box.has-file {
+            border-style: solid;
+            border-color: var(--accent);
+        }
+
+        .upload-box input[type="file"] {
+            position: absolute;
+            inset: 0;
+            opacity: 0;
+            cursor: pointer;
+        }
+
+        .upload-icon {
+            font-size: 32px;
+            color: var(--muted);
+            margin-bottom: 8px;
+        }
+
+        .upload-text {
+            font-size: 14px;
+            color: var(--muted);
+        }
+
+        .upload-preview {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            max-height: 120px;
+        }
+
+        .upload-file-info {
+            position: absolute;
+            bottom: 8px;
+            left: 8px;
+            right: 8px;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 6px 10px;
+            border-radius: 8px;
+            font-size: 12px;
+            color: var(--text);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .upload-remove {
+            color: var(--danger);
+            cursor: pointer;
+            font-weight: 700;
+        }
+
+        .upload-error {
+            color: var(--danger);
+            font-size: 12px;
+            margin-top: 6px;
         }
 
         .muted {
@@ -229,7 +288,7 @@
         <div class="header">
             <div class="badge">MJ</div>
             <div>
-                <h1>Midjourney video</h1>
+                <h1>Midjourney Video</h1>
                 <p class="sub">Видео из изображения (KIE.AI)</p>
             </div>
         </div>
@@ -237,7 +296,6 @@
         <div class="section">
             <p class="section-title">Режим</p>
             <div class="chip">Image → Video</div>
-            <p class="muted">Загрузите одно изображение и добавьте контекст движения. Длительность ролика по умолчанию ~5 секунд.</p>
         </div>
 
         <div class="section">
@@ -246,19 +304,30 @@
             <textarea id="prompt" placeholder="Опишите движение и стиль..." maxlength="4000" enterkeyhint="done"
                 inputmode="text"></textarea>
             <div class="count" id="promptCount">0/4000</div>
+        </div>
 
-            <div class="upload">
-                <p class="label" style="margin:0 0 6px;">Загрузите изображение (JPG/PNG/WebP, до 10 МБ)</p>
-                <input type="file" id="imgInput" accept="image/*">
-                <div class="preview" id="imgPreview">Файл не выбран</div>
+        <div class="section">
+            <p class="section-title">Изображение</p>
+            <div class="upload-section">
+                <div class="upload-header">
+                    <span class="upload-title">Референс</span>
+                    <span class="upload-hint">JPG/PNG/WebP • ≤ 10 МБ</span>
+                </div>
+                <div class="upload-box" id="uploadBox">
+                    <input type="file" id="imgInput" accept="image/*">
+                    <div class="upload-icon">+</div>
+                    <div class="upload-text">Загрузить</div>
+                </div>
+                <div class="upload-error" id="uploadError"></div>
             </div>
         </div>
 
         <div class="section">
             <p class="section-title">Подсказка</p>
             <p class="muted">
-                Опишите движение, эмоцию или свет, чтобы Midjourney добавил динамику к кадру.
-                Пример: «камерой облетает вокруг ретро-автомобиля, неоновые огни, мокрый асфальт».
+                Опишите движение, эмоцию или свет, чтобы Midjourney добавил динамику к кадру. <br>
+                Длительность ролика ~5 секунд. <br>
+                Пример: «камера облетает вокруг ретро-автомобиля, неоновые огни, мокрый асфальт».
             </p>
         </div>
 
@@ -277,6 +346,7 @@
             imageData: null,
             imageMime: null,
             imageName: null,
+            imageSize: 0,
             version: params.get("version") || "7",
             priceLabel: "",
         };
@@ -284,12 +354,12 @@
         const els = {
             prompt: document.getElementById("prompt"),
             promptCount: document.getElementById("promptCount"),
+            uploadBox: document.getElementById("uploadBox"),
             imgInput: document.getElementById("imgInput"),
-            imgPreview: document.getElementById("imgPreview"),
+            uploadError: document.getElementById("uploadError"),
             error: document.getElementById("error"),
         };
 
-        // Применяем лимит промта из параметров (если передан)
         const effectiveMaxPrompt = Number.isFinite(MAX_PROMPT) ? MAX_PROMPT : 4000;
         if (els.prompt) {
             els.prompt.setAttribute("maxlength", effectiveMaxPrompt);
@@ -340,30 +410,67 @@
             state.imageData = null;
             state.imageMime = null;
             state.imageName = null;
-            els.imgInput.value = "";
-            els.imgPreview.textContent = "Файл не выбран";
+            state.imageSize = 0;
+            resetUploadBoxUI();
             updateButtonVisibility();
         }
 
-        els.prompt.addEventListener("input", updateCounts);
+        function updateUploadBoxUI(file, dataUrl) {
+            const box = els.uploadBox;
+            box.classList.add("has-file");
+            const sizeKb = (file.size / 1024).toFixed(1);
+            box.innerHTML = `
+                <input type="file" accept="image/*">
+                <img class="upload-preview" src="${dataUrl}" alt="preview">
+                <div class="upload-file-info">
+                    <span>${file.name} · ${sizeKb} КБ</span>
+                    <span class="upload-remove">✕</span>
+                </div>
+            `;
 
-        els.imgInput.addEventListener("change", (e) => {
+            const newInput = box.querySelector('input[type="file"]');
+            const removeBtn = box.querySelector('.upload-remove');
+
+            newInput.addEventListener("change", handleFileChange);
+            removeBtn.addEventListener("click", (e) => {
+                e.stopPropagation();
+                resetImage();
+            });
+        }
+
+        function resetUploadBoxUI() {
+            const box = els.uploadBox;
+            box.classList.remove("has-file");
+            box.innerHTML = `
+                <input type="file" accept="image/*">
+                <div class="upload-icon">+</div>
+                <div class="upload-text">Загрузить</div>
+            `;
+
+            const newInput = box.querySelector('input[type="file"]');
+            newInput.addEventListener("change", handleFileChange);
+        }
+
+        function handleFileChange(e) {
             try {
                 const file = e.target.files?.[0];
+                els.uploadError.textContent = "";
+
                 if (!file) {
                     resetImage();
                     return;
                 }
                 if (!file.type.startsWith("image/")) {
-                    setError("Пожалуйста, выберите изображение.");
+                    els.uploadError.textContent = "Пожалуйста, выберите изображение.";
                     resetImage();
                     return;
                 }
                 if (file.size > MAX_IMAGE_SIZE) {
-                    setError("Изображение слишком большое (макс 10 МБ).");
+                    els.uploadError.textContent = "Изображение слишком большое (макс 10 МБ).";
                     resetImage();
                     return;
                 }
+
                 const reader = new FileReader();
                 reader.onload = () => {
                     const result = reader.result;
@@ -372,22 +479,24 @@
                         state.imageData = base64;
                         state.imageMime = file.type;
                         state.imageName = file.name;
-                        const sizeKb = (file.size / 1024).toFixed(1);
-                        els.imgPreview.textContent = `${file.name} · ${sizeKb} КБ`;
-                        setError("");
+                        state.imageSize = file.size;
+                        updateUploadBoxUI(file, result);
                         updateButtonVisibility();
                     }
                 };
                 reader.onerror = () => {
-                    setError("Не удалось прочитать файл. Попробуйте другое изображение.");
+                    els.uploadError.textContent = "Не удалось прочитать файл.";
                     resetImage();
                 };
                 reader.readAsDataURL(file);
             } catch (err) {
-                setError("Ошибка при выборе файла: " + err.message);
+                els.uploadError.textContent = "Ошибка при выборе файла: " + err.message;
                 resetImage();
             }
-        });
+        }
+
+        els.prompt.addEventListener("input", updateCounts);
+        els.imgInput.addEventListener("change", handleFileChange);
 
         function sendData() {
             try {
@@ -436,12 +545,13 @@
                 });
 
                 const timeoutPromise = new Promise((_, reject) =>
-                    setTimeout(() => reject(new Error("Timeout")), 30000)
+                    setTimeout(() => reject(new Error("Время ожидания истекло")), 30000)
                 );
 
                 Promise.race([fetchPromise, timeoutPromise])
                     .then((response) => {
                         if (response.ok) {
+                            console.log("[Midjourney Video WebApp] Success, closing...");
                             tg.close();
                         } else {
                             try { tg.MainButton.hideProgress(); } catch (_) { }
@@ -450,10 +560,14 @@
                     })
                     .catch((error) => {
                         try { tg.MainButton.hideProgress(); } catch (_) { }
-                        tg.showAlert("Ошибка сети: " + error.message);
+                        if (error.message.includes("Время ожидания")) {
+                            tg.showAlert("Время ожидания истекло. Попробуйте еще раз.");
+                        } else {
+                            tg.showAlert("Ошибка сети: " + error.message);
+                        }
                     });
             } catch (e) {
-                if (tg) tg.showAlert("Critical Error: " + e.message);
+                if (tg) tg.showAlert("Критическая ошибка: " + e.message);
             }
         }
 
