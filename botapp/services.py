@@ -230,22 +230,27 @@ def gemini_generate_images(
     payload: Dict[str, Any] = {"contents": [{"role": "user", "parts": parts}]}
 
     # gemini-2.5-flash-image требует TEXT и IMAGE, gemini-3-pro может только IMAGE
-    if "2.5-flash" in model_id or "2.0-flash" in model_id:
+    is_flash_model = "2.5-flash" in model_id or "2.0-flash" in model_id
+    if is_flash_model:
         generation_config: Dict[str, Any] = {"responseModalities": ["TEXT", "IMAGE"]}
     else:
         generation_config: Dict[str, Any] = {"responseModalities": ["IMAGE"]}
     image_config: Dict[str, Any] = {}
 
-    for key in ("temperature", "top_p", "top_k"):
-        if key in params:
-            generation_config[key] = params[key]
+    # temperature, top_p, top_k не поддерживаются gemini-2.5-flash-image
+    if not is_flash_model:
+        for key in ("temperature", "top_p", "top_k"):
+            if key in params:
+                generation_config[key] = params[key]
 
     aspect_ratio = params.get("aspect_ratio") or params.get("aspectRatio")
-    image_size = params.get("image_size") or params.get("imageSize")
     if aspect_ratio:
         image_config["aspectRatio"] = str(aspect_ratio)
-    if image_size:
-        image_config["imageSize"] = str(image_size).upper()
+    # imageSize не поддерживается gemini-2.5-flash-image
+    if not is_flash_model:
+        image_size = params.get("image_size") or params.get("imageSize")
+        if image_size:
+            image_config["imageSize"] = str(image_size).upper()
     if image_config:
         generation_config["imageConfig"] = image_config
 
