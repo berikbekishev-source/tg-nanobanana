@@ -116,10 +116,11 @@ def format_image_result_message(
         f"<b>Режим:</b> {mode_label}",
         f"<b>Формат:</b> {format_value}",
         f"<b>Качество:</b> {quality_value}",
-        f"<b>Промпт:</b> {prompt_formatted}",
         "",
         f"<b>Списано:</b> ⚡{charged_amount:.2f}",
         f"<b>Баланс:</b> ⚡{balance_after:.2f}",
+        "",
+        f"<b>Промпт:</b> {prompt_formatted}",
     ]
     return "\n".join(lines)
 
@@ -192,9 +193,10 @@ def format_video_result_message(
         f"<b>Формат:</b> {aspect_ratio or '—'}",
         f"<b>Разрешение:</b> {resolution or '—'}",
         f"<b>Продолжительность:</b> {_format_duration(duration)}",
-        f"<b>Промпт:</b> {prompt_formatted}",
         "",
         f"<b>Списано:</b> ⚡{Decimal(charged_amount):.2f}",
         f"<b>Баланс:</b> ⚡{Decimal(balance_after):.2f}",
+        "",
+        f"<b>Промпт:</b> {prompt_formatted}",
     ]
     return "\n".join(lines)
