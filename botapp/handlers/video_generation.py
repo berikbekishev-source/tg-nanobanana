@@ -308,6 +308,8 @@ async def handle_webapp_data_dispatcher(message: Message, state: FSMContext):
         await _handle_midjourney_video_webapp_data_impl(message, state, payload)
     elif kind == "kling_settings":
         await _handle_kling_webapp_data_impl(message, state, payload)
+    elif kind == "kling_o1_settings":
+        await _handle_kling_o1_webapp_data_impl(message, state, payload)
     elif kind == "veo_video_settings":
         await _handle_veo_webapp_data_impl(message, state, payload)
     # If kind doesn't match, silently ignore (other handlers may process it)
@@ -1514,6 +1516,238 @@ async def _kling_background_process(
             origin=BotErrorEvent.Origin.TELEGRAM,
             severity=BotErrorEvent.Severity.ERROR,
             handler="video_generation._kling_background_process",
+            chat_id=message.chat.id,
+            payload={
+                "generation_type": generation_type,
+                "duration": duration_value,
+                "aspect_ratio": aspect_ratio,
+            },
+            exc=exc,
+        )
+        return
+
+    # Отправляем сообщение о начале генерации
+    await _send_generation_start_message(
+        message,
+        get_generation_start_message(
+            model=model.display_name,
+            mode=generation_type,
+            aspect_ratio=aspect_ratio,
+            resolution=None,
+            duration=duration_value,
+            prompt=prompt,
+        ),
+    )
+
+    # Запускаем Celery задачу
+    generate_video_task.delay(gen_request.id)
+
+
+async def _handle_kling_o1_webapp_data_impl(message: Message, state: FSMContext, payload: dict):
+    """Принимаем данные Kling O1 (Omni) WebApp и запускаем генерацию."""
+    import asyncio
+    import logging
+    logger = logging.getLogger(__name__)
+
+    # Логируем payload для отладки
+    debug_payload = {k: v for k, v in payload.items() if not k.startswith("image_") or not v.startswith("http")}
+    logger.info(f"[Kling O1 WebApp] Received payload: {debug_payload}")
+
+    data = await state.get_data()
+    model_slug = payload.get("modelSlug") or data.get("model_slug") or data.get("selected_model") or "kling_O1"
+
+    try:
+        model = await sync_to_async(AIModel.objects.get)(slug=model_slug, is_active=True)
+    except AIModel.DoesNotExist:
+        await message.answer(
+            "Модель Kling O1 недоступна. Выберите её заново из списка моделей.",
+            reply_markup=get_main_menu_inline_keyboard(),
+        )
+        await state.clear()
+        return
+
+    if model.provider != "kling":
+        await message.answer(
+            "Эта WebApp работает только с моделью Kling O1. Выберите её из списка моделей.",
+            reply_markup=get_main_menu_inline_keyboard(),
+        )
+        await state.clear()
+        return
+
+    await state.update_data(
+        model_id=int(model.id),
+        model_slug=str(model.slug),
+        model_provider=str(model.provider),
+        selected_model=str(model.slug),
+    )
+
+    prompt = (payload.get("prompt") or "").strip()
+    if not prompt:
+        await message.answer("Введите промт в окне Kling O1 и отправьте ещё раз.", reply_markup=get_cancel_keyboard())
+        return
+    if len(prompt) > model.max_prompt_length:
+        await message.answer(
+            f"❌ Промт слишком длинный! Максимум {model.max_prompt_length} символов.",
+            reply_markup=get_cancel_keyboard(),
+        )
+        return
+
+    try:
+        user = await sync_to_async(TgUser.objects.get)(chat_id=message.from_user.id)
+    except TgUser.DoesNotExist:
+        await message.answer(
+            "Не удалось найти пользователя. Начните заново.",
+            reply_markup=get_main_menu_inline_keyboard(),
+        )
+        await state.clear()
+        return
+
+    # Проверка баланса
+    try:
+        cost_tokens = await sync_to_async(get_base_price_tokens)(model)
+        can_generate, error_msg = await sync_to_async(BalanceService.check_can_generate)(
+            user,
+            model,
+            total_cost_tokens=cost_tokens,
+        )
+        if not can_generate:
+            await message.answer(
+                f"❌ {error_msg}",
+                reply_markup=get_main_menu_inline_keyboard(),
+            )
+            await state.clear()
+            return
+    except Exception:
+        pass
+
+    generation_type = (payload.get("generationType") or "text2video").lower()
+    if generation_type not in {"text2video", "image2video"}:
+        generation_type = "text2video"
+
+    # Длительность для O1: 3-10 секунд
+    try:
+        duration_raw = payload.get("duration")
+        duration_value = int(float(duration_raw))
+    except (TypeError, ValueError):
+        duration_value = 5
+    if duration_value < 3:
+        duration_value = 3
+    if duration_value > 10:
+        duration_value = 10
+
+    defaults = model.default_params or {}
+    allowed_aspects = _extract_allowed_aspect_ratios(model) or ["16:9", "9:16", "1:1"]
+    requested_aspect = (
+        payload.get("aspectRatio")
+        or payload.get("aspect_ratio")
+        or defaults.get("aspect_ratio")
+        or "16:9"
+    )
+    fallback_aspect = defaults.get("aspect_ratio")
+    if fallback_aspect not in allowed_aspects:
+        fallback_aspect = allowed_aspects[0]
+    aspect_ratio = requested_aspect if requested_aspect in allowed_aspects else fallback_aspect
+
+    params = {
+        "duration": duration_value,
+        "aspect_ratio": aspect_ratio,
+        "omni_version": payload.get("omni_version") or "o1",
+    }
+
+    # Собираем референсные изображения (image_1 ... image_7)
+    for i in range(1, 8):
+        image_key = f"image_{i}"
+        image_url = payload.get(image_key)
+        if image_url and isinstance(image_url, str) and image_url.startswith("http"):
+            params[image_key] = image_url
+            # Если есть хотя бы одно изображение — это image2video
+            if generation_type == "text2video":
+                generation_type = "image2video"
+
+    # Референсное видео (video_1) — пока не поддерживаем в webapp
+    video_url = payload.get("video_1")
+    if video_url and isinstance(video_url, str) and video_url.startswith("http"):
+        params["video_1"] = video_url
+        params["aspect_ratio"] = "auto"  # При наличии видео аспект автоматически "auto"
+
+    logger.info(f"[Kling O1 WebApp] Final params: duration={duration_value}, aspect={aspect_ratio}, generation_type={generation_type}, images={[k for k in params if k.startswith('image_')]}")
+
+    # Закрываем state
+    await state.clear()
+
+    # Запускаем фоновую задачу
+    asyncio.create_task(
+        _kling_o1_background_process(
+            message=message,
+            user=user,
+            model=model,
+            prompt=prompt,
+            generation_type=generation_type,
+            params=params,
+            duration_value=duration_value,
+            aspect_ratio=aspect_ratio,
+        )
+    )
+
+
+async def _kling_o1_background_process(
+    *,
+    message: Message,
+    user,
+    model,
+    prompt: str,
+    generation_type: str,
+    params: dict,
+    duration_value: int,
+    aspect_ratio: str,
+):
+    """Фоновая обработка Kling O1 генерации."""
+    source_media = None
+
+    # Собираем информацию о референсных изображениях
+    reference_images = []
+    for i in range(1, 8):
+        image_key = f"image_{i}"
+        if image_key in params:
+            reference_images.append({
+                "key": image_key,
+                "url": params[image_key],
+            })
+
+    if reference_images:
+        source_media = {
+            "source": "kling_o1_webapp",
+            "reference_images": reference_images,
+        }
+
+    # Создаём запрос на генерацию
+    try:
+        gen_request = await sync_to_async(GenerationService.create_generation_request)(
+            user=user,
+            ai_model=model,
+            prompt=prompt,
+            quantity=1,
+            generation_type=generation_type,
+            generation_params=params,
+            duration=duration_value,
+            aspect_ratio=aspect_ratio,
+            source_media=source_media,
+        )
+    except InsufficientBalanceError as exc:
+        await message.answer(str(exc), reply_markup=get_main_menu_inline_keyboard())
+        return
+    except ValueError as exc:
+        await message.answer(str(exc), reply_markup=get_main_menu_inline_keyboard())
+        return
+    except Exception as exc:
+        await message.answer(
+            "❌ Произошла ошибка при подготовке генерации. Попробуйте ещё раз.",
+            reply_markup=get_main_menu_inline_keyboard(),
+        )
+        await ErrorTracker.alog(
+            origin=BotErrorEvent.Origin.TELEGRAM,
+            severity=BotErrorEvent.Severity.ERROR,
+            handler="video_generation._kling_o1_background_process",
             chat_id=message.chat.id,
             payload={
                 "generation_type": generation_type,
