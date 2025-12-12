@@ -233,6 +233,12 @@ async def global_create_video_start(message: Message, state: FSMContext):
                         f"&price_pro_per_sec={quote_plus(price_pro_per_sec_label)}"
                         f"&price_master_per_sec={quote_plus(price_master_per_sec_label)}"
                     )
+                elif model.slug == "kling_O1":
+                    # Для kling_O1 (Omni) используем отдельный webapp
+                    kling_webapps[model.slug] = (
+                        f"{PUBLIC_BASE_URL}/kling-o1/?"
+                        f"model={quote_plus(model.slug)}&price_per_sec={quote_plus(price_per_sec_label)}"
+                    )
                 else:
                     # Для kling-v2-5-turbo и других — старый webapp с ценой pro
                     try:
