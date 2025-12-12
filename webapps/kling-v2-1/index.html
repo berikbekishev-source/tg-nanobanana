@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Kling v2-5-turbo · INTEGER</title>
+    <title>Kling v2-1 · INTEGER</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <style>
         :root {
@@ -396,12 +396,26 @@
         <div class="header">
             <div class="badge">KG</div>
             <div>
-                <h1>Kling v2-5-turbo</h1>
-                <p class="sub">Видео из текста или изображения</p>
+                <h1 id="headerTitle">Kling v2-1</h1>
+                <p class="sub" id="headerSub">Видео из изображения</p>
             </div>
         </div>
 
+        <!-- Выбор модели -->
         <div class="section">
+            <p class="section-title">Выберите модель</p>
+            <div class="chip-toggle" id="modelToggle">
+                <div class="chip active" data-model="kling-v2-1">v2-1</div>
+                <div class="chip" data-model="kling-v2-1-master">v2-1 Master</div>
+            </div>
+            <p class="muted" id="modelHint">
+                v2-1 — только Image → Video, поддерживает режимы качества (std/pro).<br>
+                v2-1 Master — Text → Video и Image → Video, премиум качество.
+            </p>
+        </div>
+
+        <!-- Режим генерации (только для master) -->
+        <div class="section" id="modeSection" style="display:none;">
             <p class="section-title">Режим</p>
             <div class="chip-toggle" id="modeToggle">
                 <div class="chip active" data-mode="text2video">Текст → Видео</div>
@@ -413,6 +427,7 @@
             </p>
         </div>
 
+        <!-- Качество (только для v2-1, не для master) -->
         <div class="section" id="qualitySection">
             <p class="section-title">Качество</p>
             <div class="chip-toggle" id="qualityToggle">
@@ -433,14 +448,14 @@
         </div>
 
         <!-- Блок загрузки для image2video -->
-        <div class="section" id="imageUploadSection" style="display:none;">
+        <div class="section" id="imageUploadSection">
             <p class="section-title">Изображения</p>
 
             <!-- Начальное изображение -->
             <div class="upload-section">
                 <div class="upload-header">
                     <span class="upload-title">Начальное изображение<br>(обязательно)</span>
-                    <span class="upload-hint">JPG/PNG • ≤ 10 МБ</span>
+                    <span class="upload-hint">JPG/PNG · ≤ 10 МБ</span>
                 </div>
                 <div class="upload-box" id="startImageBox">
                     <input type="file" id="startImageInput" accept="image/jpeg,image/png,image/webp">
@@ -450,11 +465,11 @@
                 <div class="upload-error" id="startImageError"></div>
             </div>
 
-            <!-- Конечное изображение -->
-            <div class="upload-section" style="margin-top: 16px;">
+            <!-- Конечное изображение (только для v2-1, не для master) -->
+            <div class="upload-section" id="tailImageSection" style="margin-top: 16px;">
                 <div class="upload-header">
                     <span class="upload-title">Конечное изображение<br>(необязательно)</span>
-                    <span class="upload-hint">JPG/PNG • ≤ 10 МБ</span>
+                    <span class="upload-hint">JPG/PNG · ≤ 10 МБ</span>
                 </div>
                 <div class="upload-box" id="tailImageBox">
                     <input type="file" id="tailImageInput" accept="image/jpeg,image/png,image/webp">
@@ -466,7 +481,8 @@
             </div>
         </div>
 
-        <div class="section" id="formatSection">
+        <!-- Формат кадра (только для text2video master) -->
+        <div class="section" id="formatSection" style="display:none;">
             <p class="section-title">Формат кадра</p>
             <div class="grid" id="ratioGrid">
                 <div class="pill active" data-ratio="16:9">16:9</div>
@@ -486,8 +502,7 @@
 
         <div class="section">
             <p class="section-title">Подсказка</p>
-            <p class="muted">
-                Text → Video: укажите формат кадра и краткий сюжет. <br>
+            <p class="muted" id="tipText">
                 Image → Video: загрузите референс и добавьте контекст движения. <br>
                 Примеры: «дрон летит над ночным городом» или «акварельный кит плывёт сквозь облака».
             </p>
@@ -509,24 +524,26 @@
         const params = new URLSearchParams(window.location.search);
         const MAX_IMAGE_SIZE = 10 * 1024 * 1024; // 10 MB
 
-        // Цены в USD за секунду (будут конвертированы в токены)
-        const PRICE_PER_SECOND_STD = 0.042;
-        const PRICE_PER_SECOND_PRO = 0.07;
+        // Цены в USD за секунду
+        const PRICE_PER_SECOND_V21_STD = 0.04;
+        const PRICE_PER_SECOND_V21_PRO = 0.07;
+        const PRICE_PER_SECOND_MASTER = 0.16;
 
         const state = {
-            modelSlug: params.get("model") || "kling-v2-5-turbo",
-            generationType: "text2video",
-            quality: "std", // std или pro
+            selectedModel: params.get("model") || "kling-v2-1",
+            modelSlug: "kling-v2-1",
+            generationType: "image2video",
+            quality: "std", // std или pro (только для v2-1)
             prompt: "",
             aspectRatio: "16:9",
             duration: Number(params.get("duration")) || 5,
-            // Начальное изображение (новый способ - URL после presigned upload)
+            // Начальное изображение (presigned URL)
             imageUrl: null,
             imageSize: 0,
             imageMime: null,
             imageName: null,
             imageUploading: false,
-            // Конечное изображение (tail)
+            // Конечное изображение (tail) - только для v2-1
             imageTailUrl: null,
             imageTailSize: 0,
             imageTailMime: null,
@@ -536,11 +553,35 @@
             priceLabel: "—",
             tokensPerSecondStd: null,
             tokensPerSecondPro: null,
+            tokensPerSecondMaster: null,
             // Флаг: tail image загружен (автоматически pro)
             tailImageLoaded: false,
         };
 
+        // Загрузка изображения через presigned URL в Supabase
+        async function uploadToSupabase(file) {
+            const resp = await fetch('/api/storage/presigned-upload', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ content_type: file.type })
+            });
+            if (!resp.ok) throw new Error('Не удалось получить URL');
+            const { upload_url, public_url } = await resp.json();
+            const upload = await fetch(upload_url, {
+                method: 'PUT',
+                headers: { 'Content-Type': file.type },
+                body: file
+            });
+            if (!upload.ok) throw new Error('Не удалось загрузить');
+            return public_url;
+        }
+
         const els = {
+            headerTitle: document.getElementById("headerTitle"),
+            headerSub: document.getElementById("headerSub"),
+            modelToggle: document.getElementById("modelToggle"),
+            modelHint: document.getElementById("modelHint"),
+            modeSection: document.getElementById("modeSection"),
             modeToggle: document.getElementById("modeToggle"),
             qualityToggle: document.getElementById("qualityToggle"),
             qualitySection: document.getElementById("qualitySection"),
@@ -552,11 +593,13 @@
             startImageBox: document.getElementById("startImageBox"),
             startImageInput: document.getElementById("startImageInput"),
             startImageError: document.getElementById("startImageError"),
+            tailImageSection: document.getElementById("tailImageSection"),
             tailImageBox: document.getElementById("tailImageBox"),
             tailImageInput: document.getElementById("tailImageInput"),
             tailImageError: document.getElementById("tailImageError"),
             durationToggle: document.getElementById("durationToggle"),
             formatSection: document.getElementById("formatSection"),
+            tipText: document.getElementById("tipText"),
             error: document.getElementById("error"),
         };
 
@@ -610,7 +653,12 @@
         }
 
         function updatePrice() {
-            const tokensPerSec = state.quality === "pro" ? state.tokensPerSecondPro : state.tokensPerSecondStd;
+            let tokensPerSec;
+            if (state.selectedModel === "kling-v2-1-master") {
+                tokensPerSec = state.tokensPerSecondMaster;
+            } else {
+                tokensPerSec = state.quality === "pro" ? state.tokensPerSecondPro : state.tokensPerSecondStd;
+            }
             if (!Number.isFinite(tokensPerSec)) {
                 setPriceLabel("—");
                 return;
@@ -629,10 +677,76 @@
             updatePrice();
         }
 
+        function switchModel(model) {
+            state.selectedModel = model;
+            state.modelSlug = model;
+
+            const isMaster = model === "kling-v2-1-master";
+
+            // Обновляем заголовок
+            els.headerTitle.textContent = isMaster ? "Kling v2-1 Master" : "Kling v2-1";
+            els.headerSub.textContent = isMaster ? "Видео из текста или изображения" : "Видео из изображения";
+
+            // Показываем/скрываем переключатель режима
+            els.modeSection.style.display = isMaster ? "block" : "none";
+
+            // Показываем/скрываем раздел качества
+            els.qualitySection.style.display = isMaster ? "none" : "block";
+
+            if (isMaster) {
+                // Master - показываем режим text2video по умолчанию
+                switchMode("text2video");
+            } else {
+                // v2-1 - всегда image2video
+                state.generationType = "image2video";
+                els.imageUploadSection.style.display = "block";
+                els.formatSection.style.display = "none";
+                // Показываем секцию конечного изображения
+                els.tailImageSection.style.display = "block";
+            }
+
+            updateTipText();
+            updatePrice();
+        }
+
         function switchMode(mode) {
             state.generationType = mode;
-            els.imageUploadSection.style.display = mode === "image2video" ? "block" : "none";
-            els.formatSection.style.display = mode === "text2video" ? "block" : "none";
+            const isMaster = state.selectedModel === "kling-v2-1-master";
+
+            if (mode === "image2video") {
+                els.imageUploadSection.style.display = "block";
+                els.formatSection.style.display = "none";
+                // Для master скрываем конечное изображение
+                els.tailImageSection.style.display = isMaster ? "none" : "block";
+            } else {
+                els.imageUploadSection.style.display = "none";
+                els.formatSection.style.display = "block";
+            }
+
+            updateTipText();
+        }
+
+        function updateTipText() {
+            const isMaster = state.selectedModel === "kling-v2-1-master";
+            if (state.generationType === "text2video") {
+                els.tipText.innerHTML = `
+                    Text → Video: укажите формат кадра и краткий сюжет. <br>
+                    Примеры: «дрон летит над ночным городом» или «акварельный кит плывёт сквозь облака».
+                `;
+            } else {
+                if (isMaster) {
+                    els.tipText.innerHTML = `
+                        Image → Video: загрузите референс и добавьте контекст движения. <br>
+                        Примеры: «дрон летит над ночным городом» или «акварельный кит плывёт сквозь облака».
+                    `;
+                } else {
+                    els.tipText.innerHTML = `
+                        Image → Video: загрузите референс и добавьте контекст движения. <br>
+                        Можно загрузить конечное изображение для контроля финального кадра.<br>
+                        Примеры: «дрон летит над ночным городом» или «акварельный кит плывёт сквозь облака».
+                    `;
+                }
+            }
         }
 
         function sanitizeDuration(value) {
@@ -646,38 +760,7 @@
             return allowed.includes(value) ? value : "16:9";
         }
 
-        // Обработка загрузки изображения
-        // Загрузка изображения через presigned URL в Supabase
-        async function uploadToSupabase(file) {
-            // 1. Получаем presigned URL от backend
-            const presignedResponse = await fetch('/api/storage/presigned-upload', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ content_type: file.type })
-            });
-
-            if (!presignedResponse.ok) {
-                throw new Error('Не удалось получить URL для загрузки');
-            }
-
-            const { upload_url, public_url, upload_token } = await presignedResponse.json();
-
-            // 2. Загружаем файл напрямую в Supabase
-            const uploadResponse = await fetch(upload_url, {
-                method: 'PUT',
-                headers: {
-                    'Content-Type': file.type,
-                },
-                body: file
-            });
-
-            if (!uploadResponse.ok) {
-                throw new Error('Не удалось загрузить изображение');
-            }
-
-            return public_url;
-        }
-
+        // Обработка загрузки изображения (async presigned upload)
         async function handleImageUpload(file, type) {
             const errorEl = type === "start" ? els.startImageError : els.tailImageError;
             const boxEl = type === "start" ? els.startImageBox : els.tailImageBox;
@@ -701,51 +784,51 @@
                 return;
             }
 
-            // Показываем превью сразу (для UX)
-            const reader = new FileReader();
-            reader.onload = () => {
-                const dataUrl = reader.result;
-                updateImageBoxUI(boxEl, file, dataUrl, true); // true = uploading
-            };
-            reader.readAsDataURL(file);
+            // Показываем статус загрузки
+            boxEl.classList.add("has-file");
+            boxEl.innerHTML = `
+                <input type="file" accept="image/jpeg,image/png,image/webp">
+                <div class="upload-icon">⏳</div>
+                <div class="upload-text">Загрузка...</div>
+            `;
 
-            // Устанавливаем флаг загрузки
             if (type === "start") {
                 state.imageUploading = true;
+                state.imageMime = file.type;
+                state.imageName = file.name;
+                state.imageSize = file.size;
             } else {
                 state.imageTailUploading = true;
+                state.imageTailMime = file.type;
+                state.imageTailName = file.name;
+                state.imageTailSize = file.size;
             }
 
             try {
-                // Загружаем в Supabase через presigned URL
-                console.log(`[Kling WebApp] Uploading ${type} image to Supabase...`);
+                console.log(`[Kling v2-1 WebApp] Uploading ${type} image to Supabase...`);
                 const publicUrl = await uploadToSupabase(file);
-                console.log(`[Kling WebApp] Upload complete: ${publicUrl}`);
+                console.log(`[Kling v2-1 WebApp] ${type} upload complete:`, publicUrl);
 
-                if (type === "start") {
-                    state.imageUrl = publicUrl;
-                    state.imageSize = file.size;
-                    state.imageMime = file.type;
-                    state.imageName = file.name;
-                    state.imageUploading = false;
-                } else {
-                    state.imageTailUrl = publicUrl;
-                    state.imageTailSize = file.size;
-                    state.imageTailMime = file.type;
-                    state.imageTailName = file.name;
-                    state.imageTailUploading = false;
-                    state.tailImageLoaded = true;
-                    // Автоматически переключаем на Pro при загрузке tail image
-                    setQuality("pro");
-                    // Блокируем возможность переключить на std
-                    updateQualityToggleState();
-                }
-
-                // Обновляем UI - убираем индикатор загрузки
-                updateImageBoxUI(boxEl, file, reader.result, false);
-
-            } catch (error) {
-                console.error(`[Kling WebApp] Upload error:`, error);
+                // Читаем файл для превью
+                const reader = new FileReader();
+                reader.onload = () => {
+                    if (type === "start") {
+                        state.imageUrl = publicUrl;
+                        state.imageUploading = false;
+                    } else {
+                        state.imageTailUrl = publicUrl;
+                        state.imageTailUploading = false;
+                        state.tailImageLoaded = true;
+                        // Автоматически переключаем на Pro при загрузке tail image
+                        setQuality("pro");
+                        // Блокируем возможность переключить на std
+                        updateQualityToggleState();
+                    }
+                    updateImageBoxUI(boxEl, file, reader.result);
+                };
+                reader.readAsDataURL(file);
+            } catch (err) {
+                console.error(`[Kling v2-1 WebApp] ${type} upload error:`, err);
                 errorEl.textContent = "Ошибка загрузки. Попробуйте ещё раз.";
                 resetImage(type);
             }
@@ -776,36 +859,31 @@
             resetImageBoxUI(boxEl);
         }
 
-        function updateImageBoxUI(boxEl, file, dataUrl, isUploading = false) {
+        function updateImageBoxUI(boxEl, file, dataUrl) {
             boxEl.classList.add("has-file");
             const sizeKb = (file.size / 1024).toFixed(1);
-            const statusText = isUploading ? "Загрузка..." : `${file.name} · ${sizeKb} КБ`;
-            const removeBtn = isUploading ? "" : '<span class="upload-remove">✕</span>';
-
             boxEl.innerHTML = `
-                <input type="file" accept="image/jpeg,image/png,image/webp" ${isUploading ? 'disabled' : ''}>
-                <img class="upload-preview" src="${dataUrl}" alt="preview" style="${isUploading ? 'opacity: 0.5;' : ''}">
+                <input type="file" accept="image/jpeg,image/png,image/webp">
+                <img class="upload-preview" src="${dataUrl}" alt="preview">
                 <div class="upload-file-info">
-                    <span>${statusText}</span>
-                    ${removeBtn}
+                    <span>${file.name} · ${sizeKb} КБ</span>
+                    <span class="upload-remove">✕</span>
                 </div>
             `;
 
             // Добавляем обработчики для нового input и кнопки удаления
             const newInput = boxEl.querySelector('input[type="file"]');
-            const removeBtnEl = boxEl.querySelector('.upload-remove');
+            const removeBtn = boxEl.querySelector('.upload-remove');
             const type = boxEl.id === "startImageBox" ? "start" : "tail";
 
             newInput.addEventListener("change", (e) => {
                 handleImageUpload(e.target.files?.[0], type);
             });
 
-            if (removeBtnEl) {
-                removeBtnEl.addEventListener("click", (e) => {
-                    e.stopPropagation();
-                    resetImage(type);
-                });
-            }
+            removeBtn.addEventListener("click", (e) => {
+                e.stopPropagation();
+                resetImage(type);
+            });
         }
 
         function resetImageBoxUI(boxEl) {
@@ -855,22 +933,13 @@
                     tg.showAlert("Введите промт");
                     return;
                 }
-
-                // Проверяем наличие изображения для image2video
-                if (state.generationType === "image2video") {
-                    if (!state.imageUrl) {
-                        tg.showAlert("Загрузите начальное изображение для режима Image → Video.");
-                        return;
-                    }
-                    // Проверяем что загрузка завершена
-                    if (state.imageUploading) {
-                        tg.showAlert("Дождитесь окончания загрузки изображения.");
-                        return;
-                    }
-                    if (state.imageTailUploading) {
-                        tg.showAlert("Дождитесь окончания загрузки конечного изображения.");
-                        return;
-                    }
+                if (state.generationType === "image2video" && !state.imageUrl) {
+                    tg.showAlert("Загрузите начальное изображение для режима Image → Video.");
+                    return;
+                }
+                if (state.imageUploading || state.imageTailUploading) {
+                    tg.showAlert("Дождитесь окончания загрузки изображения.");
+                    return;
                 }
 
                 const payload = {
@@ -879,22 +948,26 @@
                     generationType: state.generationType,
                     prompt: state.prompt,
                     duration: state.duration,
-                    mode: state.quality, // std или pro
                 };
+
+                // mode только для v2-1 (не для master)
+                if (state.selectedModel === "kling-v2-1") {
+                    payload.mode = state.quality;
+                }
 
                 if (state.generationType === "text2video") {
                     payload.aspectRatio = state.aspectRatio;
                 }
 
                 if (state.generationType === "image2video") {
-                    // Новый способ: отправляем URL вместо base64
+                    // Отправляем URL вместо base64
                     payload.imageUrl = state.imageUrl;
                     payload.imageSize = state.imageSize;
                     payload.imageMime = state.imageMime;
                     payload.imageName = state.imageName;
 
-                    // Конечное изображение (если есть)
-                    if (state.imageTailUrl) {
+                    // Конечное изображение (только для v2-1, если есть)
+                    if (state.selectedModel === "kling-v2-1" && state.imageTailUrl) {
                         payload.imageTailUrl = state.imageTailUrl;
                         payload.imageTailSize = state.imageTailSize;
                         payload.imageTailMime = state.imageTailMime;
@@ -912,12 +985,9 @@
                     tg.MainButton.showProgress();
                 } catch (_) { }
 
-                // Логируем данные (теперь payload маленький!)
-                const payloadSize = JSON.stringify({user_id: userId, data: payload}).length;
-                console.log("[Kling WebApp] Sending payload:", payload);
-                console.log("[Kling WebApp] Payload size:", payloadSize, "bytes");
+                console.log("[Kling v2-1 WebApp] Sending payload:", payload);
 
-                // Теперь payload маленький - всегда можно использовать keepalive
+                // Теперь payload маленький - всегда используем keepalive
                 fetch('/api/kling/webapp/submit', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -929,7 +999,7 @@
                 });
 
                 // Сразу закрываем webapp - не ждём ответа
-                console.log("[Kling WebApp] Request sent, closing immediately...");
+                console.log("[Kling v2-1 WebApp] Request sent, closing immediately...");
                 tg.close();
 
             } catch (e) {
@@ -939,6 +1009,13 @@
 
         // Event listeners
         els.prompt.addEventListener("input", updateCounts);
+
+        els.modelToggle.addEventListener("click", (e) => {
+            const btn = e.target.closest(".chip");
+            if (!btn) return;
+            setActive(els.modelToggle, btn);
+            switchModel(btn.dataset.model);
+        });
 
         els.modeToggle.addEventListener("click", (e) => {
             const btn = e.target.closest(".chip");
@@ -980,9 +1057,11 @@
         // Инициализация цен (цена за 1 секунду передаётся напрямую)
         const pricePerSecFromQuery = params.get("price_per_sec");
         const priceProPerSecFromQuery = params.get("price_pro_per_sec");
+        const priceMasterPerSecFromQuery = params.get("price_master_per_sec");
 
         const tokensPerSecStd = parseTokens(pricePerSecFromQuery);
         const tokensPerSecPro = parseTokens(priceProPerSecFromQuery);
+        const tokensPerSecMaster = parseTokens(priceMasterPerSecFromQuery);
 
         if (tokensPerSecStd !== null) {
             state.tokensPerSecondStd = tokensPerSecStd;
@@ -991,16 +1070,26 @@
             if (tokensPerSecPro !== null) {
                 state.tokensPerSecondPro = tokensPerSecPro;
             } else {
-                // Pro стоит примерно в 1.67 раза дороже (0.07 / 0.042)
-                state.tokensPerSecondPro = state.tokensPerSecondStd * (PRICE_PER_SECOND_PRO / PRICE_PER_SECOND_STD);
+                // Pro стоит примерно в 1.75 раза дороже (0.07 / 0.04)
+                state.tokensPerSecondPro = state.tokensPerSecondStd * (PRICE_PER_SECOND_V21_PRO / PRICE_PER_SECOND_V21_STD);
             }
+
+            // Если master цена не передана, рассчитываем пропорционально
+            if (tokensPerSecMaster !== null) {
+                state.tokensPerSecondMaster = tokensPerSecMaster;
+            } else {
+                // Master стоит в 4 раза дороже (0.16 / 0.04)
+                state.tokensPerSecondMaster = state.tokensPerSecondStd * (PRICE_PER_SECOND_MASTER / PRICE_PER_SECOND_V21_STD);
+            }
+
             updatePrice();
         } else {
             setPriceLabel("—");
         }
 
         updateCounts();
-        switchMode("text2video");
+        // По умолчанию v2-1 с image2video
+        switchModel("kling-v2-1");
 
         if (tg) {
             try {

@@ -55,7 +55,9 @@ async def cmd_start(message: Message, state: FSMContext):
     await state.clear()
 
     # Получаем или создаем пользователя
-    user, created = await sync_to_async(TgUser.objects.get_or_create)(
+    # Примечание: пользователь может быть уже создан в ChatLoggingMiddleware,
+    # поэтому created здесь ненадёжен для определения "нового" пользователя
+    user, _ = await sync_to_async(TgUser.objects.get_or_create)(
         chat_id=message.from_user.id,
         defaults={
             'username': message.from_user.username or '',
@@ -66,9 +68,9 @@ async def cmd_start(message: Message, state: FSMContext):
     )
     await sync_to_async(UserSettings.objects.get_or_create)(user=user)
 
-    # Создаем баланс для нового пользователя
-    if created:
-        await sync_to_async(BalanceService.ensure_balance)(user)
+    # Пытаемся начислить приветственный бонус
+    # Метод вернёт транзакцию только если бонус ещё не был начислен (новый пользователь)
+    bonus_tx = await sync_to_async(BalanceService.add_welcome_bonus)(user)
 
     # Основное приветственное сообщение (всегда)
     welcome_text = (
@@ -87,8 +89,8 @@ async def cmd_start(message: Message, state: FSMContext):
         reply_markup=get_main_menu_keyboard(PAYMENT_URL)
     )
 
-    # Сообщение о бонусе (только для новых пользователей, через 1 сек)
-    if created:
+    # Сообщение о бонусе (только если бонус был реально начислен = новый пользователь)
+    if bonus_tx:
         await asyncio.sleep(1)
         bonus_text = (
             "🎁 Вам начислено 50 бонусных токенов (хватит на 3 видео или 12 изображений)\n\n"

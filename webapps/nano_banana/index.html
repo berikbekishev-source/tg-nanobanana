@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Nano Banana Pro · INTEGER</title>
+    <title>Nano Banana · INTEGER</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <style>
         :root {
@@ -106,12 +106,6 @@
         .chip-toggle {
             display: grid;
             grid-template-columns: repeat(2, 1fr);
-            gap: 8px;
-        }
-
-        .chip-toggle-3 {
-            display: grid;
-            grid-template-columns: repeat(3, 1fr);
             gap: 8px;
         }
 
@@ -305,8 +299,8 @@
         <div class="header">
             <div class="badge">NB</div>
             <div>
-                <h1>Nano Banana Pro</h1>
-                <p class="sub">Gemini 3 Pro · Генерация изображений</p>
+                <h1>Nano Banana</h1>
+                <p class="sub">Gemini 2.5 Flash · Генерация изображений</p>
             </div>
         </div>
 
@@ -330,7 +324,7 @@
             <p class="section-title">Изображения</p>
             <div class="upload-section">
                 <div class="upload-header">
-                    <span class="upload-title">До 8 изображений</span>
+                    <span class="upload-title">До 5 изображений</span>
                     <span class="upload-hint">JPG/PNG • ≤ 10 МБ</span>
                 </div>
                 <div class="upload-box" id="uploadBox">
@@ -348,16 +342,11 @@
         </div>
 
         <div class="section">
-            <p class="section-title">Качество</p>
-            <div class="chip-toggle-3" id="qualityToggle"></div>
-        </div>
-
-        <div class="section">
             <p class="section-title">Подсказка</p>
             <p class="muted">
-                Nano Banana Pro использует Gemini 3 Pro для высококачественной генерации. <br>
-                Выбирайте качество: 1K (быстро), 2K (баланс), 4K (максимум детализации). <br>
-                Примеры: «реалистичный портрет» или «детальная архитектура здания».
+                Nano Banana использует Gemini 2.5 Flash для генерации изображений. <br>
+                Поддерживает редактирование: загрузите изображение и опишите изменения. <br>
+                Примеры: «кот в космическом скафандре» или «сделай фон ярче».
             </p>
         </div>
 
@@ -377,17 +366,15 @@
         const params = new URLSearchParams(window.location.search);
 
         const MAX_PROMPT = 4000;
-        const MAX_IMAGES = 8;
+        const MAX_IMAGES = 5;
         const MAX_IMAGE_BYTES = 10 * 1024 * 1024; // 10 MB
         const RATIOS = ["1:1", "2:3", "3:2", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9"];
-        const QUALITIES = ["1K", "2K", "4K"];
 
         const state = {
-            modelSlug: params.get("model") || "nano-banana-pro",
+            modelSlug: params.get("model") || "nano-banana",
             mode: "text2image",
             prompt: "",
             aspectRatio: "1:1",
-            quality: "1K",
             images: [],
             priceLabel: "—",
         };
@@ -395,7 +382,6 @@
         const els = {
             typeToggle: document.getElementById("typeToggle"),
             ratioGrid: document.getElementById("ratioGrid"),
-            qualityToggle: document.getElementById("qualityToggle"),
             prompt: document.getElementById("prompt"),
             promptCount: document.getElementById("promptCount"),
             imageUploadSection: document.getElementById("imageUploadSection"),
@@ -449,16 +435,6 @@
                 div.dataset.ratio = ratio;
                 div.textContent = ratio;
                 els.ratioGrid.appendChild(div);
-            });
-        }
-
-        function renderQualityOptions() {
-            QUALITIES.forEach((q, idx) => {
-                const div = document.createElement("div");
-                div.className = `chip${idx === 0 ? " active" : ""}`;
-                div.dataset.quality = q;
-                div.textContent = q;
-                els.qualityToggle.appendChild(div);
             });
         }
 
@@ -589,7 +565,6 @@
                     generationType: state.mode,
                     prompt: state.prompt,
                     aspectRatio: state.aspectRatio,
-                    imageSize: state.quality,
                     images: state.images.map(img => ({
                         data: img.data,
                         mime: img.mime,
@@ -621,7 +596,7 @@
                 Promise.race([fetchPromise, timeoutPromise])
                     .then(response => {
                         if (response.ok) {
-                            console.log("[Nano Banana Pro WebApp] Success, closing...");
+                            console.log("[Nano Banana WebApp] Success, closing...");
                             tg.close();
                         } else {
                             tg?.MainButton?.hideProgress();
@@ -641,7 +616,7 @@
             } catch (error) {
                 tg?.MainButton?.hideProgress();
                 showError("Критическая ошибка: " + error.message);
-                console.error("[Nano Banana Pro WebApp] Exception:", error);
+                console.error("[Nano Banana WebApp] Exception:", error);
             }
         }
 
@@ -662,18 +637,10 @@
             state.aspectRatio = btn.dataset.ratio;
         });
 
-        els.qualityToggle.addEventListener("click", (e) => {
-            const btn = e.target.closest(".chip");
-            if (!btn) return;
-            setActive(els.qualityToggle, btn);
-            state.quality = btn.dataset.quality;
-        });
-
         els.imgInput.addEventListener("change", handleFileChange);
 
         // Initialize
         renderRatioOptions();
-        renderQualityOptions();
         updateUploadBoxUI();
         updatePrompt();
 

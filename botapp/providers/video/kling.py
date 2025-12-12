@@ -22,6 +22,7 @@ class KlingVideoProvider(BaseVideoProvider):
     _DEFAULT_BASE_URL = "https://api.useapi.net"
     _TEXT2VIDEO_ENDPOINT = "/v1/kling/videos/text2video"
     _IMAGE2VIDEO_ENDPOINT = "/v1/kling/videos/image2video-frames"
+    _OMNI_ENDPOINT = "/v1/kling/videos/omni"
     _TASK_ENDPOINT = "/v1/kling/tasks/{task_id}"
     _TASK_ENDPOINT_FALLBACK = "/v1/tasks/{task_id}"
     _ASSETS_DOWNLOAD_ENDPOINT = "/v1/kling/assets/download"
@@ -74,6 +75,19 @@ class KlingVideoProvider(BaseVideoProvider):
         input_mime_type: Optional[str] = None,
     ) -> VideoGenerationResult:
         generation_type = (generation_type or "").lower()
+        normalized_model = self._normalize_model_name(model_name)
+
+        # Для модели O1 (Omni) используем отдельный эндпоинт
+        if normalized_model and "o1" in normalized_model.lower():
+            return self._generate_omni(
+                prompt=prompt,
+                model_name=model_name,
+                generation_type=generation_type,
+                params=params,
+                input_media=input_media,
+                input_mime_type=input_mime_type,
+            )
+
         if generation_type == "image2video":
             return self._generate_image_to_video(
                 prompt=prompt,
@@ -154,6 +168,7 @@ class KlingVideoProvider(BaseVideoProvider):
             tail_image_url=tail_image_url,
         )
 
+        logger.info(f"[Kling] image2video payload: {payload}")
         create_response = self._request("POST", self._IMAGE2VIDEO_ENDPOINT, json_payload=payload)
         task_id = self._extract_task_id(create_response)
         if not task_id:
@@ -186,6 +201,200 @@ class KlingVideoProvider(BaseVideoProvider):
             metadata=metadata,
         )
 
+    def _generate_omni(
+        self,
+        *,
+        prompt: str,
+        model_name: str,
+        generation_type: str,
+        params: Dict[str, Any],
+        input_media: Optional[bytes],
+        input_mime_type: Optional[str],
+    ) -> VideoGenerationResult:
+        """Генерация видео через Kling O1 (Omni) API с поддержкой референсов."""
+        self._ensure_account_ready()
+
+        payload = self._build_omni_payload(
+            prompt=prompt,
+            model_name=model_name,
+            params=params,
+            input_media=input_media,
+            input_mime_type=input_mime_type,
+        )
+
+        logger.info(f"[Kling O1] Omni payload: {payload}")
+        create_response = self._request("POST", self._OMNI_ENDPOINT, json_payload=payload)
+        task_id = self._extract_task_id(create_response)
+        if not task_id:
+            message = self._extract_error_message(create_response) or "useapi не вернул идентификатор задачи."
+            raise VideoGenerationError(message)
+
+        task_payload = self._poll_task(task_id)
+        self._raise_if_failed(task_payload, task_id)
+
+        video_url = self._extract_download_url(task_payload) or self._extract_video_url(task_payload)
+        if not video_url:
+            raise VideoGenerationError("Не удалось получить ссылку на видео Kling O1.")
+
+        video_bytes, mime_type = self._download_file(video_url)
+        duration = self._extract_duration(task_payload) or self._sanitize_omni_duration(params.get("duration"))
+
+        metadata = {
+            "createResponse": create_response,
+            "task": task_payload,
+            "request": payload,
+        }
+
+        return VideoGenerationResult(
+            content=video_bytes,
+            mime_type=mime_type or "video/mp4",
+            duration=int(duration) if isinstance(duration, (int, float)) else None,
+            aspect_ratio=self._extract_aspect_ratio(task_payload),
+            resolution=self._extract_resolution(task_payload),
+            provider_job_id=task_id,
+            metadata=metadata,
+        )
+
+    def _build_omni_payload(
+        self,
+        *,
+        prompt: str,
+        model_name: str,
+        params: Dict[str, Any],
+        input_media: Optional[bytes],
+        input_mime_type: Optional[str],
+    ) -> Dict[str, Any]:
+        """Собирает payload для Kling O1 (Omni) API."""
+        payload: Dict[str, Any] = {
+            "prompt": prompt,
+        }
+
+        # Длительность: 3-10 секунд для O1
+        duration = self._sanitize_omni_duration(params.get("duration") or params.get("seconds"))
+        payload["duration"] = str(duration)
+
+        # Аспектное соотношение
+        aspect_ratio = (
+            params.get("aspect_ratio")
+            or params.get("aspectRatio")
+            or params.get("ratio")
+            or "16:9"
+        )
+        if aspect_ratio in {"16:9", "9:16", "1:1", "auto"}:
+            payload["aspect_ratio"] = aspect_ratio
+
+        # Версия модели O1
+        omni_version = params.get("omni_version") or "o1"
+        if omni_version:
+            payload["omni_version"] = omni_version
+
+        # Email аккаунта
+        if self._account_email:
+            payload["email"] = self._account_email
+
+        # maxJobs
+        max_jobs_value = params.get("maxJobs") or params.get("max_jobs") or self._max_jobs
+        if max_jobs_value is not None:
+            payload["maxJobs"] = self._sanitize_max_jobs(max_jobs_value)
+
+        # Референсные изображения (image_1 ... image_7)
+        for i in range(1, 8):
+            image_key = f"image_{i}"
+            image_url = params.get(image_key) or params.get(f"image{i}")
+            if image_url:
+                # Если URL не от Kling — загружаем через assets API
+                if not self._is_useapi_asset(str(image_url)):
+                    image_bytes, mime = self._download_raw(str(image_url))
+                    image_url = self._upload_image_asset(
+                        image_bytes,
+                        mime_type=mime,
+                        file_name=f"reference_image_{i}.png",
+                    )
+                payload[image_key] = image_url
+
+        # Если есть input_media и это первое изображение (для image2video)
+        if input_media and "image_1" not in payload:
+            uploaded_url = self._upload_image_asset(
+                input_media,
+                mime_type=input_mime_type,
+                file_name="input_image.png",
+            )
+            payload["image_1"] = uploaded_url
+
+        # Референсное видео (video_1)
+        video_url = params.get("video_1") or params.get("video1")
+        if video_url:
+            # При наличии видео аспект автоматически становится "auto"
+            payload["aspect_ratio"] = "auto"
+            if not self._is_useapi_asset(str(video_url)):
+                # Для видео скачиваем и загружаем через assets
+                video_bytes, mime = self._download_raw(str(video_url))
+                video_url = self._upload_video_asset(
+                    video_bytes,
+                    mime_type=mime or "video/mp4",
+                    file_name="reference_video.mp4",
+                )
+            payload["video_1"] = video_url
+
+        # Callback URL
+        reply_url = params.get("replyUrl") or params.get("reply_url")
+        if reply_url:
+            payload["replyUrl"] = reply_url
+        reply_ref = params.get("replyRef") or params.get("reply_ref")
+        if reply_ref:
+            payload["replyRef"] = reply_ref
+
+        return payload
+
+    def _upload_video_asset(self, content: bytes, *, mime_type: Optional[str], file_name: str) -> str:
+        """Загружает видео в Kling через useapi assets API."""
+        mime = (mime_type or "video/mp4").split(";")[0].strip() or "video/mp4"
+        if not mime.startswith("video/"):
+            mime = "video/mp4"
+
+        url = self._resolve_url("/v1/kling/assets/")
+        params: Dict[str, Any] = {}
+        if self._account_email:
+            params["email"] = self._account_email
+
+        headers = {
+            "Authorization": f"Bearer {self._api_key}",
+            "Content-Type": mime,
+        }
+
+        try:
+            with httpx.Client(timeout=self._request_timeout, follow_redirects=True) as client:
+                response = client.post(url, headers=headers, params=params, content=content)
+                response.raise_for_status()
+                data = response.json()
+        except httpx.HTTPStatusError as exc:
+            detail = self._safe_extract_error(exc.response)
+            raise VideoGenerationError(f"useapi Kling HTTP {exc.response.status_code if exc.response else ''}: {detail}") from exc
+        except httpx.HTTPError as exc:
+            raise VideoGenerationError(f"Ошибка запроса к useapi Kling: {exc}") from exc
+        except Exception as exc:
+            raise VideoGenerationError(f"Не удалось загрузить видео-ассет в Kling: {exc}") from exc
+
+        asset_url = None
+        if isinstance(data, dict):
+            asset_url = data.get("url") or data.get("resourceUrl") or data.get("resource_url")
+        if not (isinstance(asset_url, str) and asset_url.startswith("http")):
+            raise VideoGenerationError(f"useapi не вернул ссылку на видео-ассет Kling: {data}")
+        return asset_url
+
+    @staticmethod
+    def _sanitize_omni_duration(value: Any) -> int:
+        """Нормализует длительность для O1: 3-10 секунд."""
+        try:
+            ivalue = int(float(value))
+        except Exception:
+            ivalue = 5
+        if ivalue < 3:
+            return 3
+        if ivalue > 10:
+            return 10
+        return ivalue
+
     def _build_text_payload(self, *, prompt: str, model_name: str, params: Dict[str, Any]) -> Dict[str, Any]:
         payload = self._build_base_payload(prompt=prompt, model_name=model_name, params=params)
         model = payload.get("model_name") or self._normalize_model_name(model_name)
@@ -206,6 +415,11 @@ class KlingVideoProvider(BaseVideoProvider):
         negative_prompt = params.get("negative_prompt") or params.get("negativePrompt")
         if negative_prompt and not (model and "v2-5" in model):
             payload["negative_prompt"] = negative_prompt
+
+        # enable_audio доступен для text2video (особенно для kling-v2-6)
+        enable_audio = params.get("enable_audio")
+        if isinstance(enable_audio, bool):
+            payload["enable_audio"] = enable_audio
 
         return payload
 
@@ -266,8 +480,9 @@ class KlingVideoProvider(BaseVideoProvider):
         if reply_ref:
             payload["replyRef"] = reply_ref
 
+        # mode не поддерживается для kling-v2-1-master и kling-v2-5
         mode = params.get("mode")
-        if isinstance(mode, str):
+        if isinstance(mode, str) and normalized_model not in {"kling-v2-1-master", "kling-v2-5"}:
             normalized_mode = mode.strip().lower()
             if normalized_mode in {"std", "pro"}:
                 payload["mode"] = normalized_mode
@@ -297,14 +512,25 @@ class KlingVideoProvider(BaseVideoProvider):
     def _poll_task(self, task_id: str) -> Dict[str, Any]:
         deadline = time.time() + self._poll_timeout
         last_payload: Dict[str, Any] = {}
+        consecutive_errors = 0
+        max_consecutive_errors = 3
 
         while time.time() < deadline:
             try:
                 last_payload = self._fetch_task_payload(task_id)
+                consecutive_errors = 0  # Reset on success
             except VideoGenerationError as exc:
                 message = str(exc)
+                # Retry on 404 (task not ready yet) or 502/503/504 (temporary API issues)
                 if "404" in message or "ResourceNotFound" in message:
                     time.sleep(self._poll_interval)
+                    continue
+                if any(code in message for code in ("502", "503", "504", "Bad Gateway", "Service Unavailable", "Gateway Timeout")):
+                    consecutive_errors += 1
+                    logger.warning("Kling API temporary error (attempt %d/%d): %s", consecutive_errors, max_consecutive_errors, message)
+                    if consecutive_errors >= max_consecutive_errors:
+                        raise
+                    time.sleep(self._poll_interval * 2)  # Wait longer on server errors
                     continue
                 raise
             status, is_final = self._extract_status(last_payload)
@@ -598,10 +824,22 @@ class KlingVideoProvider(BaseVideoProvider):
         raise VideoGenerationError("Для режима image2video необходимо загрузить изображение.")
 
     def _resolve_tail_image(self, *, params: Dict[str, Any]) -> Optional[str]:
+        """Обрабатывает конечное изображение (tail) - загружает через Kling assets API если нужно."""
         tail_image = params.get("image_tail") or params.get("tail_image") or params.get("imageTail")
         if not tail_image:
             return None
-        return str(tail_image)
+        url_str = str(tail_image)
+        # Если URL уже с домена Kling - используем как есть
+        if self._is_useapi_asset(url_str):
+            return url_str
+        # Иначе скачиваем и загружаем через Kling assets API
+        # (Kling API не может получить доступ к внешним URL напрямую)
+        image_bytes, mime = self._download_raw(url_str)
+        return self._upload_image_asset(
+            image_bytes,
+            mime_type=mime,
+            file_name="tail_image.png",
+        )
 
     def _download_file(self, url: str) -> Tuple[bytes, Optional[str]]:
         try:

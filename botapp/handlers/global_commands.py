@@ -27,7 +27,7 @@ from botapp.keyboards import (
 )
 from botapp.models import TgUser, AIModel
 from botapp.business.balance import BalanceService
-from botapp.business.pricing import get_base_price_tokens
+from botapp.business.pricing import get_base_price_tokens, calculate_request_cost
 from botapp.reference_prompt import REFERENCE_PROMPT_MODELS, REFERENCE_PROMPT_PRICING_SLUG
 from botapp.reference_prompt.pricing import build_reference_prompt_price_line
 
@@ -106,16 +106,8 @@ async def global_create_image_start(message: Message, state: FSMContext):
     # Получаем активные модели для изображений
     models = await sync_to_async(list)(
         AIModel.objects.filter(type='image', is_active=True)
-        .exclude(slug="nano-banana")
         .order_by('order')
     )
-    # Гарантируем наличие Nano Banana Pro, если она активна (иногда убирается из списка по порядку)
-    nano_banana_pro = await sync_to_async(
-        lambda: AIModel.objects.filter(slug="nano-banana-pro", is_active=True).first()
-    )()
-    if nano_banana_pro and not any(m.slug == nano_banana_pro.slug for m in models):
-        models.append(nano_banana_pro)
-        models.sort(key=lambda m: m.order if m.order is not None else 0)
 
     if not models:
         await message.answer(
@@ -147,12 +139,13 @@ async def global_create_image_start(message: Message, state: FSMContext):
             if (
                 model.provider in {"gemini_vertex", "gemini"}
                 and model.slug.startswith("nano-banana")
-                and model.slug != "nano-banana"
             ):
                 cost = await sync_to_async(get_base_price_tokens)(model)
                 price_label = f"⚡{cost:.2f} токенов"
+                # nano-banana-pro использует /nanobanana/, nano-banana использует /nano-banana/
+                webapp_path = "/nanobanana/" if model.slug == "nano-banana-pro" else "/nano-banana/"
                 nano_banana_webapps[model.slug] = (
-                    f"{PUBLIC_BASE_URL}/nanobanana/?"
+                    f"{PUBLIC_BASE_URL}{webapp_path}?"
                     f"model={quote_plus(model.slug)}&price={quote_plus(price_label)}"
                 )
 
@@ -202,20 +195,63 @@ async def global_create_video_start(message: Message, state: FSMContext):
     if PUBLIC_BASE_URL:
         for model in models:
             if model.provider == "kling":
-                cost = await sync_to_async(get_base_price_tokens)(model)
-                price_label = f"⚡{cost:.2f} токенов"
-                default_duration = None
-                if isinstance(model.default_params, dict):
+                # Цена за 1 секунду (webapp умножает на выбранную длительность)
+                _, cost_per_sec = await sync_to_async(calculate_request_cost)(model, duration=1)
+                price_per_sec_label = f"⚡{cost_per_sec:.2f}"
+
+                # Для kling-v2-6 используем отдельный webapp с ценой audio
+                if model.slug == "kling-v2-6":
+                    # Получаем цену для режима с аудио
                     try:
-                        default_duration = int(model.default_params.get("duration") or 0)
-                    except (TypeError, ValueError):
-                        default_duration = None
-                base_duration = default_duration if default_duration and default_duration > 0 else 10
-                kling_webapps[model.slug] = (
-                    f"{PUBLIC_BASE_URL}/kling/?"
-                    f"model={quote_plus(model.slug)}&price={quote_plus(price_label)}"
-                    f"&price_base_duration={quote_plus(str(base_duration))}"
-                )
+                        audio_model = await sync_to_async(AIModel.objects.get)(slug="kling-v2-6-pro-with-sound")
+                        _, audio_cost_per_sec = await sync_to_async(calculate_request_cost)(audio_model, duration=1)
+                        price_audio_per_sec_label = f"⚡{audio_cost_per_sec:.2f}"
+                    except AIModel.DoesNotExist:
+                        price_audio_per_sec_label = price_per_sec_label
+                    kling_webapps[model.slug] = (
+                        f"{PUBLIC_BASE_URL}/kling-v2-6/?"
+                        f"model={quote_plus(model.slug)}&price_per_sec={quote_plus(price_per_sec_label)}"
+                        f"&price_audio_per_sec={quote_plus(price_audio_per_sec_label)}"
+                    )
+                elif model.slug == "kling-v2-1":
+                    # Для kling-v2-1 используем отдельный webapp с ценами pro и master
+                    try:
+                        pro_model = await sync_to_async(AIModel.objects.get)(slug="kling-v2-1-pro")
+                        _, pro_cost_per_sec = await sync_to_async(calculate_request_cost)(pro_model, duration=1)
+                        price_pro_per_sec_label = f"⚡{pro_cost_per_sec:.2f}"
+                    except AIModel.DoesNotExist:
+                        price_pro_per_sec_label = price_per_sec_label
+                    try:
+                        master_model = await sync_to_async(AIModel.objects.get)(slug="kling-v2-1-master")
+                        _, master_cost_per_sec = await sync_to_async(calculate_request_cost)(master_model, duration=1)
+                        price_master_per_sec_label = f"⚡{master_cost_per_sec:.2f}"
+                    except AIModel.DoesNotExist:
+                        price_master_per_sec_label = price_per_sec_label
+                    kling_webapps[model.slug] = (
+                        f"{PUBLIC_BASE_URL}/kling-v2-1/?"
+                        f"model={quote_plus(model.slug)}&price_per_sec={quote_plus(price_per_sec_label)}"
+                        f"&price_pro_per_sec={quote_plus(price_pro_per_sec_label)}"
+                        f"&price_master_per_sec={quote_plus(price_master_per_sec_label)}"
+                    )
+                elif model.slug == "kling_O1":
+                    # Для kling_O1 (Omni) используем отдельный webapp
+                    kling_webapps[model.slug] = (
+                        f"{PUBLIC_BASE_URL}/kling-o1/?"
+                        f"model={quote_plus(model.slug)}&price_per_sec={quote_plus(price_per_sec_label)}"
+                    )
+                else:
+                    # Для kling-v2-5-turbo и других — старый webapp с ценой pro
+                    try:
+                        pro_model = await sync_to_async(AIModel.objects.get)(slug="kling-v2-5-turbo-pro")
+                        _, pro_cost_per_sec = await sync_to_async(calculate_request_cost)(pro_model, duration=1)
+                        price_pro_per_sec_label = f"⚡{pro_cost_per_sec:.2f}"
+                    except AIModel.DoesNotExist:
+                        price_pro_per_sec_label = price_per_sec_label
+                    kling_webapps[model.slug] = (
+                        f"{PUBLIC_BASE_URL}/kling/?"
+                        f"model={quote_plus(model.slug)}&price_per_sec={quote_plus(price_per_sec_label)}"
+                        f"&price_pro_per_sec={quote_plus(price_pro_per_sec_label)}"
+                    )
             if model.provider == "veo" or model.slug.startswith("veo"):
                 cost = await sync_to_async(get_base_price_tokens)(model)
                 price_label = f"⚡{cost:.2f} токенов"

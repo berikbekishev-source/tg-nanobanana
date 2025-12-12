@@ -52,9 +52,8 @@ class BalanceService:
             },
         )
 
-        if created:
-            BalanceService.add_welcome_bonus(user)
-            balance.refresh_from_db()
+        # Приветственный бонус начисляется в cmd_start (handlers/menu.py),
+        # а не здесь, чтобы избежать race condition и дублирования начисления
 
         return balance
 

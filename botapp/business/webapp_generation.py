@@ -4,9 +4,14 @@
 """
 import base64
 import logging
+import os
+import subprocess
+import tempfile
 from decimal import Decimal
 from io import BytesIO
 from typing import Any, Dict, List, Optional, Tuple
+from urllib.request import urlopen
+from urllib.error import URLError
 
 from django.conf import settings
 
@@ -18,6 +23,7 @@ from botapp.services import supabase_upload_png
 from botapp.error_tracker import ErrorTracker
 from botapp.telegram_utils import send_message, get_main_menu_keyboard_dict
 from botapp.keyboards import get_generation_start_message
+from botapp.chat_logger import ChatLogger
 from botapp.generation_text import (
     format_image_start_message,
     resolve_format_and_quality,
@@ -28,6 +34,177 @@ logger = logging.getLogger(__name__)
 
 # Максимальные размеры изображений
 MAX_IMAGE_BYTES = 10 * 1024 * 1024  # 10 МБ
+MAX_VIDEO_DURATION_SECONDS = 10  # Максимальная длительность видео для Kling O1
+
+
+def _get_ffmpeg_exe() -> str:
+    """Получить путь к ffmpeg из imageio-ffmpeg или системного."""
+    try:
+        import imageio_ffmpeg
+        return imageio_ffmpeg.get_ffmpeg_exe()
+    except ImportError:
+        return "ffmpeg"
+
+
+def _get_video_duration(file_path: str) -> Optional[float]:
+    """Получить длительность видео в секундах через ffprobe."""
+    ffmpeg_exe = _get_ffmpeg_exe()
+    # ffprobe обычно рядом с ffmpeg
+    ffprobe_exe = ffmpeg_exe.replace("ffmpeg", "ffprobe") if "ffmpeg" in ffmpeg_exe else "ffprobe"
+
+    try:
+        result = subprocess.run(
+            [
+                ffprobe_exe,
+                "-v", "error",
+                "-show_entries", "format=duration",
+                "-of", "default=noprint_wrappers=1:nokey=1",
+                file_path,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            return float(result.stdout.strip())
+    except (subprocess.TimeoutExpired, ValueError, FileNotFoundError) as exc:
+        logger.warning("Не удалось получить длительность видео через ffprobe: %s", exc)
+
+    # Fallback: попробуем через ffmpeg
+    try:
+        result = subprocess.run(
+            [
+                ffmpeg_exe,
+                "-i", file_path,
+                "-f", "null",
+                "-",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        # ffmpeg выводит duration в stderr
+        import re
+        match = re.search(r"Duration: (\d+):(\d+):(\d+)\.(\d+)", result.stderr)
+        if match:
+            h, m, s, ms = match.groups()
+            return int(h) * 3600 + int(m) * 60 + int(s) + int(ms) / 100
+    except (subprocess.TimeoutExpired, FileNotFoundError) as exc:
+        logger.warning("Не удалось получить длительность видео через ffmpeg: %s", exc)
+
+    return None
+
+
+def _trim_video_ffmpeg(input_path: str, output_path: str, max_duration: float) -> bool:
+    """Обрезать видео до указанной длительности через ffmpeg."""
+    ffmpeg_exe = _get_ffmpeg_exe()
+    try:
+        result = subprocess.run(
+            [
+                ffmpeg_exe,
+                "-y",  # Перезаписывать без вопросов
+                "-i", input_path,
+                "-t", str(max_duration),
+                "-c", "copy",  # Без перекодирования (быстро)
+                output_path,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        return result.returncode == 0 and os.path.exists(output_path)
+    except (subprocess.TimeoutExpired, FileNotFoundError) as exc:
+        logger.warning("Ошибка обрезки видео ffmpeg: %s", exc)
+        return False
+
+
+def _trim_video_if_needed(video_url: str, max_duration: float = MAX_VIDEO_DURATION_SECONDS) -> Optional[str]:
+    """
+    Скачать видео, проверить длительность и обрезать при необходимости.
+
+    Args:
+        video_url: URL исходного видео
+        max_duration: Максимальная длительность в секундах
+
+    Returns:
+        Новый URL (Supabase) если видео было обрезано, иначе исходный URL.
+        None при ошибке.
+    """
+    from botapp.services import supabase_upload_video
+
+    temp_dir = None
+    try:
+        # Скачиваем видео
+        logger.info("[Video Trim] Downloading video from %s", video_url[:100])
+        with urlopen(video_url, timeout=60) as response:
+            video_data = response.read()
+
+        if not video_data:
+            logger.warning("[Video Trim] Empty video data")
+            return video_url
+
+        # Создаём временную директорию
+        temp_dir = tempfile.mkdtemp(prefix="video_trim_")
+        input_path = os.path.join(temp_dir, "input.mp4")
+        output_path = os.path.join(temp_dir, "output.mp4")
+
+        # Сохраняем исходное видео
+        with open(input_path, "wb") as f:
+            f.write(video_data)
+
+        # Проверяем длительность
+        duration = _get_video_duration(input_path)
+        if duration is None:
+            logger.warning("[Video Trim] Could not get duration, using original video")
+            return video_url
+
+        logger.info("[Video Trim] Video duration: %.2f sec (max: %.2f)", duration, max_duration)
+
+        # Если видео короче или равно лимиту, возвращаем исходный URL
+        if duration <= max_duration:
+            logger.info("[Video Trim] Video within limit, no trimming needed")
+            return video_url
+
+        # Обрезаем видео
+        logger.info("[Video Trim] Trimming video to %.2f seconds", max_duration)
+        if not _trim_video_ffmpeg(input_path, output_path, max_duration):
+            logger.error("[Video Trim] FFmpeg trimming failed")
+            return video_url  # Возвращаем исходное видео, пусть API сам разбирается
+
+        # Читаем обрезанное видео
+        with open(output_path, "rb") as f:
+            trimmed_data = f.read()
+
+        if not trimmed_data:
+            logger.error("[Video Trim] Trimmed video is empty")
+            return video_url
+
+        # Загружаем в Supabase
+        logger.info("[Video Trim] Uploading trimmed video (%d bytes)", len(trimmed_data))
+        upload_result = supabase_upload_video(trimmed_data, "video/mp4")
+
+        new_url = _extract_public_url(upload_result)
+        if not new_url:
+            logger.error("[Video Trim] Failed to get public URL for trimmed video")
+            return video_url
+
+        logger.info("[Video Trim] Successfully trimmed and uploaded video: %s", new_url[:100])
+        return new_url
+
+    except URLError as exc:
+        logger.error("[Video Trim] Failed to download video: %s", exc)
+        return video_url
+    except Exception as exc:
+        logger.error("[Video Trim] Unexpected error: %s", exc)
+        return video_url
+    finally:
+        # Очищаем временные файлы
+        if temp_dir and os.path.exists(temp_dir):
+            try:
+                import shutil
+                shutil.rmtree(temp_dir, ignore_errors=True)
+            except Exception:
+                pass
 
 
 def _convert_to_png_bytes(raw: bytes, mime: str) -> bytes:
@@ -73,17 +250,21 @@ def _extract_allowed_aspect_ratios(model: AIModel) -> List[str]:
 
 
 def _send_error_message(chat_id: int, text: str) -> None:
-    """Отправляет сообщение об ошибке пользователю."""
+    """Отправляет сообщение об ошибке пользователю и логирует его."""
     try:
         send_message(chat_id, text, reply_markup=get_main_menu_keyboard_dict())
+        # Логируем исходящее сообщение об ошибке
+        ChatLogger.log_outgoing_text(chat_id, text)
     except Exception as exc:
         logger.error("Не удалось отправить сообщение об ошибке: %s", exc)
 
 
 def _send_start_message(chat_id: int, text: str) -> None:
-    """Отправляет сообщение о начале генерации (без клавиатуры)."""
+    """Отправляет сообщение о начале генерации (без клавиатуры) и логирует его."""
     try:
         send_message(chat_id, text, reply_markup=None)
+        # Логируем исходящее сообщение о старте генерации
+        ChatLogger.log_outgoing_text(chat_id, text)
     except Exception as exc:
         logger.error("Не удалось отправить стартовое сообщение: %s", exc)
 
@@ -119,10 +300,13 @@ def process_kling_webapp(user_id: int, payload: Dict[str, Any]) -> Optional[int]
         return None
 
     # Получаем модель
+    # Для webapp не требуем is_active=True, т.к. некоторые модели скрыты из общего списка
+    # но доступны через webapp (например kling-v2-1-master)
     model_slug = payload.get("modelSlug") or "kling-v2-5-turbo"
     try:
-        model = AIModel.objects.get(slug=model_slug, is_active=True)
+        model = AIModel.objects.get(slug=model_slug)
     except AIModel.DoesNotExist:
+        logger.warning(f"[Kling WebApp] Model not found: {model_slug}")
         _send_error_message(user_id, "❌ Модель Kling недоступна. Выберите её заново из списка моделей.")
         return None
 
@@ -140,10 +324,15 @@ def process_kling_webapp(user_id: int, payload: Dict[str, Any]) -> Optional[int]
         _send_error_message(user_id, f"❌ Промт слишком длинный! Максимум {model.max_prompt_length} символов.")
         return None
 
+    # Логируем входящий webapp-запрос
+    ChatLogger.log_webapp_request(user_id, "kling_settings", model_slug, prompt)
+
     # Тип генерации
     generation_type = (payload.get("generationType") or "text2video").lower()
     if generation_type not in {"text2video", "image2video"}:
         generation_type = "text2video"
+
+    logger.info(f"[Kling WebApp] Starting: model_slug={model_slug}, generation_type={generation_type}, has_imageData={bool(payload.get('imageData'))}")
 
     # Длительность
     try:
@@ -165,64 +354,336 @@ def process_kling_webapp(user_id: int, payload: Dict[str, Any]) -> Optional[int]
     requested_aspect = payload.get("aspectRatio") or payload.get("aspect_ratio") or defaults.get("aspect_ratio") or "16:9"
     aspect_ratio = requested_aspect if requested_aspect in allowed_aspects else allowed_aspects[0]
 
+    # Определяем режим качества (std/pro)
+    # Для kling-v2-1-master mode не поддерживается
+    quality_mode = None
+    if model_slug != "kling-v2-1-master":
+        quality_mode = (payload.get("mode") or "std").lower()
+        if quality_mode not in {"std", "pro"}:
+            quality_mode = "std"
+
+    # enable_audio для kling-v2-6
+    enable_audio = payload.get("enableAudio") is True or payload.get("enable_audio") is True
+    if model_slug == "kling-v2-6" and enable_audio:
+        quality_mode = "pro"
+
     params = {
         "duration": duration_value,
         "cfg_scale": cfg_scale_value,
         "aspect_ratio": aspect_ratio,
     }
 
+    # mode только если поддерживается
+    if quality_mode is not None:
+        params["mode"] = quality_mode
+
+    # enable_audio если включено
+    if enable_audio:
+        params["enable_audio"] = True
+
     source_media = None
 
     # Обработка изображения для image2video
     if generation_type == "image2video":
-        image_b64 = payload.get("imageData")
-        if not image_b64:
-            _send_error_message(user_id, "❌ Загрузите изображение в WebApp для режима Image → Video.")
-            return None
-
-        try:
-            raw = base64.b64decode(image_b64)
-        except Exception:
-            _send_error_message(user_id, "❌ Не удалось прочитать изображение. Загрузите файл ещё раз.")
-            return None
-
-        if len(raw) > MAX_IMAGE_BYTES:
-            _send_error_message(user_id, "❌ Изображение слишком большое. Максимум 10 МБ.")
-            return None
-
+        # Приоритет: imageUrl (presigned upload) > imageData (base64)
+        image_url = payload.get("imageUrl")
         mime = payload.get("imageMime") or "image/png"
         file_name = payload.get("imageName") or "image.png"
+        image_size = 0
 
-        # Конвертируем и загружаем в Supabase
-        png_bytes = _convert_to_png_bytes(raw, mime)
-        try:
-            upload_obj = supabase_upload_png(png_bytes)
-        except Exception as exc:
-            logger.error("Ошибка загрузки в Supabase: %s", exc)
-            ErrorTracker.log(
-                origin=BotErrorEvent.Origin.CELERY,
-                severity=BotErrorEvent.Severity.WARNING,
-                handler="webapp_generation.process_kling_webapp",
-                chat_id=user_id,
-                payload={"reason": "supabase_upload_failed"},
-                exc=exc,
-            )
-            _send_error_message(user_id, "❌ Не удалось загрузить изображение. Попробуйте ещё раз.")
-            return None
+        if image_url:
+            # Новый способ: изображение уже загружено через presigned URL
+            logger.info(f"[Kling WebApp] Using presigned imageUrl for user {user_id}")
+            image_size = payload.get("imageSize") or 0
+        else:
+            # Старый способ: base64 данные, загружаем в Supabase
+            image_b64 = payload.get("imageData")
+            if not image_b64:
+                _send_error_message(user_id, "❌ Загрузите изображение в WebApp для режима Image → Video.")
+                return None
 
-        image_url = _extract_public_url(upload_obj)
-        if not image_url:
-            _send_error_message(user_id, "❌ Не удалось получить ссылку на изображение. Попробуйте снова.")
-            return None
+            try:
+                raw = base64.b64decode(image_b64)
+            except Exception:
+                _send_error_message(user_id, "❌ Не удалось прочитать изображение. Загрузите файл ещё раз.")
+                return None
+
+            if len(raw) > MAX_IMAGE_BYTES:
+                _send_error_message(user_id, "❌ Изображение слишком большое. Максимум 10 МБ.")
+                return None
+
+            image_size = len(raw)
+
+            # Конвертируем и загружаем в Supabase
+            png_bytes = _convert_to_png_bytes(raw, mime)
+            try:
+                upload_obj = supabase_upload_png(png_bytes)
+            except Exception as exc:
+                logger.error("Ошибка загрузки в Supabase: %s", exc)
+                ErrorTracker.log(
+                    origin=BotErrorEvent.Origin.CELERY,
+                    severity=BotErrorEvent.Severity.WARNING,
+                    handler="webapp_generation.process_kling_webapp",
+                    chat_id=user_id,
+                    payload={"reason": "supabase_upload_failed"},
+                    exc=exc,
+                )
+                _send_error_message(user_id, "❌ Не удалось загрузить изображение. Попробуйте ещё раз.")
+                return None
+
+            image_url = _extract_public_url(upload_obj)
+            if not image_url:
+                _send_error_message(user_id, "❌ Не удалось получить ссылку на изображение. Попробуйте снова.")
+                return None
 
         params["image_url"] = image_url
         source_media = {
             "file_name": file_name,
             "mime_type": mime,
             "storage_url": image_url,
-            "size_bytes": len(raw),
+            "size_bytes": image_size,
             "source": "kling_webapp",
         }
+
+        # Обработка конечного изображения (tail) - только для v2-5-turbo и v2-1
+        # Приоритет: imageTailUrl (presigned) > imageTailData (base64)
+        tail_image_url = payload.get("imageTailUrl")
+        tail_image_b64 = payload.get("imageTailData")
+
+        if (tail_image_url or tail_image_b64) and model_slug not in {"kling-v2-1-master", "kling-v2-6"}:
+            tail_mime = payload.get("imageTailMime") or "image/png"
+            tail_file_name = payload.get("imageTailName") or "tail_image.png"
+            tail_size = 0
+
+            if tail_image_url:
+                # Новый способ: tail image уже загружен через presigned URL
+                logger.info(f"[Kling WebApp] Using presigned imageTailUrl for user {user_id}")
+                tail_size = payload.get("imageTailSize") or 0
+            else:
+                # Старый способ: base64 данные
+                try:
+                    tail_raw = base64.b64decode(tail_image_b64)
+                except Exception:
+                    _send_error_message(user_id, "❌ Не удалось прочитать конечное изображение. Загрузите файл ещё раз.")
+                    return None
+
+                if len(tail_raw) > MAX_IMAGE_BYTES:
+                    _send_error_message(user_id, "❌ Конечное изображение слишком большое. Максимум 10 МБ.")
+                    return None
+
+                tail_size = len(tail_raw)
+
+                # Конвертируем и загружаем tail image в Supabase
+                tail_png_bytes = _convert_to_png_bytes(tail_raw, tail_mime)
+                try:
+                    tail_upload_obj = supabase_upload_png(tail_png_bytes)
+                except Exception as exc:
+                    logger.error("Ошибка загрузки tail image в Supabase: %s", exc)
+                    ErrorTracker.log(
+                        origin=BotErrorEvent.Origin.CELERY,
+                        severity=BotErrorEvent.Severity.WARNING,
+                        handler="webapp_generation.process_kling_webapp",
+                        chat_id=user_id,
+                        payload={"reason": "supabase_upload_failed", "image_type": "tail"},
+                        exc=exc,
+                    )
+                    _send_error_message(user_id, "❌ Не удалось загрузить конечное изображение. Попробуйте ещё раз.")
+                    return None
+
+                tail_image_url = _extract_public_url(tail_upload_obj)
+                if not tail_image_url:
+                    _send_error_message(user_id, "❌ Не удалось получить ссылку на конечное изображение. Попробуйте снова.")
+                    return None
+
+            params["image_tail"] = tail_image_url
+            # При наличии tail image принудительно ставим pro
+            params["mode"] = "pro"
+            quality_mode = "pro"
+
+            # Добавляем информацию о tail image в source_media
+            source_media["tail_file_name"] = tail_file_name
+            source_media["tail_mime_type"] = tail_mime
+            source_media["tail_storage_url"] = tail_image_url
+            source_media["tail_size_bytes"] = tail_size
+
+    # Определяем модель для расчёта стоимости
+    pricing_model = model
+    if model_slug == "kling-v2-6" and enable_audio:
+        try:
+            pricing_model = AIModel.objects.get(slug="kling-v2-6-pro-with-sound")
+        except AIModel.DoesNotExist:
+            pass
+    elif model_slug == "kling-v2-5-turbo" and quality_mode == "pro":
+        try:
+            pricing_model = AIModel.objects.get(slug="kling-v2-5-turbo-pro")
+        except AIModel.DoesNotExist:
+            pass
+    elif model_slug == "kling-v2-1" and quality_mode == "pro":
+        try:
+            pricing_model = AIModel.objects.get(slug="kling-v2-1-pro")
+        except AIModel.DoesNotExist:
+            pass
+
+    logger.info(f"[Kling WebApp] model_slug={model_slug}, quality_mode={quality_mode}, pricing_model={pricing_model.slug}, generation_type={generation_type}")
+
+    # Создаём запрос на генерацию
+    try:
+        gen_request = GenerationService.create_generation_request(
+            user=user,
+            ai_model=pricing_model,
+            prompt=prompt,
+            quantity=1,
+            generation_type=generation_type,
+            generation_params=params,
+            duration=duration_value,
+            aspect_ratio=aspect_ratio,
+            source_media=source_media,
+        )
+    except InsufficientBalanceError as exc:
+        logger.warning(f"[Kling WebApp] Insufficient balance for user {user_id}: {exc}")
+        _send_error_message(user_id, str(exc))
+        return None
+    except ValueError as exc:
+        logger.warning(f"[Kling WebApp] ValueError for user {user_id}: {exc}")
+        _send_error_message(user_id, str(exc))
+        return None
+    except Exception as exc:
+        logger.error("Ошибка создания GenRequest: %s", exc)
+        ErrorTracker.log(
+            origin=BotErrorEvent.Origin.CELERY,
+            severity=BotErrorEvent.Severity.ERROR,
+            handler="webapp_generation.process_kling_webapp",
+            chat_id=user_id,
+            payload={"generation_type": generation_type, "duration": duration_value},
+            exc=exc,
+        )
+        _send_error_message(user_id, "❌ Произошла ошибка при подготовке генерации. Попробуйте ещё раз.")
+        return None
+
+    # Отправляем сообщение о начале генерации
+    start_message = get_generation_start_message(
+        model=model.display_name,
+        mode=generation_type,
+        aspect_ratio=aspect_ratio,
+        resolution=None,
+        duration=duration_value,
+        prompt=prompt,
+    )
+    _send_start_message(user_id, start_message)
+
+    # Запускаем Celery задачу генерации
+    generate_video_task.delay(gen_request.id)
+
+    return gen_request.id
+
+
+def process_kling_o1_webapp(user_id: int, payload: Dict[str, Any]) -> Optional[int]:
+    """
+    Обработать данные Kling O1 (Omni) WebApp и запустить генерацию.
+
+    Args:
+        user_id: ID пользователя Telegram
+        payload: Данные из WebApp
+
+    Returns:
+        ID созданного GenRequest или None при ошибке
+    """
+    from botapp.tasks import generate_video_task
+
+    # Получаем пользователя
+    try:
+        user = TgUser.objects.get(chat_id=user_id)
+    except TgUser.DoesNotExist:
+        _send_error_message(user_id, "❌ Не удалось найти пользователя. Начните заново.")
+        return None
+
+    # Получаем модель
+    model_slug = payload.get("modelSlug") or "kling_O1"
+    try:
+        model = AIModel.objects.get(slug=model_slug)
+    except AIModel.DoesNotExist:
+        logger.warning(f"[Kling O1 WebApp] Model not found: {model_slug}")
+        _send_error_message(user_id, "❌ Модель Kling O1 недоступна. Выберите её заново из списка моделей.")
+        return None
+
+    if model.provider != "kling":
+        _send_error_message(user_id, "❌ Эта WebApp работает только с моделью Kling O1.")
+        return None
+
+    # Валидация промпта
+    prompt = (payload.get("prompt") or "").strip()
+    if not prompt:
+        _send_error_message(user_id, "❌ Введите промт в окне Kling O1 и отправьте ещё раз.")
+        return None
+
+    if len(prompt) > model.max_prompt_length:
+        _send_error_message(user_id, f"❌ Промт слишком длинный! Максимум {model.max_prompt_length} символов.")
+        return None
+
+    # Логируем входящий webapp-запрос
+    ChatLogger.log_webapp_request(user_id, "kling_o1_settings", model_slug, prompt)
+
+    # Тип генерации
+    generation_type = (payload.get("generationType") or "text2video").lower()
+    if generation_type not in {"text2video", "image2video"}:
+        generation_type = "text2video"
+
+    logger.info(f"[Kling O1 WebApp] Starting: model_slug={model_slug}, generation_type={generation_type}")
+
+    # Длительность для O1: 3-10 секунд
+    try:
+        duration_value = int(float(payload.get("duration") or 5))
+    except (TypeError, ValueError):
+        duration_value = 5
+    if duration_value < 3:
+        duration_value = 3
+    if duration_value > 10:
+        duration_value = 10
+
+    # Aspect ratio
+    defaults = model.default_params or {}
+    allowed_aspects = _extract_allowed_aspect_ratios(model)
+    requested_aspect = payload.get("aspectRatio") or payload.get("aspect_ratio") or defaults.get("aspect_ratio") or "16:9"
+    aspect_ratio = requested_aspect if requested_aspect in allowed_aspects else allowed_aspects[0]
+
+    params = {
+        "duration": duration_value,
+        "aspect_ratio": aspect_ratio,
+        "omni_version": payload.get("omni_version") or "o1",
+    }
+
+    source_media = None
+    reference_images = []
+
+    # Собираем референсные изображения (image_1 ... image_7)
+    for i in range(1, 8):
+        image_key = f"image_{i}"
+        image_url = payload.get(image_key)
+        if image_url and isinstance(image_url, str) and image_url.startswith("http"):
+            params[image_key] = image_url
+            reference_images.append({"key": image_key, "url": image_url})
+            # Если есть хотя бы одно изображение — это image2video
+            if generation_type == "text2video":
+                generation_type = "image2video"
+
+    # Референсное видео (video_1)
+    video_url = payload.get("video_1")
+    if video_url and isinstance(video_url, str) and video_url.startswith("http"):
+        # Авто-обрезка видео до выбранной пользователем длительности
+        trimmed_url = _trim_video_if_needed(video_url, duration_value)
+        if trimmed_url:
+            video_url = trimmed_url
+        params["video_1"] = video_url
+        params["aspect_ratio"] = "auto"  # При наличии видео аспект автоматически "auto"
+        aspect_ratio = "auto"
+
+    if reference_images:
+        source_media = {
+            "source": "kling_o1_webapp",
+            "reference_images": reference_images,
+        }
+
+    logger.info(f"[Kling O1 WebApp] Final params: duration={duration_value}, aspect={aspect_ratio}, generation_type={generation_type}, images={[k for k in params if k.startswith('image_')]}")
 
     # Создаём запрос на генерацию
     try:
@@ -238,17 +699,19 @@ def process_kling_webapp(user_id: int, payload: Dict[str, Any]) -> Optional[int]
             source_media=source_media,
         )
     except InsufficientBalanceError as exc:
+        logger.warning(f"[Kling O1 WebApp] Insufficient balance for user {user_id}: {exc}")
         _send_error_message(user_id, str(exc))
         return None
     except ValueError as exc:
+        logger.warning(f"[Kling O1 WebApp] ValueError for user {user_id}: {exc}")
         _send_error_message(user_id, str(exc))
         return None
     except Exception as exc:
-        logger.error("Ошибка создания GenRequest: %s", exc)
+        logger.error("Ошибка создания GenRequest для Kling O1: %s", exc)
         ErrorTracker.log(
             origin=BotErrorEvent.Origin.CELERY,
             severity=BotErrorEvent.Severity.ERROR,
-            handler="webapp_generation.process_kling_webapp",
+            handler="webapp_generation.process_kling_o1_webapp",
             chat_id=user_id,
             payload={"generation_type": generation_type, "duration": duration_value},
             exc=exc,
@@ -315,6 +778,9 @@ def process_veo_webapp(user_id: int, payload: Dict[str, Any]) -> Optional[int]:
         _send_error_message(user_id, f"❌ Промт слишком длинный! Максимум {model.max_prompt_length} символов.")
         return None
 
+    # Логируем входящий webapp-запрос
+    ChatLogger.log_webapp_request(user_id, "veo_video_settings", model_slug, prompt)
+
     # Тип генерации
     generation_type = (payload.get("generationType") or "text2video").lower()
     if generation_type not in {"text2video", "image2video"}:
@@ -344,43 +810,54 @@ def process_veo_webapp(user_id: int, payload: Dict[str, Any]) -> Optional[int]:
 
     # Обработка изображения для image2video
     if generation_type == "image2video":
-        image_b64 = payload.get("imageData")
-        if not image_b64:
-            _send_error_message(user_id, "❌ Загрузите изображение для режима Image → Video.")
-            return None
-
-        try:
-            raw = base64.b64decode(image_b64)
-        except Exception:
-            _send_error_message(user_id, "❌ Не удалось прочитать изображение. Загрузите файл ещё раз.")
-            return None
-
-        if len(raw) > MAX_IMAGE_BYTES:
-            _send_error_message(user_id, "❌ Изображение слишком большое. Максимум 10 МБ.")
-            return None
-
+        # Приоритет: imageUrl (presigned upload) > imageData (base64)
+        image_url = payload.get("imageUrl")
         mime = payload.get("imageMime") or "image/png"
         file_name = payload.get("imageName") or "image.png"
+        image_size = 0
 
-        png_bytes = _convert_to_png_bytes(raw, mime)
-        try:
-            upload_obj = supabase_upload_png(png_bytes)
-        except Exception as exc:
-            logger.error("Ошибка загрузки в Supabase: %s", exc)
-            _send_error_message(user_id, "❌ Не удалось загрузить изображение. Попробуйте ещё раз.")
-            return None
+        if image_url:
+            # Новый способ: изображение уже загружено через presigned URL
+            logger.info(f"[Veo WebApp] Using presigned imageUrl for user {user_id}")
+            image_size = payload.get("imageSize") or 0
+        else:
+            # Старый способ: base64 данные, загружаем в Supabase
+            image_b64 = payload.get("imageData")
+            if not image_b64:
+                _send_error_message(user_id, "❌ Загрузите изображение для режима Image → Video.")
+                return None
 
-        image_url = _extract_public_url(upload_obj)
-        if not image_url:
-            _send_error_message(user_id, "❌ Не удалось получить ссылку на изображение. Попробуйте снова.")
-            return None
+            try:
+                raw = base64.b64decode(image_b64)
+            except Exception:
+                _send_error_message(user_id, "❌ Не удалось прочитать изображение. Загрузите файл ещё раз.")
+                return None
+
+            if len(raw) > MAX_IMAGE_BYTES:
+                _send_error_message(user_id, "❌ Изображение слишком большое. Максимум 10 МБ.")
+                return None
+
+            image_size = len(raw)
+
+            png_bytes = _convert_to_png_bytes(raw, mime)
+            try:
+                upload_obj = supabase_upload_png(png_bytes)
+            except Exception as exc:
+                logger.error("Ошибка загрузки в Supabase: %s", exc)
+                _send_error_message(user_id, "❌ Не удалось загрузить изображение. Попробуйте ещё раз.")
+                return None
+
+            image_url = _extract_public_url(upload_obj)
+            if not image_url:
+                _send_error_message(user_id, "❌ Не удалось получить ссылку на изображение. Попробуйте снова.")
+                return None
 
         params["image_url"] = image_url
         source_media = {
             "file_name": file_name,
             "mime_type": mime,
             "storage_url": image_url,
-            "size_bytes": len(raw),
+            "size_bytes": image_size,
             "source": "veo_webapp",
         }
 
@@ -457,6 +934,9 @@ def process_sora_webapp(user_id: int, payload: Dict[str, Any]) -> Optional[int]:
         _send_error_message(user_id, f"❌ Промт слишком длинный! Максимум {model.max_prompt_length} символов.")
         return None
 
+    # Логируем входящий webapp-запрос
+    ChatLogger.log_webapp_request(user_id, "sora2_settings", model_slug, prompt)
+
     generation_type = (payload.get("generationType") or "text2video").lower()
     if generation_type not in {"text2video", "image2video"}:
         generation_type = "text2video"
@@ -483,43 +963,54 @@ def process_sora_webapp(user_id: int, payload: Dict[str, Any]) -> Optional[int]:
     source_media = None
 
     if generation_type == "image2video":
-        image_b64 = payload.get("imageData")
-        if not image_b64:
-            _send_error_message(user_id, "❌ Загрузите изображение для режима Image → Video.")
-            return None
-
-        try:
-            raw = base64.b64decode(image_b64)
-        except Exception:
-            _send_error_message(user_id, "❌ Не удалось прочитать изображение. Загрузите файл ещё раз.")
-            return None
-
-        if len(raw) > MAX_IMAGE_BYTES:
-            _send_error_message(user_id, "❌ Изображение слишком большое. Максимум 10 МБ.")
-            return None
-
+        # Приоритет: imageUrl (presigned upload) > imageData (base64)
+        image_url = payload.get("imageUrl")
         mime = payload.get("imageMime") or "image/png"
         file_name = payload.get("imageName") or "image.png"
+        image_size = 0
 
-        png_bytes = _convert_to_png_bytes(raw, mime)
-        try:
-            upload_obj = supabase_upload_png(png_bytes)
-        except Exception as exc:
-            logger.error("Ошибка загрузки в Supabase: %s", exc)
-            _send_error_message(user_id, "❌ Не удалось загрузить изображение. Попробуйте ещё раз.")
-            return None
+        if image_url:
+            # Новый способ: изображение уже загружено через presigned URL
+            logger.info(f"[Sora WebApp] Using presigned imageUrl for user {user_id}")
+            image_size = payload.get("imageSize") or 0
+        else:
+            # Старый способ: base64 данные, загружаем в Supabase
+            image_b64 = payload.get("imageData")
+            if not image_b64:
+                _send_error_message(user_id, "❌ Загрузите изображение для режима Image → Video.")
+                return None
 
-        image_url = _extract_public_url(upload_obj)
-        if not image_url:
-            _send_error_message(user_id, "❌ Не удалось получить ссылку на изображение. Попробуйте снова.")
-            return None
+            try:
+                raw = base64.b64decode(image_b64)
+            except Exception:
+                _send_error_message(user_id, "❌ Не удалось прочитать изображение. Загрузите файл ещё раз.")
+                return None
+
+            if len(raw) > MAX_IMAGE_BYTES:
+                _send_error_message(user_id, "❌ Изображение слишком большое. Максимум 10 МБ.")
+                return None
+
+            image_size = len(raw)
+
+            png_bytes = _convert_to_png_bytes(raw, mime)
+            try:
+                upload_obj = supabase_upload_png(png_bytes)
+            except Exception as exc:
+                logger.error("Ошибка загрузки в Supabase: %s", exc)
+                _send_error_message(user_id, "❌ Не удалось загрузить изображение. Попробуйте ещё раз.")
+                return None
+
+            image_url = _extract_public_url(upload_obj)
+            if not image_url:
+                _send_error_message(user_id, "❌ Не удалось получить ссылку на изображение. Попробуйте снова.")
+                return None
 
         params["image_url"] = image_url
         source_media = {
             "file_name": file_name,
             "mime_type": mime,
             "storage_url": image_url,
-            "size_bytes": len(raw),
+            "size_bytes": image_size,
             "source": "sora_webapp",
         }
 
@@ -595,6 +1086,9 @@ def process_runway_webapp(user_id: int, payload: Dict[str, Any]) -> Optional[int
         _send_error_message(user_id, f"❌ Промт слишком длинный! Максимум {model.max_prompt_length} символов.")
         return None
 
+    # Логируем входящий webapp-запрос
+    ChatLogger.log_webapp_request(user_id, "runway_settings", model_slug, prompt)
+
     generation_type = (payload.get("generationType") or "text2video").lower()
     if generation_type not in {"text2video", "image2video"}:
         generation_type = "text2video"
@@ -617,43 +1111,54 @@ def process_runway_webapp(user_id: int, payload: Dict[str, Any]) -> Optional[int
     source_media = None
 
     if generation_type == "image2video":
-        image_b64 = payload.get("imageData")
-        if not image_b64:
-            _send_error_message(user_id, "❌ Загрузите изображение для режима Image → Video.")
-            return None
-
-        try:
-            raw = base64.b64decode(image_b64)
-        except Exception:
-            _send_error_message(user_id, "❌ Не удалось прочитать изображение. Загрузите файл ещё раз.")
-            return None
-
-        if len(raw) > MAX_IMAGE_BYTES:
-            _send_error_message(user_id, "❌ Изображение слишком большое. Максимум 10 МБ.")
-            return None
-
+        # Приоритет: imageUrl (presigned upload) > imageData (base64)
+        image_url = payload.get("imageUrl")
         mime = payload.get("imageMime") or "image/png"
         file_name = payload.get("imageName") or "image.png"
+        image_size = 0
 
-        png_bytes = _convert_to_png_bytes(raw, mime)
-        try:
-            upload_obj = supabase_upload_png(png_bytes)
-        except Exception as exc:
-            logger.error("Ошибка загрузки в Supabase: %s", exc)
-            _send_error_message(user_id, "❌ Не удалось загрузить изображение. Попробуйте ещё раз.")
-            return None
+        if image_url:
+            # Новый способ: изображение уже загружено через presigned URL
+            logger.info(f"[Runway WebApp] Using presigned imageUrl for user {user_id}")
+            image_size = payload.get("imageSize") or 0
+        else:
+            # Старый способ: base64 данные, загружаем в Supabase
+            image_b64 = payload.get("imageData")
+            if not image_b64:
+                _send_error_message(user_id, "❌ Загрузите изображение для режима Image → Video.")
+                return None
 
-        image_url = _extract_public_url(upload_obj)
-        if not image_url:
-            _send_error_message(user_id, "❌ Не удалось получить ссылку на изображение. Попробуйте снова.")
-            return None
+            try:
+                raw = base64.b64decode(image_b64)
+            except Exception:
+                _send_error_message(user_id, "❌ Не удалось прочитать изображение. Загрузите файл ещё раз.")
+                return None
+
+            if len(raw) > MAX_IMAGE_BYTES:
+                _send_error_message(user_id, "❌ Изображение слишком большое. Максимум 10 МБ.")
+                return None
+
+            image_size = len(raw)
+
+            png_bytes = _convert_to_png_bytes(raw, mime)
+            try:
+                upload_obj = supabase_upload_png(png_bytes)
+            except Exception as exc:
+                logger.error("Ошибка загрузки в Supabase: %s", exc)
+                _send_error_message(user_id, "❌ Не удалось загрузить изображение. Попробуйте ещё раз.")
+                return None
+
+            image_url = _extract_public_url(upload_obj)
+            if not image_url:
+                _send_error_message(user_id, "❌ Не удалось получить ссылку на изображение. Попробуйте снова.")
+                return None
 
         params["image_url"] = image_url
         source_media = {
             "file_name": file_name,
             "mime_type": mime,
             "storage_url": image_url,
-            "size_bytes": len(raw),
+            "size_bytes": image_size,
             "source": "runway_webapp",
         }
 
@@ -722,6 +1227,9 @@ def process_midjourney_video_webapp(user_id: int, payload: Dict[str, Any]) -> Op
     if len(prompt) > model.max_prompt_length:
         _send_error_message(user_id, f"❌ Промт слишком длинный! Максимум {model.max_prompt_length} символов.")
         return None
+
+    # Логируем входящий webapp-запрос
+    ChatLogger.log_webapp_request(user_id, "midjourney_video_settings", model_slug, prompt)
 
     generation_type = "text2video"
 
@@ -808,6 +1316,9 @@ def process_midjourney_image_webapp(user_id: int, payload: Dict[str, Any]) -> Op
     if len(prompt) > model.max_prompt_length:
         _send_error_message(user_id, f"❌ Промт слишком длинный! Максимум {model.max_prompt_length} символов.")
         return None
+
+    # Логируем входящий webapp-запрос
+    ChatLogger.log_webapp_request(user_id, "midjourney_settings", model_slug, prompt)
 
     # Проверка баланса
     cost = get_base_price_tokens(model)
@@ -976,6 +1487,9 @@ def process_gpt_image_webapp(user_id: int, payload: Dict[str, Any]) -> Optional[
         _send_error_message(user_id, f"❌ Промт слишком длинный! Максимум {model.max_prompt_length} символов.")
         return None
 
+    # Логируем входящий webapp-запрос
+    ChatLogger.log_webapp_request(user_id, "gpt_image_settings", model_slug, prompt)
+
     # Проверка баланса
     cost = get_base_price_tokens(model)
     balance_service = BalanceService()
@@ -1141,6 +1655,9 @@ def process_nano_banana_webapp(user_id: int, payload: Dict[str, Any]) -> Optiona
     if len(prompt) > model.max_prompt_length:
         _send_error_message(user_id, f"❌ Промт слишком длинный! Максимум {model.max_prompt_length} символов.")
         return None
+
+    # Логируем входящий webapp-запрос
+    ChatLogger.log_webapp_request(user_id, "nano_banana_settings", model_slug, prompt)
 
     # Проверка баланса
     cost = get_base_price_tokens(model)
@@ -1309,6 +1826,9 @@ def process_runway_aleph_webapp(user_id: int, payload: Dict[str, Any]) -> Option
         _send_error_message(user_id, f"❌ Промт слишком длинный! Максимум {model.max_prompt_length} символов.")
         return None
 
+    # Логируем входящий webapp-запрос
+    ChatLogger.log_webapp_request(user_id, "runway_aleph_settings", model_slug, prompt)
+
     # Runway Aleph работает только в режиме video2video
     generation_type = "video2video"
 
@@ -1405,6 +1925,7 @@ def process_runway_aleph_webapp(user_id: int, payload: Dict[str, Any]) -> Option
 WEBAPP_PROCESSORS = {
     # Video processors
     "kling_settings": process_kling_webapp,
+    "kling_o1_settings": process_kling_o1_webapp,
     "veo_video_settings": process_veo_webapp,
     "sora2_settings": process_sora_webapp,
     "runway_settings": process_runway_webapp,

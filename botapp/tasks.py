@@ -33,12 +33,34 @@ MAX_TELEGRAM_CAPTION = 1024  # ограничение Telegram на caption дл
 
 
 def _shorten_caption(text: str, limit: int = MAX_TELEGRAM_CAPTION) -> str:
-    """Обрезает caption до лимита Telegram."""
+    """Обрезает caption до лимита Telegram, безопасно для HTML.
+
+    Если текст содержит HTML-теги и требуется обрезка, убеждаемся что теги закрыты.
+    """
     if not text:
         return text
     if len(text) <= limit:
         return text
-    return text[: limit - 1] + "…"
+
+    # Обрезаем текст
+    truncated = text[: limit - 1] + "…"
+
+    # Проверяем баланс тегов <code> / </code>
+    open_code = truncated.count("<code>")
+    close_code = truncated.count("</code>")
+
+    if open_code > close_code:
+        # Не хватает закрывающих тегов - добавляем
+        truncated += "</code>" * (open_code - close_code)
+
+    # Аналогично для <b> / </b>
+    open_b = truncated.count("<b>")
+    close_b = truncated.count("</b>")
+
+    if open_b > close_b:
+        truncated += "</b>" * (open_b - close_b)
+
+    return truncated
 
 
 def _log_bot_api_result(result) -> None:
@@ -55,7 +77,7 @@ def send_telegram_photo(
     photo_bytes: bytes,
     caption: str,
     reply_markup: Optional[Dict] = None,
-    parse_mode: Optional[str] = None,
+    parse_mode: Optional[str] = "HTML",
 ):
     """Отправка изображения файлом (document) в Telegram напрямую."""
     url = f"https://api.telegram.org/bot{settings.TELEGRAM_BOT_TOKEN}/sendDocument"
@@ -86,7 +108,13 @@ def send_telegram_photo(
         return payload
 
 
-def send_telegram_video(chat_id: int, video_bytes: bytes, caption: str, reply_markup: Optional[Dict] = None):
+def send_telegram_video(
+    chat_id: int,
+    video_bytes: bytes,
+    caption: str,
+    reply_markup: Optional[Dict] = None,
+    parse_mode: Optional[str] = "HTML",
+):
     """Отправка видео строго файлом (document) без авто-детекции контента."""
     url = f"https://api.telegram.org/bot{settings.TELEGRAM_BOT_TOKEN}/sendDocument"
     files = {"document": ("video.mp4", video_bytes, "application/octet-stream")}
@@ -95,6 +123,8 @@ def send_telegram_video(chat_id: int, video_bytes: bytes, caption: str, reply_ma
         "caption": _shorten_caption(caption),
         "disable_content_type_detection": True,
     }
+    if parse_mode:
+        data["parse_mode"] = parse_mode
     if reply_markup:
         data["reply_markup"] = json.dumps(reply_markup)
 
@@ -117,6 +147,7 @@ def send_telegram_video(chat_id: int, video_bytes: bytes, caption: str, reply_ma
 def send_telegram_album(
     chat_id: int,
     images: List[Tuple[bytes, Optional[str]]],
+    parse_mode: Optional[str] = "HTML",
 ) -> dict:
     """
     Отправка нескольких изображений одним альбомом (media group).
@@ -135,6 +166,8 @@ def send_telegram_album(
         }
         if caption:
             media_item["caption"] = _shorten_caption(caption)
+            if parse_mode:
+                media_item["parse_mode"] = parse_mode
         media.append(media_item)
 
     with httpx.Client(timeout=60) as client:

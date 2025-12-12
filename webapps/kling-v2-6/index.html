@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Kling v2-5-turbo · INTEGER</title>
+    <title>Kling v2-6 · INTEGER</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <style>
         :root {
@@ -190,22 +190,51 @@
             box-shadow: 0 8px 20px rgba(241, 155, 40, 0.28);
         }
 
-        .slider-block {
-            margin: 12px 0;
-        }
-
-        .slider-header {
+        /* Стили для переключателя аудио */
+        .toggle-row {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            font-size: 13px;
-            color: var(--muted);
+            padding: 4px 0;
         }
 
-        input[type="range"] {
-            width: 100%;
-            margin-top: 8px;
-            accent-color: var(--accent);
+        .toggle-label {
+            font-size: 14px;
+            font-weight: 700;
+            color: var(--text);
+        }
+
+        .toggle-switch {
+            position: relative;
+            width: 52px;
+            height: 28px;
+            background: #0f1c2d;
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .toggle-switch.active {
+            background: linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 100%);
+            border-color: var(--accent);
+        }
+
+        .toggle-switch::after {
+            content: "";
+            position: absolute;
+            top: 3px;
+            left: 3px;
+            width: 20px;
+            height: 20px;
+            background: var(--text);
+            border-radius: 50%;
+            transition: transform 0.2s ease;
+        }
+
+        .toggle-switch.active::after {
+            transform: translateX(24px);
+            background: #0f1c2d;
         }
 
         /* Стили для блоков загрузки изображений */
@@ -312,59 +341,6 @@
             margin-top: 6px;
         }
 
-        .footer {
-            position: sticky;
-            bottom: 0;
-            margin-top: 12px;
-            background: linear-gradient(180deg, transparent, #0f1c2d 45%);
-            padding-top: 10px;
-        }
-
-        .price-row {
-            display: flex;
-            justify-content: space-between;
-            align-items: baseline;
-            margin-bottom: 10px;
-            background: rgba(20, 38, 60, 0.7);
-            border: 1px solid var(--border);
-            border-radius: 12px;
-            padding: 12px;
-        }
-
-        .price-label {
-            font-size: 13px;
-            color: var(--muted);
-        }
-
-        .price-value {
-            font-size: 20px;
-            font-weight: 800;
-            color: var(--accent);
-        }
-
-        .main-btn {
-            width: 100%;
-            padding: 16px;
-            border: none;
-            border-radius: 14px;
-            background: linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 100%);
-            color: #0f1c2d;
-            font-weight: 800;
-            font-size: 16px;
-            cursor: pointer;
-            box-shadow: 0 12px 30px rgba(241, 155, 40, 0.35);
-            transition: transform 0.12s ease, box-shadow 0.12s ease;
-        }
-
-        .main-btn:hover {
-            transform: translateY(-1px);
-            box-shadow: 0 14px 32px rgba(241, 155, 40, 0.4);
-        }
-
-        .main-btn:active {
-            transform: translateY(0);
-        }
-
         .error {
             color: var(--danger);
             font-size: 13px;
@@ -394,10 +370,10 @@
 <body>
     <div class="card">
         <div class="header">
-            <div class="badge">KG</div>
+            <div class="badge">🐉</div>
             <div>
-                <h1>Kling v2-5-turbo</h1>
-                <p class="sub">Видео из текста или изображения</p>
+                <h1>Kling v2-6</h1>
+                <p class="sub">Видео из текста или изображения с Native Audio</p>
             </div>
         </div>
 
@@ -413,33 +389,35 @@
             </p>
         </div>
 
-        <div class="section" id="qualitySection">
-            <p class="section-title">Качество</p>
-            <div class="chip-toggle" id="qualityToggle">
-                <div class="chip active" data-quality="std">Standard</div>
-                <div class="chip" data-quality="pro">Pro</div>
-            </div>
-            <p class="muted" id="qualityHint">
-                Standard — быстрая генерация. Pro — повышенное качество, медленнее.
-            </p>
-        </div>
-
         <div class="section">
             <p class="section-title">Промт</p>
             <p class="label">Текстовый запрос</p>
-            <textarea id="prompt" placeholder="Опишите сюжет или сцену..." maxlength="4000" enterkeyhint="done"
+            <textarea id="prompt" placeholder="Опишите сюжет или сцену..." maxlength="2500" enterkeyhint="done"
                 inputmode="text"></textarea>
-            <div class="count" id="promptCount">0/4000</div>
+            <div class="count" id="promptCount">0/2500</div>
+        </div>
+
+        <!-- Переключатель аудио -->
+        <div class="section" id="audioSection">
+            <p class="section-title">Аудио</p>
+            <div class="toggle-row">
+                <span class="toggle-label">Сгенерировать с аудио</span>
+                <div class="toggle-switch" id="audioToggle"></div>
+            </div>
+            <p class="muted">
+                Native Audio — AI-генерируемый звук, синхронизированный с видео.
+                При включении используется режим Pro.
+            </p>
         </div>
 
         <!-- Блок загрузки для image2video -->
         <div class="section" id="imageUploadSection" style="display:none;">
-            <p class="section-title">Изображения</p>
+            <p class="section-title">Изображение</p>
 
             <!-- Начальное изображение -->
             <div class="upload-section">
                 <div class="upload-header">
-                    <span class="upload-title">Начальное изображение<br>(обязательно)</span>
+                    <span class="upload-title">Изображение<br>(обязательно)</span>
                     <span class="upload-hint">JPG/PNG • ≤ 10 МБ</span>
                 </div>
                 <div class="upload-box" id="startImageBox">
@@ -448,21 +426,6 @@
                     <div class="upload-text">Загрузить</div>
                 </div>
                 <div class="upload-error" id="startImageError"></div>
-            </div>
-
-            <!-- Конечное изображение -->
-            <div class="upload-section" style="margin-top: 16px;">
-                <div class="upload-header">
-                    <span class="upload-title">Конечное изображение<br>(необязательно)</span>
-                    <span class="upload-hint">JPG/PNG • ≤ 10 МБ</span>
-                </div>
-                <div class="upload-box" id="tailImageBox">
-                    <input type="file" id="tailImageInput" accept="image/jpeg,image/png,image/webp">
-                    <div class="upload-icon">+</div>
-                    <div class="upload-text">Загрузить</div>
-                </div>
-                <div class="upload-error" id="tailImageError"></div>
-                <p class="muted">При загрузке конечного изображения автоматически включается режим Pro.</p>
             </div>
         </div>
 
@@ -481,7 +444,6 @@
                 <div class="chip active" data-duration="5">5 секунд</div>
                 <div class="chip" data-duration="10">10 секунд</div>
             </div>
-
         </div>
 
         <div class="section">
@@ -509,42 +471,51 @@
         const params = new URLSearchParams(window.location.search);
         const MAX_IMAGE_SIZE = 10 * 1024 * 1024; // 10 MB
 
-        // Цены в USD за секунду (будут конвертированы в токены)
-        const PRICE_PER_SECOND_STD = 0.042;
-        const PRICE_PER_SECOND_PRO = 0.07;
+        // Цены в USD за секунду
+        const PRICE_PER_SECOND_STD = 0.055;  // kling-v2-6
+        const PRICE_PER_SECOND_AUDIO = 0.07; // kling-v2-6-pro-with-sound
 
         const state = {
-            modelSlug: params.get("model") || "kling-v2-5-turbo",
+            modelSlug: params.get("model") || "kling-v2-6",
             generationType: "text2video",
-            quality: "std", // std или pro
+            enableAudio: false,
             prompt: "",
             aspectRatio: "16:9",
             duration: Number(params.get("duration")) || 5,
-            // Начальное изображение (новый способ - URL после presigned upload)
+            // Начальное изображение (presigned URL)
             imageUrl: null,
             imageSize: 0,
             imageMime: null,
             imageName: null,
             imageUploading: false,
-            // Конечное изображение (tail)
-            imageTailUrl: null,
-            imageTailSize: 0,
-            imageTailMime: null,
-            imageTailName: null,
-            imageTailUploading: false,
             // Pricing
             priceLabel: "—",
             tokensPerSecondStd: null,
-            tokensPerSecondPro: null,
-            // Флаг: tail image загружен (автоматически pro)
-            tailImageLoaded: false,
+            tokensPerSecondAudio: null,
         };
+
+        // Загрузка изображения через presigned URL в Supabase
+        async function uploadToSupabase(file) {
+            const resp = await fetch('/api/storage/presigned-upload', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ content_type: file.type })
+            });
+            if (!resp.ok) throw new Error('Не удалось получить URL');
+            const { upload_url, public_url } = await resp.json();
+            const upload = await fetch(upload_url, {
+                method: 'PUT',
+                headers: { 'Content-Type': file.type },
+                body: file
+            });
+            if (!upload.ok) throw new Error('Не удалось загрузить');
+            return public_url;
+        }
 
         const els = {
             modeToggle: document.getElementById("modeToggle"),
-            qualityToggle: document.getElementById("qualityToggle"),
-            qualitySection: document.getElementById("qualitySection"),
-            qualityHint: document.getElementById("qualityHint"),
+            audioToggle: document.getElementById("audioToggle"),
+            audioSection: document.getElementById("audioSection"),
             ratioGrid: document.getElementById("ratioGrid"),
             prompt: document.getElementById("prompt"),
             promptCount: document.getElementById("promptCount"),
@@ -552,9 +523,6 @@
             startImageBox: document.getElementById("startImageBox"),
             startImageInput: document.getElementById("startImageInput"),
             startImageError: document.getElementById("startImageError"),
-            tailImageBox: document.getElementById("tailImageBox"),
-            tailImageInput: document.getElementById("tailImageInput"),
-            tailImageError: document.getElementById("tailImageError"),
             durationToggle: document.getElementById("durationToggle"),
             formatSection: document.getElementById("formatSection"),
             error: document.getElementById("error"),
@@ -569,7 +537,7 @@
 
         function updateCounts() {
             state.prompt = els.prompt.value.trim();
-            els.promptCount.textContent = `${state.prompt.length}/4000`;
+            els.promptCount.textContent = `${state.prompt.length}/2500`;
             if (tg?.MainButton) {
                 if (state.prompt.length > 0) {
                     tg.MainButton.show();
@@ -610,7 +578,7 @@
         }
 
         function updatePrice() {
-            const tokensPerSec = state.quality === "pro" ? state.tokensPerSecondPro : state.tokensPerSecondStd;
+            const tokensPerSec = state.enableAudio ? state.tokensPerSecondAudio : state.tokensPerSecondStd;
             if (!Number.isFinite(tokensPerSec)) {
                 setPriceLabel("—");
                 return;
@@ -619,13 +587,9 @@
             setPriceLabel(formatPrice(total));
         }
 
-        function setQuality(quality, updateUI = true) {
-            state.quality = quality;
-            if (updateUI) {
-                els.qualityToggle.querySelectorAll(".chip").forEach(btn => {
-                    btn.classList.toggle("active", btn.dataset.quality === quality);
-                });
-            }
+        function toggleAudio() {
+            state.enableAudio = !state.enableAudio;
+            els.audioToggle.classList.toggle("active", state.enableAudio);
             updatePrice();
         }
 
@@ -646,202 +610,110 @@
             return allowed.includes(value) ? value : "16:9";
         }
 
-        // Обработка загрузки изображения
-        // Загрузка изображения через presigned URL в Supabase
-        async function uploadToSupabase(file) {
-            // 1. Получаем presigned URL от backend
-            const presignedResponse = await fetch('/api/storage/presigned-upload', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ content_type: file.type })
-            });
-
-            if (!presignedResponse.ok) {
-                throw new Error('Не удалось получить URL для загрузки');
-            }
-
-            const { upload_url, public_url, upload_token } = await presignedResponse.json();
-
-            // 2. Загружаем файл напрямую в Supabase
-            const uploadResponse = await fetch(upload_url, {
-                method: 'PUT',
-                headers: {
-                    'Content-Type': file.type,
-                },
-                body: file
-            });
-
-            if (!uploadResponse.ok) {
-                throw new Error('Не удалось загрузить изображение');
-            }
-
-            return public_url;
-        }
-
-        async function handleImageUpload(file, type) {
-            const errorEl = type === "start" ? els.startImageError : els.tailImageError;
-            const boxEl = type === "start" ? els.startImageBox : els.tailImageBox;
+        // Обработка загрузки изображения (async presigned upload)
+        async function handleImageUpload(file) {
+            const errorEl = els.startImageError;
+            const boxEl = els.startImageBox;
 
             errorEl.textContent = "";
 
             if (!file) {
-                resetImage(type);
+                resetImage();
                 return;
             }
 
             if (!file.type.startsWith("image/")) {
                 errorEl.textContent = "Нужен JPG/PNG ≤ 10 МБ.";
-                resetImage(type);
+                resetImage();
                 return;
             }
 
             if (file.size > MAX_IMAGE_SIZE) {
                 errorEl.textContent = "Нужен JPG/PNG ≤ 10 МБ.";
-                resetImage(type);
+                resetImage();
                 return;
             }
 
-            // Показываем превью сразу (для UX)
-            const reader = new FileReader();
-            reader.onload = () => {
-                const dataUrl = reader.result;
-                updateImageBoxUI(boxEl, file, dataUrl, true); // true = uploading
-            };
-            reader.readAsDataURL(file);
+            // Показываем статус загрузки
+            boxEl.classList.add("has-file");
+            boxEl.innerHTML = `
+                <input type="file" accept="image/jpeg,image/png,image/webp">
+                <div class="upload-icon">⏳</div>
+                <div class="upload-text">Загрузка...</div>
+            `;
 
-            // Устанавливаем флаг загрузки
-            if (type === "start") {
-                state.imageUploading = true;
-            } else {
-                state.imageTailUploading = true;
-            }
+            state.imageUploading = true;
+            state.imageMime = file.type;
+            state.imageName = file.name;
+            state.imageSize = file.size;
 
             try {
-                // Загружаем в Supabase через presigned URL
-                console.log(`[Kling WebApp] Uploading ${type} image to Supabase...`);
+                console.log("[Kling v2-6 WebApp] Uploading image to Supabase...");
                 const publicUrl = await uploadToSupabase(file);
-                console.log(`[Kling WebApp] Upload complete: ${publicUrl}`);
+                console.log("[Kling v2-6 WebApp] Upload complete:", publicUrl);
 
-                if (type === "start") {
+                // Читаем файл для превью
+                const reader = new FileReader();
+                reader.onload = () => {
                     state.imageUrl = publicUrl;
-                    state.imageSize = file.size;
-                    state.imageMime = file.type;
-                    state.imageName = file.name;
                     state.imageUploading = false;
-                } else {
-                    state.imageTailUrl = publicUrl;
-                    state.imageTailSize = file.size;
-                    state.imageTailMime = file.type;
-                    state.imageTailName = file.name;
-                    state.imageTailUploading = false;
-                    state.tailImageLoaded = true;
-                    // Автоматически переключаем на Pro при загрузке tail image
-                    setQuality("pro");
-                    // Блокируем возможность переключить на std
-                    updateQualityToggleState();
-                }
-
-                // Обновляем UI - убираем индикатор загрузки
-                updateImageBoxUI(boxEl, file, reader.result, false);
-
-            } catch (error) {
-                console.error(`[Kling WebApp] Upload error:`, error);
+                    updateImageBoxUI(boxEl, file, reader.result);
+                };
+                reader.readAsDataURL(file);
+            } catch (err) {
+                console.error("[Kling v2-6 WebApp] Upload error:", err);
                 errorEl.textContent = "Ошибка загрузки. Попробуйте ещё раз.";
-                resetImage(type);
+                resetImage();
             }
         }
 
-        function resetImage(type) {
-            const boxEl = type === "start" ? els.startImageBox : els.tailImageBox;
-            const inputEl = type === "start" ? els.startImageInput : els.tailImageInput;
-
-            if (type === "start") {
-                state.imageUrl = null;
-                state.imageSize = 0;
-                state.imageMime = null;
-                state.imageName = null;
-                state.imageUploading = false;
-            } else {
-                state.imageTailUrl = null;
-                state.imageTailSize = 0;
-                state.imageTailMime = null;
-                state.imageTailName = null;
-                state.imageTailUploading = false;
-                state.tailImageLoaded = false;
-                // Разблокируем переключатель качества
-                updateQualityToggleState();
-            }
-
-            inputEl.value = "";
-            resetImageBoxUI(boxEl);
+        function resetImage() {
+            state.imageUrl = null;
+            state.imageSize = 0;
+            state.imageMime = null;
+            state.imageName = null;
+            state.imageUploading = false;
+            els.startImageInput.value = "";
+            resetImageBoxUI(els.startImageBox);
         }
 
-        function updateImageBoxUI(boxEl, file, dataUrl, isUploading = false) {
+        function updateImageBoxUI(boxEl, file, dataUrl) {
             boxEl.classList.add("has-file");
             const sizeKb = (file.size / 1024).toFixed(1);
-            const statusText = isUploading ? "Загрузка..." : `${file.name} · ${sizeKb} КБ`;
-            const removeBtn = isUploading ? "" : '<span class="upload-remove">✕</span>';
-
             boxEl.innerHTML = `
-                <input type="file" accept="image/jpeg,image/png,image/webp" ${isUploading ? 'disabled' : ''}>
-                <img class="upload-preview" src="${dataUrl}" alt="preview" style="${isUploading ? 'opacity: 0.5;' : ''}">
+                <input type="file" accept="image/jpeg,image/png,image/webp">
+                <img class="upload-preview" src="${dataUrl}" alt="preview">
                 <div class="upload-file-info">
-                    <span>${statusText}</span>
-                    ${removeBtn}
+                    <span>${file.name} · ${sizeKb} КБ</span>
+                    <span class="upload-remove">✕</span>
                 </div>
             `;
 
-            // Добавляем обработчики для нового input и кнопки удаления
             const newInput = boxEl.querySelector('input[type="file"]');
-            const removeBtnEl = boxEl.querySelector('.upload-remove');
-            const type = boxEl.id === "startImageBox" ? "start" : "tail";
+            const removeBtn = boxEl.querySelector('.upload-remove');
 
             newInput.addEventListener("change", (e) => {
-                handleImageUpload(e.target.files?.[0], type);
+                handleImageUpload(e.target.files?.[0]);
             });
 
-            if (removeBtnEl) {
-                removeBtnEl.addEventListener("click", (e) => {
-                    e.stopPropagation();
-                    resetImage(type);
-                });
-            }
+            removeBtn.addEventListener("click", (e) => {
+                e.stopPropagation();
+                resetImage();
+            });
         }
 
         function resetImageBoxUI(boxEl) {
             boxEl.classList.remove("has-file");
-            const type = boxEl.id === "startImageBox" ? "start" : "tail";
-            const inputId = type === "start" ? "startImageInput" : "tailImageInput";
-
             boxEl.innerHTML = `
-                <input type="file" id="${inputId}" accept="image/jpeg,image/png,image/webp">
+                <input type="file" id="startImageInput" accept="image/jpeg,image/png,image/webp">
                 <div class="upload-icon">+</div>
                 <div class="upload-text">Загрузить</div>
             `;
 
-            // Восстанавливаем ссылку на input
-            if (type === "start") {
-                els.startImageInput = document.getElementById("startImageInput");
-                els.startImageInput.addEventListener("change", (e) => {
-                    handleImageUpload(e.target.files?.[0], "start");
-                });
-            } else {
-                els.tailImageInput = document.getElementById("tailImageInput");
-                els.tailImageInput.addEventListener("change", (e) => {
-                    handleImageUpload(e.target.files?.[0], "tail");
-                });
-            }
-        }
-
-        function updateQualityToggleState() {
-            const stdChip = els.qualityToggle.querySelector('[data-quality="std"]');
-            if (state.tailImageLoaded) {
-                stdChip.classList.add("disabled");
-                els.qualityHint.textContent = "Конечное изображение требует режим Pro.";
-            } else {
-                stdChip.classList.remove("disabled");
-                els.qualityHint.textContent = "Standard — быстрая генерация. Pro — повышенное качество, медленнее.";
-            }
+            els.startImageInput = document.getElementById("startImageInput");
+            els.startImageInput.addEventListener("change", (e) => {
+                handleImageUpload(e.target.files?.[0]);
+            });
         }
 
         function sendData() {
@@ -855,22 +727,13 @@
                     tg.showAlert("Введите промт");
                     return;
                 }
-
-                // Проверяем наличие изображения для image2video
-                if (state.generationType === "image2video") {
-                    if (!state.imageUrl) {
-                        tg.showAlert("Загрузите начальное изображение для режима Image → Video.");
-                        return;
-                    }
-                    // Проверяем что загрузка завершена
-                    if (state.imageUploading) {
-                        tg.showAlert("Дождитесь окончания загрузки изображения.");
-                        return;
-                    }
-                    if (state.imageTailUploading) {
-                        tg.showAlert("Дождитесь окончания загрузки конечного изображения.");
-                        return;
-                    }
+                if (state.generationType === "image2video" && !state.imageUrl) {
+                    tg.showAlert("Загрузите изображение для режима Image → Video.");
+                    return;
+                }
+                if (state.imageUploading) {
+                    tg.showAlert("Дождитесь окончания загрузки изображения.");
+                    return;
                 }
 
                 const payload = {
@@ -879,27 +742,24 @@
                     generationType: state.generationType,
                     prompt: state.prompt,
                     duration: state.duration,
-                    mode: state.quality, // std или pro
+                    enableAudio: state.enableAudio,
                 };
+
+                // При включении аудио: mode = pro
+                if (state.enableAudio) {
+                    payload.mode = "pro";
+                }
 
                 if (state.generationType === "text2video") {
                     payload.aspectRatio = state.aspectRatio;
                 }
 
                 if (state.generationType === "image2video") {
-                    // Новый способ: отправляем URL вместо base64
+                    // Отправляем URL вместо base64
                     payload.imageUrl = state.imageUrl;
                     payload.imageSize = state.imageSize;
                     payload.imageMime = state.imageMime;
                     payload.imageName = state.imageName;
-
-                    // Конечное изображение (если есть)
-                    if (state.imageTailUrl) {
-                        payload.imageTailUrl = state.imageTailUrl;
-                        payload.imageTailSize = state.imageTailSize;
-                        payload.imageTailMime = state.imageTailMime;
-                        payload.imageTailName = state.imageTailName;
-                    }
                 }
 
                 const userId = tg.initDataUnsafe?.user?.id;
@@ -912,12 +772,9 @@
                     tg.MainButton.showProgress();
                 } catch (_) { }
 
-                // Логируем данные (теперь payload маленький!)
-                const payloadSize = JSON.stringify({user_id: userId, data: payload}).length;
-                console.log("[Kling WebApp] Sending payload:", payload);
-                console.log("[Kling WebApp] Payload size:", payloadSize, "bytes");
+                console.log("[Kling v2-6 WebApp] Sending payload:", payload);
 
-                // Теперь payload маленький - всегда можно использовать keepalive
+                // Теперь payload маленький - всегда используем keepalive
                 fetch('/api/kling/webapp/submit', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -929,7 +786,7 @@
                 });
 
                 // Сразу закрываем webapp - не ждём ответа
-                console.log("[Kling WebApp] Request sent, closing immediately...");
+                console.log("[Kling v2-6 WebApp] Request sent, closing immediately...");
                 tg.close();
 
             } catch (e) {
@@ -947,12 +804,7 @@
             switchMode(btn.dataset.mode);
         });
 
-        els.qualityToggle.addEventListener("click", (e) => {
-            const btn = e.target.closest(".chip");
-            if (!btn || btn.classList.contains("disabled")) return;
-            setActive(els.qualityToggle, btn);
-            setQuality(btn.dataset.quality, false);
-        });
+        els.audioToggle.addEventListener("click", toggleAudio);
 
         els.ratioGrid.addEventListener("click", (e) => {
             const btn = e.target.closest(".pill");
@@ -970,29 +822,24 @@
         });
 
         els.startImageInput.addEventListener("change", (e) => {
-            handleImageUpload(e.target.files?.[0], "start");
-        });
-
-        els.tailImageInput.addEventListener("change", (e) => {
-            handleImageUpload(e.target.files?.[0], "tail");
+            handleImageUpload(e.target.files?.[0]);
         });
 
         // Инициализация цен (цена за 1 секунду передаётся напрямую)
         const pricePerSecFromQuery = params.get("price_per_sec");
-        const priceProPerSecFromQuery = params.get("price_pro_per_sec");
+        const priceAudioPerSecFromQuery = params.get("price_audio_per_sec");
 
         const tokensPerSecStd = parseTokens(pricePerSecFromQuery);
-        const tokensPerSecPro = parseTokens(priceProPerSecFromQuery);
+        const tokensPerSecAudio = parseTokens(priceAudioPerSecFromQuery);
 
         if (tokensPerSecStd !== null) {
             state.tokensPerSecondStd = tokensPerSecStd;
 
-            // Если pro цена не передана, рассчитываем пропорционально
-            if (tokensPerSecPro !== null) {
-                state.tokensPerSecondPro = tokensPerSecPro;
+            if (tokensPerSecAudio !== null) {
+                state.tokensPerSecondAudio = tokensPerSecAudio;
             } else {
-                // Pro стоит примерно в 1.67 раза дороже (0.07 / 0.042)
-                state.tokensPerSecondPro = state.tokensPerSecondStd * (PRICE_PER_SECOND_PRO / PRICE_PER_SECOND_STD);
+                // Audio стоит дороже: 0.07 / 0.055
+                state.tokensPerSecondAudio = state.tokensPerSecondStd * (PRICE_PER_SECOND_AUDIO / PRICE_PER_SECOND_STD);
             }
             updatePrice();
         } else {

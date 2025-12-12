@@ -229,28 +229,47 @@ def gemini_generate_images(
 
     payload: Dict[str, Any] = {"contents": [{"role": "user", "parts": parts}]}
 
-    generation_config: Dict[str, Any] = {"responseModalities": ["IMAGE"]}
+    # gemini-2.5-flash-image требует TEXT и IMAGE, gemini-3-pro может только IMAGE
+    is_flash_model = "2.5-flash" in model_id or "2.0-flash" in model_id
+    if is_flash_model:
+        generation_config: Dict[str, Any] = {"responseModalities": ["TEXT", "IMAGE"]}
+    else:
+        generation_config: Dict[str, Any] = {"responseModalities": ["IMAGE"]}
     image_config: Dict[str, Any] = {}
 
-    for key in ("temperature", "top_p", "top_k"):
-        if key in params:
-            generation_config[key] = params[key]
+    # temperature, top_p, top_k не поддерживаются gemini-2.5-flash-image
+    if not is_flash_model:
+        for key in ("temperature", "top_p", "top_k"):
+            if key in params:
+                generation_config[key] = params[key]
 
     aspect_ratio = params.get("aspect_ratio") or params.get("aspectRatio")
-    image_size = params.get("image_size") or params.get("imageSize")
     if aspect_ratio:
         image_config["aspectRatio"] = str(aspect_ratio)
-    if image_size:
-        image_config["imageSize"] = str(image_size).upper()
+    # imageSize не поддерживается gemini-2.5-flash-image
+    if not is_flash_model:
+        image_size = params.get("image_size") or params.get("imageSize")
+        if image_size:
+            image_config["imageSize"] = str(image_size).upper()
     if image_config:
         generation_config["imageConfig"] = image_config
 
     payload["generationConfig"] = generation_config
 
+    # Логируем payload без изображений (они слишком большие)
+    payload_log = json.dumps({
+        "contents": [{"role": "user", "parts": [{"text": prompt[:200]}]}],
+        "generationConfig": generation_config,
+    }, ensure_ascii=False)
+    logger.info(f"[GEMINI_IMAGE] Payload: {payload_log}")
+
     imgs: List[bytes] = []
     with httpx.Client(timeout=120) as client:
         for i in range(quantity):
+            logger.info(f"[GEMINI_IMAGE] Request to {url}, model={model_id}, iteration={i+1}/{quantity}")
             r = client.post(url, headers=headers, json=payload)
+            if r.status_code >= 400:
+                logger.error(f"[GEMINI_IMAGE] HTTP {r.status_code} error: {r.text[:2000]}")
             r.raise_for_status()
             data = r.json()
 

@@ -372,6 +372,8 @@ class ChatLogger:
             "veo_video_settings": "Veo",
             "sora2_settings": "Sora 2",
             "runway_settings": "Runway",
+            "runway_aleph_settings": "Runway Aleph",
+            "midjourney_video_settings": "Midjourney Video",
         }
         if kind and kind in mapping:
             return mapping[kind]
@@ -418,3 +420,115 @@ class ChatLogger:
     def _render_webapp_text(label: Optional[str]) -> str:
         readable = (label or "WebApp").strip() or "WebApp"
         return f"Отправлен запрос на генерацию через Webapp {readable}"
+
+    @staticmethod
+    def log_webapp_request(chat_id: int, kind: str, model_slug: str, prompt: str) -> None:
+        """
+        Синхронное логирование входящего webapp-запроса.
+        Используется в Celery задачах для логирования запросов через REST API.
+
+        Args:
+            chat_id: ID чата пользователя
+            kind: Тип webapp (например, "kling_settings", "veo_video_settings")
+            model_slug: Slug модели
+            prompt: Промт пользователя
+        """
+        try:
+            user = TgUser.objects.filter(chat_id=chat_id).first()
+            if not user:
+                return
+
+            thread, _ = ChatThread.objects.get_or_create(
+                user=user,
+                defaults={'last_message_at': timezone.now()},
+            )
+
+            label = ChatLogger._humanize_webapp(kind, model_slug)
+            message_text = f"Отправлен запрос на генерацию через Webapp {label}"
+            if prompt:
+                # Добавляем промт в текст сообщения (обрезаем если слишком длинный)
+                prompt_preview = prompt[:200] + "..." if len(prompt) > 200 else prompt
+                message_text = f"{message_text}\n\nПромт: {prompt_preview}"
+
+            payload = {
+                "web_app": {
+                    "kind": kind,
+                    "model_slug": model_slug,
+                    "label": label,
+                },
+                "source": "rest_api",
+            }
+
+            ChatMessage.objects.create(
+                thread=thread,
+                user=user,
+                direction=ChatMessage.Direction.INCOMING,
+                message_type=ChatMessage.MessageType.TEXT,
+                text=message_text,
+                payload=payload,
+                message_date=timezone.now(),
+            )
+
+            preview = message_text[:157] + "..." if len(message_text) > 160 else message_text
+            thread.last_message_text = preview
+            thread.last_message_type = ChatMessage.MessageType.TEXT
+            thread.last_message_direction = ChatMessage.Direction.INCOMING
+            thread.last_message_at = timezone.now()
+            thread.unread_count = thread.unread_count + 1
+            thread.save(update_fields=[
+                'last_message_text',
+                'last_message_type',
+                'last_message_direction',
+                'last_message_at',
+                'unread_count',
+                'updated_at',
+            ])
+        except Exception:
+            # Не ломаем основной флоу если логирование упало
+            pass
+
+    @staticmethod
+    def log_outgoing_text(chat_id: int, text: str) -> None:
+        """
+        Синхронное логирование исходящего текстового сообщения.
+        Используется в Celery задачах после отправки сообщений через REST API.
+
+        Args:
+            chat_id: ID чата пользователя
+            text: Текст отправленного сообщения
+        """
+        try:
+            user = TgUser.objects.filter(chat_id=chat_id).first()
+            if not user:
+                return
+
+            thread, _ = ChatThread.objects.get_or_create(
+                user=user,
+                defaults={'last_message_at': timezone.now()},
+            )
+
+            ChatMessage.objects.create(
+                thread=thread,
+                user=user,
+                direction=ChatMessage.Direction.OUTGOING,
+                message_type=ChatMessage.MessageType.TEXT,
+                text=text,
+                payload={"source": "rest_api"},
+                message_date=timezone.now(),
+            )
+
+            preview = text[:157] + "..." if len(text) > 160 else text
+            thread.last_message_text = preview
+            thread.last_message_type = ChatMessage.MessageType.TEXT
+            thread.last_message_direction = ChatMessage.Direction.OUTGOING
+            thread.last_message_at = timezone.now()
+            thread.save(update_fields=[
+                'last_message_text',
+                'last_message_type',
+                'last_message_direction',
+                'last_message_at',
+                'updated_at',
+            ])
+        except Exception:
+            # Не ломаем основной флоу если логирование упало
+            pass
