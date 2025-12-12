@@ -54,6 +54,18 @@ def _chunk_plain_text(text: str, limit: int = 3500) -> List[str]:
     return [text[i : i + limit] for i in range(0, len(text), limit)]
 
 
+def _escape_html(text: str) -> str:
+    """Экранирует HTML-спецсимволы."""
+    if not text:
+        return ""
+    return (
+        text
+        .replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+    )
+
+
 async def _build_intro_message() -> str:
     price_line = await build_reference_prompt_price_line()
     return (
@@ -376,17 +388,32 @@ async def _start_prompt_generation(message: Message, state: FSMContext, modifica
     remaining_label = f"{remaining_tokens:.2f}" if remaining_tokens is not None else "—"
 
     prompt_text = result.prompt_text or ""
-    header = (
-        "✅ Готово!\n"
-        f"Списано ⚡{spent_label} токенов\n"
-        f"Осталось ⚡{remaining_label} токенов\n\n"
-        "Ваш промт 👇\n\n"
-    )
-    full_text = f'{header}"{prompt_text}"'
-    chunks = _chunk_plain_text(full_text)
+    prompt_escaped = _escape_html(prompt_text)
+    prompt_formatted = f"<code>{prompt_escaped}</code>" if prompt_escaped else "—"
 
-    for idx, chunk in enumerate(chunks):
-        await message.answer(chunk, reply_markup=video_keyboard if idx == 0 else None)
+    result_message = (
+        "✅ Готово!\n\n"
+        f"<b>Списано:</b> ⚡{spent_label} токенов\n"
+        f"<b>Осталось:</b> ⚡{remaining_label} токенов\n\n"
+        f"<b>Ваш промт:</b>\n{prompt_formatted}"
+    )
+
+    # Если сообщение слишком длинное, разбиваем на части
+    if len(result_message) <= 4000:
+        await message.answer(result_message, reply_markup=video_keyboard, parse_mode="HTML")
+    else:
+        # Отправляем заголовок отдельно, затем промт частями
+        header = (
+            "✅ Готово!\n\n"
+            f"<b>Списано:</b> ⚡{spent_label} токенов\n"
+            f"<b>Осталось:</b> ⚡{remaining_label} токенов\n\n"
+            "<b>Ваш промт:</b>"
+        )
+        await message.answer(header, reply_markup=video_keyboard, parse_mode="HTML")
+        chunks = _chunk_plain_text(prompt_text, limit=3500)
+        for chunk in chunks:
+            chunk_escaped = _escape_html(chunk)
+            await message.answer(f"<code>{chunk_escaped}</code>", parse_mode="HTML")
 
     await state.clear()
     await state.set_state(BotStates.main_menu)
