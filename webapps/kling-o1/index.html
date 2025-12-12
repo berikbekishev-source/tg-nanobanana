@@ -402,6 +402,19 @@
             <div class="upload-error" id="imageError"></div>
         </div>
 
+        <!-- Блок загрузки референсного видео -->
+        <div class="section" id="videoSection" style="display:none;">
+            <p class="section-title">Референсное видео</p>
+            <p class="muted" style="margin-top:0;">Загрузите видео для референса. MP4 ≤ 50 МБ. При загрузке видео доступно только 4 изображения.</p>
+
+            <div class="upload-box" id="videoSlot" style="min-height:120px;">
+                <input type="file" id="videoInput" accept="video/mp4,video/quicktime,video/webm">
+                <div class="upload-icon">🎬</div>
+                <div class="upload-text">@video_1</div>
+            </div>
+            <div class="upload-error" id="videoError"></div>
+        </div>
+
         <div class="section" id="formatSection">
             <p class="section-title">Формат кадра</p>
             <div class="grid" id="ratioGrid">
@@ -451,6 +464,8 @@
         const MAX_IMAGE_SIZE = 10 * 1024 * 1024; // 10 MB
         const MAX_IMAGES = 7;
 
+        const MAX_VIDEO_SIZE = 50 * 1024 * 1024; // 50 MB
+
         const state = {
             modelSlug: params.get("model") || "kling_O1",
             generationType: "text2video",
@@ -459,6 +474,8 @@
             duration: Number(params.get("duration")) || 5,
             // Референсные изображения (URL после presigned upload)
             images: {}, // { 1: { url, size, mime, name, uploading }, ... }
+            // Референсное видео
+            video: null, // { url, size, mime, name, uploading }
             // Pricing
             priceLabel: "—",
             tokensPerSecond: null,
@@ -473,6 +490,10 @@
             referenceSection: document.getElementById("referenceSection"),
             imageGrid: document.getElementById("imageGrid"),
             imageError: document.getElementById("imageError"),
+            videoSection: document.getElementById("videoSection"),
+            videoSlot: document.getElementById("videoSlot"),
+            videoInput: document.getElementById("videoInput"),
+            videoError: document.getElementById("videoError"),
             durationToggle: document.getElementById("durationToggle"),
             formatSection: document.getElementById("formatSection"),
             error: document.getElementById("error"),
@@ -558,6 +579,7 @@
             state.generationType = mode;
             const isReference = mode === "image2video";
             els.referenceSection.style.display = isReference ? "block" : "none";
+            els.videoSection.style.display = isReference ? "block" : "none";
             els.syntaxHint.style.display = isReference ? "block" : "none";
         }
 
@@ -690,6 +712,117 @@
             }
         }
 
+        // Загрузка видео
+        async function handleVideoUpload(file) {
+            els.videoError.textContent = "";
+
+            if (!file) {
+                resetVideoSlot();
+                return;
+            }
+
+            if (!file.type.startsWith("video/")) {
+                els.videoError.textContent = "Нужен видеофайл MP4/MOV/WebM ≤ 50 МБ.";
+                resetVideoSlot();
+                return;
+            }
+
+            if (file.size > MAX_VIDEO_SIZE) {
+                els.videoError.textContent = "Видео слишком большое. Максимум 50 МБ.";
+                resetVideoSlot();
+                return;
+            }
+
+            // Показываем статус загрузки
+            updateVideoSlotUI(file, true);
+            state.video = { uploading: true };
+
+            try {
+                console.log(`[Kling O1 WebApp] Uploading video to Supabase...`);
+                const publicUrl = await uploadVideoToSupabase(file);
+                console.log(`[Kling O1 WebApp] Video upload complete: ${publicUrl}`);
+
+                state.video = {
+                    url: publicUrl,
+                    size: file.size,
+                    mime: file.type,
+                    name: file.name,
+                    uploading: false,
+                };
+
+                updateVideoSlotUI(file, false);
+            } catch (error) {
+                console.error(`[Kling O1 WebApp] Video upload error:`, error);
+                els.videoError.textContent = "Ошибка загрузки видео. Попробуйте ещё раз.";
+                resetVideoSlot();
+            }
+        }
+
+        async function uploadVideoToSupabase(file) {
+            const presignedResponse = await fetch('/api/storage/presigned-upload', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ content_type: file.type })
+            });
+
+            if (!presignedResponse.ok) {
+                throw new Error('Не удалось получить URL для загрузки видео');
+            }
+
+            const { upload_url, public_url } = await presignedResponse.json();
+
+            const uploadResponse = await fetch(upload_url, {
+                method: 'PUT',
+                headers: { 'Content-Type': file.type },
+                body: file
+            });
+
+            if (!uploadResponse.ok) {
+                throw new Error('Не удалось загрузить видео');
+            }
+
+            return public_url;
+        }
+
+        function resetVideoSlot() {
+            state.video = null;
+            els.videoSlot.classList.remove("has-file");
+            els.videoSlot.innerHTML = `
+                <input type="file" id="videoInput" accept="video/mp4,video/quicktime,video/webm">
+                <div class="upload-icon">🎬</div>
+                <div class="upload-text">@video_1</div>
+            `;
+            const input = els.videoSlot.querySelector("input");
+            input.addEventListener("change", (e) => handleVideoUpload(e.target.files?.[0]));
+        }
+
+        function updateVideoSlotUI(file, isUploading) {
+            els.videoSlot.classList.add("has-file");
+            const statusText = isUploading ? "Загрузка..." : "@video_1";
+            const removeBtn = isUploading ? "" : '<span class="upload-remove">✕</span>';
+
+            els.videoSlot.innerHTML = `
+                <input type="file" accept="video/mp4,video/quicktime,video/webm" ${isUploading ? 'disabled' : ''}>
+                <div class="upload-icon" style="${isUploading ? 'opacity: 0.5;' : ''}">🎬</div>
+                <div class="upload-file-info">
+                    <span>${statusText}</span>
+                    ${removeBtn}
+                </div>
+            `;
+
+            const newInput = els.videoSlot.querySelector('input[type="file"]');
+            const removeBtnEl = els.videoSlot.querySelector('.upload-remove');
+
+            newInput.addEventListener("change", (e) => handleVideoUpload(e.target.files?.[0]));
+
+            if (removeBtnEl) {
+                removeBtnEl.addEventListener("click", (e) => {
+                    e.stopPropagation();
+                    resetVideoSlot();
+                });
+            }
+        }
+
         function getUploadedImages() {
             const result = {};
             for (const [idx, data] of Object.entries(state.images)) {
@@ -702,6 +835,10 @@
 
         function hasUploadingImages() {
             return Object.values(state.images).some(img => img && img.uploading);
+        }
+
+        function hasUploadingVideo() {
+            return state.video && state.video.uploading;
         }
 
         function sendData() {
@@ -721,6 +858,11 @@
                     return;
                 }
 
+                if (hasUploadingVideo()) {
+                    tg.showAlert("Дождитесь окончания загрузки видео.");
+                    return;
+                }
+
                 const uploadedImages = getUploadedImages();
 
                 const payload = {
@@ -733,6 +875,11 @@
                     omni_version: "o1",
                     ...uploadedImages,
                 };
+
+                // Добавляем видео если загружено
+                if (state.video && state.video.url && !state.video.uploading) {
+                    payload.video_1 = state.video.url;
+                }
 
                 const userId = tg.initDataUnsafe?.user?.id;
                 if (!userId) {
@@ -804,6 +951,9 @@
         initImageSlots();
         updateCounts();
         switchMode("text2video");
+
+        // Инициализация обработчика видео
+        els.videoInput.addEventListener("change", (e) => handleVideoUpload(e.target.files?.[0]));
 
         if (tg) {
             try {
