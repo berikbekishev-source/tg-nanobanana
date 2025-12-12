@@ -55,7 +55,7 @@ def send_telegram_photo(
     photo_bytes: bytes,
     caption: str,
     reply_markup: Optional[Dict] = None,
-    parse_mode: Optional[str] = None,
+    parse_mode: Optional[str] = "HTML",
 ):
     """Отправка изображения файлом (document) в Telegram напрямую."""
     url = f"https://api.telegram.org/bot{settings.TELEGRAM_BOT_TOKEN}/sendDocument"
@@ -86,7 +86,13 @@ def send_telegram_photo(
         return payload
 
 
-def send_telegram_video(chat_id: int, video_bytes: bytes, caption: str, reply_markup: Optional[Dict] = None):
+def send_telegram_video(
+    chat_id: int,
+    video_bytes: bytes,
+    caption: str,
+    reply_markup: Optional[Dict] = None,
+    parse_mode: Optional[str] = "HTML",
+):
     """Отправка видео строго файлом (document) без авто-детекции контента."""
     url = f"https://api.telegram.org/bot{settings.TELEGRAM_BOT_TOKEN}/sendDocument"
     files = {"document": ("video.mp4", video_bytes, "application/octet-stream")}
@@ -95,6 +101,8 @@ def send_telegram_video(chat_id: int, video_bytes: bytes, caption: str, reply_ma
         "caption": _shorten_caption(caption),
         "disable_content_type_detection": True,
     }
+    if parse_mode:
+        data["parse_mode"] = parse_mode
     if reply_markup:
         data["reply_markup"] = json.dumps(reply_markup)
 
@@ -117,6 +125,7 @@ def send_telegram_video(chat_id: int, video_bytes: bytes, caption: str, reply_ma
 def send_telegram_album(
     chat_id: int,
     images: List[Tuple[bytes, Optional[str]]],
+    parse_mode: Optional[str] = "HTML",
 ) -> dict:
     """
     Отправка нескольких изображений одним альбомом (media group).
@@ -135,6 +144,8 @@ def send_telegram_album(
         }
         if caption:
             media_item["caption"] = _shorten_caption(caption)
+            if parse_mode:
+                media_item["parse_mode"] = parse_mode
         media.append(media_item)
 
     with httpx.Client(timeout=60) as client:
