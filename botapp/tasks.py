@@ -33,12 +33,34 @@ MAX_TELEGRAM_CAPTION = 1024  # ограничение Telegram на caption дл
 
 
 def _shorten_caption(text: str, limit: int = MAX_TELEGRAM_CAPTION) -> str:
-    """Обрезает caption до лимита Telegram."""
+    """Обрезает caption до лимита Telegram, безопасно для HTML.
+
+    Если текст содержит HTML-теги и требуется обрезка, убеждаемся что теги закрыты.
+    """
     if not text:
         return text
     if len(text) <= limit:
         return text
-    return text[: limit - 1] + "…"
+
+    # Обрезаем текст
+    truncated = text[: limit - 1] + "…"
+
+    # Проверяем баланс тегов <code> / </code>
+    open_code = truncated.count("<code>")
+    close_code = truncated.count("</code>")
+
+    if open_code > close_code:
+        # Не хватает закрывающих тегов - добавляем
+        truncated += "</code>" * (open_code - close_code)
+
+    # Аналогично для <b> / </b>
+    open_b = truncated.count("<b>")
+    close_b = truncated.count("</b>")
+
+    if open_b > close_b:
+        truncated += "</b>" * (open_b - close_b)
+
+    return truncated
 
 
 def _log_bot_api_result(result) -> None:
