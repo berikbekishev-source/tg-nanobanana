@@ -5,13 +5,28 @@ from decimal import Decimal
 from typing import Any, Dict, Optional, Tuple
 
 
-def _trim_prompt(prompt: str, limit: int = 400) -> str:
+def _trim_prompt(prompt: str, limit: int = 3500) -> str:
+    """Обрезает промпт только если он длиннее limit символов."""
     if not prompt:
         return ""
     value = prompt.strip()
     if len(value) > limit:
         return value[: limit - 1] + "…"
     return value
+
+
+def _format_prompt_for_copy(prompt: str) -> str:
+    """Форматирует промпт для копирования (моноширинный блок)."""
+    if not prompt:
+        return ""
+    # Экранируем HTML-спецсимволы
+    escaped = (
+        prompt
+        .replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+    )
+    return f"<code>{escaped}</code>"
 
 
 def resolve_image_mode_label(generation_type: str, image_mode: Optional[str] = None) -> str:
@@ -65,15 +80,17 @@ def format_image_start_message(
     quality_value: str,
     prompt: str,
 ) -> str:
-    prompt_value = _trim_prompt(prompt, limit=400)
+    """Формирует HTML-сообщение о старте генерации изображения."""
+    prompt_trimmed = _trim_prompt(prompt, limit=3500)
+    prompt_formatted = _format_prompt_for_copy(prompt_trimmed)
     lines = [
         "🎨 Генерация началась! Ожидайте ⏳",
         "",
-        f"Модель: {model_name}",
-        f"Режим: {mode_label}",
-        f"Формат: {format_value}",
-        f"Качество: {quality_value}",
-        f"Промт: {prompt_value}",
+        f"<b>Модель:</b> {model_name}",
+        f"<b>Режим:</b> {mode_label}",
+        f"<b>Формат:</b> {format_value}",
+        f"<b>Качество:</b> {quality_value}",
+        f"<b>Промпт:</b> {prompt_formatted}",
         "",
         "Я отправлю вам результат, как только он будет готов!",
     ]
@@ -89,18 +106,20 @@ def format_image_result_message(
     charged_amount: Decimal,
     balance_after: Decimal,
 ) -> str:
-    prompt_value = _trim_prompt(prompt, limit=500)
+    """Формирует HTML-сообщение с результатом генерации изображения."""
+    prompt_trimmed = _trim_prompt(prompt, limit=3500)
+    prompt_formatted = _format_prompt_for_copy(prompt_trimmed)
     lines = [
         "✅Готово!",
         "",
-        f"Модель: {model_name}",
-        f"Режим: {mode_label}",
-        f"Формат: {format_value}",
-        f"Качество: {quality_value}",
-        f"Промт: {prompt_value}",
+        f"<b>Модель:</b> {model_name}",
+        f"<b>Режим:</b> {mode_label}",
+        f"<b>Формат:</b> {format_value}",
+        f"<b>Качество:</b> {quality_value}",
+        f"<b>Промпт:</b> {prompt_formatted}",
         "",
-        f"Списано: ⚡{charged_amount:.2f}",
-        f"Баланс: ⚡{balance_after:.2f}",
+        f"<b>Списано:</b> ⚡{charged_amount:.2f}",
+        f"<b>Баланс:</b> ⚡{balance_after:.2f}",
     ]
     return "\n".join(lines)
 
@@ -134,16 +153,18 @@ def format_video_start_message(
     duration: Optional[Any],
     prompt: str,
 ) -> str:
-    prompt_value = _trim_prompt(prompt, limit=400) or "—"
+    """Формирует HTML-сообщение о старте генерации видео."""
+    prompt_trimmed = _trim_prompt(prompt, limit=3500) or "—"
+    prompt_formatted = _format_prompt_for_copy(prompt_trimmed) if prompt_trimmed != "—" else "—"
     lines = [
         "🎨 Генерация началась! Ожидайте ⏳",
         "",
-        f"Модель: {model_name or '—'}",
-        f"Режим: {mode_label or '—'}",
-        f"Формат: {aspect_ratio or '—'}",
-        f"Разрешение: {resolution or '—'}",
-        f"Продолжительность: {_format_duration(duration)}",
-        f"Промт: {prompt_value}",
+        f"<b>Модель:</b> {model_name or '—'}",
+        f"<b>Режим:</b> {mode_label or '—'}",
+        f"<b>Формат:</b> {aspect_ratio or '—'}",
+        f"<b>Разрешение:</b> {resolution or '—'}",
+        f"<b>Продолжительность:</b> {_format_duration(duration)}",
+        f"<b>Промпт:</b> {prompt_formatted}",
         "",
         "Я отправлю вам результат, как только он будет готов!",
     ]
@@ -160,18 +181,20 @@ def format_video_result_message(
     charged_amount: Decimal,
     balance_after: Decimal,
 ) -> str:
-    prompt_value = _trim_prompt(prompt, limit=500) or "—"
+    """Формирует HTML-сообщение с результатом генерации видео."""
+    prompt_trimmed = _trim_prompt(prompt, limit=3500) or "—"
+    prompt_formatted = _format_prompt_for_copy(prompt_trimmed) if prompt_trimmed != "—" else "—"
     lines = [
         "✅Готово!",
         "",
-        f"Модель: {model_name or '—'}",
-        f"Режим: {mode_label or '—'}",
-        f"Формат: {aspect_ratio or '—'}",
-        f"Разрешение: {resolution or '—'}",
-        f"Продолжительность: {_format_duration(duration)}",
-        f"Промт: {prompt_value}",
+        f"<b>Модель:</b> {model_name or '—'}",
+        f"<b>Режим:</b> {mode_label or '—'}",
+        f"<b>Формат:</b> {aspect_ratio or '—'}",
+        f"<b>Разрешение:</b> {resolution or '—'}",
+        f"<b>Продолжительность:</b> {_format_duration(duration)}",
+        f"<b>Промпт:</b> {prompt_formatted}",
         "",
-        f"Списано: ⚡{Decimal(charged_amount):.2f}",
-        f"Баланс: ⚡{Decimal(balance_after):.2f}",
+        f"<b>Списано:</b> ⚡{Decimal(charged_amount):.2f}",
+        f"<b>Баланс:</b> ⚡{Decimal(balance_after):.2f}",
     ]
     return "\n".join(lines)

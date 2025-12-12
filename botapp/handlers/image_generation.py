@@ -693,7 +693,7 @@ async def handle_nanobanana_webapp_data(message: Message, state: FSMContext):
     await _send_start_message_with_delay(
         message,
         start_message,
-        parse_mode=None,
+        parse_mode="HTML",
     )
 
     generate_image_task.delay(gen_request.id)
@@ -836,7 +836,7 @@ async def _start_generation(message: Message, state: FSMContext, prompt: str):
         await _send_start_message_with_delay(
             message,
             start_message,
-            parse_mode=None,
+            parse_mode="HTML",
         )
 
         # Запускаем задачу генерации

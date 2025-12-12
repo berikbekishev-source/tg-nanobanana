@@ -328,16 +328,16 @@ MODEL_PRICE_PRESETS: List[Tuple[str, str]] = [
     ("⚡ Veo 3.1 Fast", "veo3-fast"),
     ("🍌 Nano Banana", "nano-banana"),
     ("🍌 Nano Banana Pro", "nano-banana-pro"),
-    ("Ⓜ️ Midjourney", "midjourney-v7-fast"),
-    ("🎞️ Midjourney Video", "midjourney-video"),
-    ("🐉 Kling v2-5 Turbo", "kling-v2-5-turbo"),
+    ("🎨 Midjourney", "midjourney-v7-fast"),
+    ("🎬 Midjourney Video", "midjourney-video"),
+    ("🐉 Kling v2-5-turbo", "kling-v2-5-turbo"),
     ("🐉 Kling v2-1", "kling-v2-1"),
     ("🐉 Kling v2-1 Master", "kling-v2-1-master"),
     ("🐉 Kling O1", "kling_O1"),
     ("🖼️ GPT Image 1", "gpt-image-1"),
     ("🎥 Sora 2", "sora2"),
-    ("🏁 Runway Gen-4", "runway_gen4"),
-    ("🏁 Runway Aleph", "runway_aleph"),
+    ("🎞️ Runway Gen-4", "runway_gen4"),
+    ("🎞️ Runway Aleph", "runway_aleph"),
 ]
 
 
