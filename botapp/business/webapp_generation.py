@@ -632,10 +632,6 @@ def process_kling_o1_webapp(user_id: int, payload: Dict[str, Any]) -> Optional[i
     # Референсное видео (video_1)
     video_url = payload.get("video_1")
     if video_url and isinstance(video_url, str) and video_url.startswith("http"):
-        # Авто-обрезка видео если длиннее 10 секунд
-        trimmed_url = _trim_video_if_needed(video_url, MAX_VIDEO_DURATION_SECONDS)
-        if trimmed_url:
-            video_url = trimmed_url
         params["video_1"] = video_url
         params["aspect_ratio"] = "auto"  # При наличии видео аспект автоматически "auto"
         aspect_ratio = "auto"
