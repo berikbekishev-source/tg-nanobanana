@@ -82,17 +82,11 @@ class KlingVideoProvider(BaseVideoProvider):
             return self._generate_omni(
                 prompt=prompt,
                 model_name=model_name,
+                generation_type=generation_type,
                 params=params,
                 input_media=input_media,
                 input_mime_type=input_mime_type,
             )
-        if generation_type == "text2video":
-            return self._generate_text_to_video(
-                prompt=prompt,
-                model_name=model_name,
-                params=params,
-            )
-        raise VideoGenerationError("Kling поддерживает только режимы text2video и image2video.")
 
         if generation_type == "image2video":
             return self._generate_image_to_video(
@@ -212,6 +206,7 @@ class KlingVideoProvider(BaseVideoProvider):
         *,
         prompt: str,
         model_name: str,
+        generation_type: str,
         params: Dict[str, Any],
         input_media: Optional[bytes],
         input_mime_type: Optional[str],
@@ -223,8 +218,8 @@ class KlingVideoProvider(BaseVideoProvider):
             prompt=prompt,
             model_name=model_name,
             params=params,
-            image_url=image_url,
-            tail_image_url=tail_image_url,
+            input_media=input_media,
+            input_mime_type=input_mime_type,
         )
 
         logger.info(f"[Kling O1] Omni payload: {payload}")
@@ -266,8 +261,8 @@ class KlingVideoProvider(BaseVideoProvider):
         prompt: str,
         model_name: str,
         params: Dict[str, Any],
-        image_url: str,
-        tail_image_url: Optional[str],
+        input_media: Optional[bytes],
+        input_mime_type: Optional[str],
     ) -> Dict[str, Any]:
         """Собирает payload для Kling O1 (Omni) API."""
         payload: Dict[str, Any] = {
