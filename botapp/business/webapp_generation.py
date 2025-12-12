@@ -4,9 +4,14 @@
 """
 import base64
 import logging
+import os
+import subprocess
+import tempfile
 from decimal import Decimal
 from io import BytesIO
 from typing import Any, Dict, List, Optional, Tuple
+from urllib.request import urlopen
+from urllib.error import URLError
 
 from django.conf import settings
 
@@ -29,6 +34,140 @@ logger = logging.getLogger(__name__)
 
 # Максимальные размеры изображений
 MAX_IMAGE_BYTES = 10 * 1024 * 1024  # 10 МБ
+MAX_VIDEO_DURATION_SECONDS = 10  # Максимальная длительность видео для Kling O1
+
+
+def _get_video_duration(file_path: str) -> Optional[float]:
+    """Получить длительность видео в секундах через ffprobe."""
+    try:
+        result = subprocess.run(
+            [
+                "ffprobe",
+                "-v", "error",
+                "-show_entries", "format=duration",
+                "-of", "default=noprint_wrappers=1:nokey=1",
+                file_path,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            return float(result.stdout.strip())
+    except (subprocess.TimeoutExpired, ValueError, FileNotFoundError) as exc:
+        logger.warning("Не удалось получить длительность видео: %s", exc)
+    return None
+
+
+def _trim_video_ffmpeg(input_path: str, output_path: str, max_duration: float) -> bool:
+    """Обрезать видео до указанной длительности через ffmpeg."""
+    try:
+        result = subprocess.run(
+            [
+                "ffmpeg",
+                "-y",  # Перезаписывать без вопросов
+                "-i", input_path,
+                "-t", str(max_duration),
+                "-c", "copy",  # Без перекодирования (быстро)
+                output_path,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        return result.returncode == 0 and os.path.exists(output_path)
+    except (subprocess.TimeoutExpired, FileNotFoundError) as exc:
+        logger.warning("Ошибка обрезки видео ffmpeg: %s", exc)
+        return False
+
+
+def _trim_video_if_needed(video_url: str, max_duration: float = MAX_VIDEO_DURATION_SECONDS) -> Optional[str]:
+    """
+    Скачать видео, проверить длительность и обрезать при необходимости.
+
+    Args:
+        video_url: URL исходного видео
+        max_duration: Максимальная длительность в секундах
+
+    Returns:
+        Новый URL (Supabase) если видео было обрезано, иначе исходный URL.
+        None при ошибке.
+    """
+    from botapp.services import supabase_upload_video
+
+    temp_dir = None
+    try:
+        # Скачиваем видео
+        logger.info("[Video Trim] Downloading video from %s", video_url[:100])
+        with urlopen(video_url, timeout=60) as response:
+            video_data = response.read()
+
+        if not video_data:
+            logger.warning("[Video Trim] Empty video data")
+            return video_url
+
+        # Создаём временную директорию
+        temp_dir = tempfile.mkdtemp(prefix="video_trim_")
+        input_path = os.path.join(temp_dir, "input.mp4")
+        output_path = os.path.join(temp_dir, "output.mp4")
+
+        # Сохраняем исходное видео
+        with open(input_path, "wb") as f:
+            f.write(video_data)
+
+        # Проверяем длительность
+        duration = _get_video_duration(input_path)
+        if duration is None:
+            logger.warning("[Video Trim] Could not get duration, using original video")
+            return video_url
+
+        logger.info("[Video Trim] Video duration: %.2f sec (max: %.2f)", duration, max_duration)
+
+        # Если видео короче или равно лимиту, возвращаем исходный URL
+        if duration <= max_duration:
+            logger.info("[Video Trim] Video within limit, no trimming needed")
+            return video_url
+
+        # Обрезаем видео
+        logger.info("[Video Trim] Trimming video to %.2f seconds", max_duration)
+        if not _trim_video_ffmpeg(input_path, output_path, max_duration):
+            logger.error("[Video Trim] FFmpeg trimming failed")
+            return video_url  # Возвращаем исходное видео, пусть API сам разбирается
+
+        # Читаем обрезанное видео
+        with open(output_path, "rb") as f:
+            trimmed_data = f.read()
+
+        if not trimmed_data:
+            logger.error("[Video Trim] Trimmed video is empty")
+            return video_url
+
+        # Загружаем в Supabase
+        logger.info("[Video Trim] Uploading trimmed video (%d bytes)", len(trimmed_data))
+        upload_result = supabase_upload_video(trimmed_data, "video/mp4")
+
+        new_url = _extract_public_url(upload_result)
+        if not new_url:
+            logger.error("[Video Trim] Failed to get public URL for trimmed video")
+            return video_url
+
+        logger.info("[Video Trim] Successfully trimmed and uploaded video: %s", new_url[:100])
+        return new_url
+
+    except URLError as exc:
+        logger.error("[Video Trim] Failed to download video: %s", exc)
+        return video_url
+    except Exception as exc:
+        logger.error("[Video Trim] Unexpected error: %s", exc)
+        return video_url
+    finally:
+        # Очищаем временные файлы
+        if temp_dir and os.path.exists(temp_dir):
+            try:
+                import shutil
+                shutil.rmtree(temp_dir, ignore_errors=True)
+            except Exception:
+                pass
 
 
 def _convert_to_png_bytes(raw: bytes, mime: str) -> bytes:
@@ -493,6 +632,10 @@ def process_kling_o1_webapp(user_id: int, payload: Dict[str, Any]) -> Optional[i
     # Референсное видео (video_1)
     video_url = payload.get("video_1")
     if video_url and isinstance(video_url, str) and video_url.startswith("http"):
+        # Авто-обрезка видео если длиннее 10 секунд
+        trimmed_url = _trim_video_if_needed(video_url, MAX_VIDEO_DURATION_SECONDS)
+        if trimmed_url:
+            video_url = trimmed_url
         params["video_1"] = video_url
         params["aspect_ratio"] = "auto"  # При наличии видео аспект автоматически "auto"
         aspect_ratio = "auto"
