@@ -401,6 +401,161 @@ def process_kling_webapp(user_id: int, payload: Dict[str, Any]) -> Optional[int]
     return gen_request.id
 
 
+def process_kling_o1_webapp(user_id: int, payload: Dict[str, Any]) -> Optional[int]:
+    """
+    Обработать данные Kling O1 (Omni) WebApp и запустить генерацию.
+
+    Args:
+        user_id: ID пользователя Telegram
+        payload: Данные из WebApp
+
+    Returns:
+        ID созданного GenRequest или None при ошибке
+    """
+    from botapp.tasks import generate_video_task
+
+    # Получаем пользователя
+    try:
+        user = TgUser.objects.get(chat_id=user_id)
+    except TgUser.DoesNotExist:
+        _send_error_message(user_id, "❌ Не удалось найти пользователя. Начните заново.")
+        return None
+
+    # Получаем модель
+    model_slug = payload.get("modelSlug") or "kling_O1"
+    try:
+        model = AIModel.objects.get(slug=model_slug)
+    except AIModel.DoesNotExist:
+        logger.warning(f"[Kling O1 WebApp] Model not found: {model_slug}")
+        _send_error_message(user_id, "❌ Модель Kling O1 недоступна. Выберите её заново из списка моделей.")
+        return None
+
+    if model.provider != "kling":
+        _send_error_message(user_id, "❌ Эта WebApp работает только с моделью Kling O1.")
+        return None
+
+    # Валидация промпта
+    prompt = (payload.get("prompt") or "").strip()
+    if not prompt:
+        _send_error_message(user_id, "❌ Введите промт в окне Kling O1 и отправьте ещё раз.")
+        return None
+
+    if len(prompt) > model.max_prompt_length:
+        _send_error_message(user_id, f"❌ Промт слишком длинный! Максимум {model.max_prompt_length} символов.")
+        return None
+
+    # Логируем входящий webapp-запрос
+    ChatLogger.log_webapp_request(user_id, "kling_o1_settings", model_slug, prompt)
+
+    # Тип генерации
+    generation_type = (payload.get("generationType") or "text2video").lower()
+    if generation_type not in {"text2video", "image2video"}:
+        generation_type = "text2video"
+
+    logger.info(f"[Kling O1 WebApp] Starting: model_slug={model_slug}, generation_type={generation_type}")
+
+    # Длительность для O1: 3-10 секунд
+    try:
+        duration_value = int(float(payload.get("duration") or 5))
+    except (TypeError, ValueError):
+        duration_value = 5
+    if duration_value < 3:
+        duration_value = 3
+    if duration_value > 10:
+        duration_value = 10
+
+    # Aspect ratio
+    defaults = model.default_params or {}
+    allowed_aspects = _extract_allowed_aspect_ratios(model)
+    requested_aspect = payload.get("aspectRatio") or payload.get("aspect_ratio") or defaults.get("aspect_ratio") or "16:9"
+    aspect_ratio = requested_aspect if requested_aspect in allowed_aspects else allowed_aspects[0]
+
+    params = {
+        "duration": duration_value,
+        "aspect_ratio": aspect_ratio,
+        "omni_version": payload.get("omni_version") or "o1",
+    }
+
+    source_media = None
+    reference_images = []
+
+    # Собираем референсные изображения (image_1 ... image_7)
+    for i in range(1, 8):
+        image_key = f"image_{i}"
+        image_url = payload.get(image_key)
+        if image_url and isinstance(image_url, str) and image_url.startswith("http"):
+            params[image_key] = image_url
+            reference_images.append({"key": image_key, "url": image_url})
+            # Если есть хотя бы одно изображение — это image2video
+            if generation_type == "text2video":
+                generation_type = "image2video"
+
+    # Референсное видео (video_1)
+    video_url = payload.get("video_1")
+    if video_url and isinstance(video_url, str) and video_url.startswith("http"):
+        params["video_1"] = video_url
+        params["aspect_ratio"] = "auto"  # При наличии видео аспект автоматически "auto"
+        aspect_ratio = "auto"
+
+    if reference_images:
+        source_media = {
+            "source": "kling_o1_webapp",
+            "reference_images": reference_images,
+        }
+
+    logger.info(f"[Kling O1 WebApp] Final params: duration={duration_value}, aspect={aspect_ratio}, generation_type={generation_type}, images={[k for k in params if k.startswith('image_')]}")
+
+    # Создаём запрос на генерацию
+    try:
+        gen_request = GenerationService.create_generation_request(
+            user=user,
+            ai_model=model,
+            prompt=prompt,
+            quantity=1,
+            generation_type=generation_type,
+            generation_params=params,
+            duration=duration_value,
+            aspect_ratio=aspect_ratio,
+            source_media=source_media,
+        )
+    except InsufficientBalanceError as exc:
+        logger.warning(f"[Kling O1 WebApp] Insufficient balance for user {user_id}: {exc}")
+        _send_error_message(user_id, str(exc))
+        return None
+    except ValueError as exc:
+        logger.warning(f"[Kling O1 WebApp] ValueError for user {user_id}: {exc}")
+        _send_error_message(user_id, str(exc))
+        return None
+    except Exception as exc:
+        logger.error("Ошибка создания GenRequest для Kling O1: %s", exc)
+        ErrorTracker.log(
+            origin=BotErrorEvent.Origin.CELERY,
+            severity=BotErrorEvent.Severity.ERROR,
+            handler="webapp_generation.process_kling_o1_webapp",
+            chat_id=user_id,
+            payload={"generation_type": generation_type, "duration": duration_value},
+            exc=exc,
+        )
+        _send_error_message(user_id, "❌ Произошла ошибка при подготовке генерации. Попробуйте ещё раз.")
+        return None
+
+    # Отправляем сообщение о начале генерации
+    start_message = get_generation_start_message(
+        model=model.display_name,
+        mode=generation_type,
+        aspect_ratio=aspect_ratio,
+        resolution=None,
+        duration=duration_value,
+        prompt=prompt,
+    )
+    _send_start_message(user_id, start_message)
+
+    # Запускаем Celery задачу генерации
+    generate_video_task.delay(gen_request.id)
+
+    return gen_request.id
+
+
 def process_veo_webapp(user_id: int, payload: Dict[str, Any]) -> Optional[int]:
     """
     Обработать данные Veo WebApp и запустить генерацию.
@@ -1590,6 +1745,7 @@ def process_runway_aleph_webapp(user_id: int, payload: Dict[str, Any]) -> Option
 WEBAPP_PROCESSORS = {
     # Video processors
     "kling_settings": process_kling_webapp,
+    "kling_o1_settings": process_kling_o1_webapp,
     "veo_video_settings": process_veo_webapp,
     "sora2_settings": process_sora_webapp,
     "runway_settings": process_runway_webapp,
