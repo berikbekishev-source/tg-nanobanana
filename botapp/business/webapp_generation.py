@@ -37,12 +37,25 @@ MAX_IMAGE_BYTES = 10 * 1024 * 1024  # 10 МБ
 MAX_VIDEO_DURATION_SECONDS = 10  # Максимальная длительность видео для Kling O1
 
 
+def _get_ffmpeg_exe() -> str:
+    """Получить путь к ffmpeg из imageio-ffmpeg или системного."""
+    try:
+        import imageio_ffmpeg
+        return imageio_ffmpeg.get_ffmpeg_exe()
+    except ImportError:
+        return "ffmpeg"
+
+
 def _get_video_duration(file_path: str) -> Optional[float]:
     """Получить длительность видео в секундах через ffprobe."""
+    ffmpeg_exe = _get_ffmpeg_exe()
+    # ffprobe обычно рядом с ffmpeg
+    ffprobe_exe = ffmpeg_exe.replace("ffmpeg", "ffprobe") if "ffmpeg" in ffmpeg_exe else "ffprobe"
+
     try:
         result = subprocess.run(
             [
-                "ffprobe",
+                ffprobe_exe,
                 "-v", "error",
                 "-show_entries", "format=duration",
                 "-of", "default=noprint_wrappers=1:nokey=1",
@@ -55,16 +68,40 @@ def _get_video_duration(file_path: str) -> Optional[float]:
         if result.returncode == 0 and result.stdout.strip():
             return float(result.stdout.strip())
     except (subprocess.TimeoutExpired, ValueError, FileNotFoundError) as exc:
-        logger.warning("Не удалось получить длительность видео: %s", exc)
+        logger.warning("Не удалось получить длительность видео через ffprobe: %s", exc)
+
+    # Fallback: попробуем через ffmpeg
+    try:
+        result = subprocess.run(
+            [
+                ffmpeg_exe,
+                "-i", file_path,
+                "-f", "null",
+                "-",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        # ffmpeg выводит duration в stderr
+        import re
+        match = re.search(r"Duration: (\d+):(\d+):(\d+)\.(\d+)", result.stderr)
+        if match:
+            h, m, s, ms = match.groups()
+            return int(h) * 3600 + int(m) * 60 + int(s) + int(ms) / 100
+    except (subprocess.TimeoutExpired, FileNotFoundError) as exc:
+        logger.warning("Не удалось получить длительность видео через ffmpeg: %s", exc)
+
     return None
 
 
 def _trim_video_ffmpeg(input_path: str, output_path: str, max_duration: float) -> bool:
     """Обрезать видео до указанной длительности через ffmpeg."""
+    ffmpeg_exe = _get_ffmpeg_exe()
     try:
         result = subprocess.run(
             [
-                "ffmpeg",
+                ffmpeg_exe,
                 "-y",  # Перезаписывать без вопросов
                 "-i", input_path,
                 "-t", str(max_duration),
