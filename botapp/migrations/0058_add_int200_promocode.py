@@ -1,8 +1,8 @@
 """Добавление промокода INT200 на 200 токенов."""
 from decimal import Decimal
+from datetime import datetime, timezone as dt_timezone
 from django.db import migrations
 from django.utils import timezone
-from datetime import datetime
 
 
 def forward(apps, schema_editor):
@@ -19,7 +19,7 @@ def forward(apps, schema_editor):
         max_uses_per_user=1,  # Разовое использование на пользователя
         current_uses=0,
         valid_from=timezone.now(),
-        valid_until=datetime(2099, 12, 31, 23, 59, 59, tzinfo=timezone.utc),
+        valid_until=datetime(2099, 12, 31, 23, 59, 59, tzinfo=dt_timezone.utc),
         is_active=True,
     )
 
